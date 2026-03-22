@@ -40,3 +40,28 @@ def test_split_message_respects_limit() -> None:
     parts = bot.split_message(text, limit=60)
     assert len(parts) > 1
     assert all(len(part) <= 60 for part in parts)
+
+
+def test_parse_sar_dev_output_24h_format() -> None:
+    text = """Linux 6.8.0 (host)\t03/22/2026\t_x86_64_\t(2 CPU)
+10:00:01 IFACE   rxpck/s txpck/s rxkB/s txkB/s rxcmp/s txcmp/s rxmcst/s
+10:00:02 enp0s3  100.00  120.00   10.00   20.00    0.00    0.00     0.00
+10:00:03 enp0s3  120.00  130.00   20.00   30.00    0.00    0.00     0.00
+Average: enp0s3  110.00  125.00   15.00   25.00    0.00    0.00     0.00
+"""
+    mbps = bot._parse_sar_dev_output(text, "enp0s3")
+    assert mbps is not None
+    # ((10+20)+(20+30))/2 = 40 kB/s => 0.3125 Mbps
+    assert abs(mbps - 0.3125) < 1e-6
+
+
+def test_parse_sar_dev_output_ampm_format() -> None:
+    text = """Linux 6.8.0 (host)\t03/22/2026\t_x86_64_\t(2 CPU)
+10:00:01 AM IFACE   rxpck/s txpck/s rxkB/s txkB/s rxcmp/s txcmp/s rxmcst/s
+10:00:02 AM enp0s3 100.00  120.00   12.00   18.00    0.00    0.00     0.00
+10:00:03 AM enp0s3 120.00  130.00   18.00   30.00    0.00    0.00     0.00
+"""
+    mbps = bot._parse_sar_dev_output(text, "enp0s3")
+    assert mbps is not None
+    # ((12+18)+(18+30))/2 = 39 kB/s => 0.3046875 Mbps
+    assert abs(mbps - 0.3046875) < 1e-6
