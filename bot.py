@@ -19,6 +19,7 @@ from uuid import uuid4
 import aiosqlite
 import httpx
 from aiogram import Bot, Dispatcher, F, Router
+from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import (
@@ -4147,7 +4148,8 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             await message.answer("Спасибо, отправили админу. Если нужно, мы уточним детали.")
             return
         if message.text and message.text.startswith("/"):
-            return
+            # Let dedicated command handlers process slash-commands.
+            raise SkipHandler()
         await message.answer(
             "Открыл меню.",
             reply_markup=keyboard_for_user(is_admin=is_admin(tg_id, settings)),
