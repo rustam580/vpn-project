@@ -199,15 +199,16 @@ async def broadcast_menu_update(
     settings: Settings,
     repo: "Repo",
     force: bool = False,
-) -> None:
+) -> tuple[int, int, int, list[str]]:
     if not force and not settings.deploy_broadcast_users:
-        return
+        return (0, 0, 0, [])
     try:
         targets = set(await repo.list_known_telegram_ids())
         targets.update(settings.admin_ids)
         if not targets:
-            return
+            return (0, 0, 0, [])
         text = "⚙️ Обновление завершено. Кнопки обновлены."
+        logging.info("Menu broadcast started: force=%s, targets=%s", force, len(targets))
         sent = 0
         failed = 0
         fail_samples: list[str] = []
@@ -229,13 +230,16 @@ async def broadcast_menu_update(
         if fail_samples:
             summary_lines.append("Примеры ID с ошибкой: " + ", ".join(fail_samples))
         summary = "\n".join(summary_lines)
+        logging.info("Menu broadcast finished: %s", summary.replace("\n", " | "))
         for admin_id in settings.admin_ids:
             try:
                 await bot.send_message(int(admin_id), summary)
             except Exception:
                 logging.exception("Deploy broadcast summary failed for admin %s", admin_id)
+        return (sent, len(targets), failed, fail_samples)
     except Exception:
         logging.exception("Deploy broadcast failed")
+        return (0, 0, 0, [])
 
 
 async def send_deploy_report_if_any(bot: Bot, settings: Settings, repo: "Repo | None" = None) -> None:
@@ -4774,7 +4778,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             return
         await message.answer("Запускаю принудительное обновление кнопок...")
         try:
-            await broadcast_menu_update(
+            sent, total, failed, fail_samples = await broadcast_menu_update(
                 bot=message.bot,
                 settings=settings,
                 repo=repo,
@@ -4784,7 +4788,10 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             logging.exception("broadcast_menu command failed")
             await message.answer(f"Не удалось обновить кнопки: {exc}")
             return
-        await message.answer("Готово. Сводка отправлена админам.")
+        lines = [f"Готово. Доставлено {sent}/{total}, ошибок {failed}."]
+        if fail_samples:
+            lines.append("Примеры ID с ошибкой: " + ", ".join(fail_samples))
+        await message.answer("\n".join(lines))
 
     @router.message(Command("admin_stats"))
     async def admin_stats(message: Message) -> None:
