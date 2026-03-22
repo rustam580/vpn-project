@@ -7,6 +7,7 @@ import html
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -54,6 +55,98 @@ def parse_admin_ids(raw: str) -> set[int]:
         if part:
             result.add(int(part))
     return result
+
+
+def _list_iface_names() -> list[str]:
+    try:
+        lines = Path("/proc/net/dev").read_text(encoding="utf-8").splitlines()
+    except Exception:
+        return []
+    names: list[str] = []
+    for line in lines[2:]:
+        if ":" not in line:
+            continue
+        name = line.split(":", 1)[0].strip()
+        if not name or name == "lo":
+            continue
+        names.append(name)
+    return names
+
+
+def _detect_default_iface() -> str | None:
+    try:
+        lines = Path("/proc/net/route").read_text(encoding="utf-8").splitlines()
+    except Exception:
+        lines = []
+    for line in lines[1:]:
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        iface = parts[0].strip()
+        destination = parts[1].strip()
+        flags_raw = parts[3].strip()
+        try:
+            flags = int(flags_raw, 16)
+        except ValueError:
+            continue
+        if destination == "00000000" and (flags & 0x1) and iface and iface != "lo":
+            return iface
+    candidates = _list_iface_names()
+    return candidates[0] if candidates else None
+
+
+def _resolve_net_iface(configured_iface: str) -> str:
+    configured = configured_iface.strip()
+    iface_names = set(_list_iface_names())
+    if configured and configured in iface_names:
+        return configured
+    detected = _detect_default_iface()
+    if detected:
+        return detected
+    if configured:
+        return configured
+    return "lo"
+
+
+def _detect_port_speed_mbps(iface: str) -> float | None:
+    speed_file = Path(f"/sys/class/net/{iface}/speed")
+    try:
+        raw = speed_file.read_text(encoding="utf-8").strip()
+        speed = float(raw)
+        if 0 < speed < 1_000_000:
+            return speed
+    except Exception:
+        pass
+    try:
+        out = subprocess.check_output(
+            ["ethtool", iface],
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=3,
+        )
+    except Exception:
+        return None
+    m = re.search(r"Speed:\s*([0-9.]+)\s*Mb/s", out)
+    if not m:
+        return None
+    try:
+        val = float(m.group(1))
+    except ValueError:
+        return None
+    return val if val > 0 else None
+
+
+def _resolve_port_speed_mbps(raw: str, iface: str) -> float:
+    normalized = raw.strip().lower()
+    if normalized in {"", "auto"}:
+        return _detect_port_speed_mbps(iface) or 100.0
+    try:
+        value = float(raw)
+    except ValueError:
+        return _detect_port_speed_mbps(iface) or 100.0
+    if value > 0:
+        return value
+    return _detect_port_speed_mbps(iface) or 100.0
 
 
 @dataclass(frozen=True)
@@ -114,6 +207,11 @@ class Settings:
         marzban_base_url = os.getenv("MARZBAN_BASE_URL", "").strip().rstrip("/")
         marzban_username = os.getenv("MARZBAN_USERNAME", "").strip()
         marzban_password = os.getenv("MARZBAN_PASSWORD", "").strip()
+        net_iface = _resolve_net_iface(os.getenv("NET_IFACE", "").strip())
+        port_speed_mbps = _resolve_port_speed_mbps(
+            os.getenv("PORT_SPEED_Mbps", "auto").strip(),
+            net_iface,
+        )
 
         if not bot_token:
             raise ValueError("BOT_TOKEN is required")
@@ -170,8 +268,8 @@ class Settings:
             ops_report_enabled=env_bool("OPS_REPORT_ENABLED", True),
             ops_report_hour=max(0, min(23, int(os.getenv("OPS_REPORT_HOUR", "9")))),
             ops_report_minute=max(0, min(59, int(os.getenv("OPS_REPORT_MINUTE", "0")))),
-            net_iface=os.getenv("NET_IFACE", "ens3").strip() or "ens3",
-            port_speed_mbps=float(os.getenv("PORT_SPEED_Mbps", "100")),
+            net_iface=net_iface,
+            port_speed_mbps=port_speed_mbps,
             port_utilization=float(os.getenv("PORT_UTILIZATION", "0.8")),
             concurrency_ratio=float(os.getenv("CONCURRENCY_RATIO", "0.05")),
         )
@@ -4942,6 +5040,11 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
 async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
     settings = Settings.load()
+    logging.info(
+        "Runtime network settings: iface=%s, port_speed_mbps=%.0f",
+        settings.net_iface,
+        settings.port_speed_mbps,
+    )
     repo = Repo(settings.db_path)
     await repo.open()
     marzban = MarzbanClient(settings)
