@@ -193,8 +193,14 @@ class Settings:
         )
 
 
-async def broadcast_menu_update(*, bot: Bot, settings: Settings, repo: "Repo") -> None:
-    if not settings.deploy_broadcast_users:
+async def broadcast_menu_update(
+    *,
+    bot: Bot,
+    settings: Settings,
+    repo: "Repo",
+    force: bool = False,
+) -> None:
+    if not force and not settings.deploy_broadcast_users:
         return
     try:
         targets = set(await repo.list_known_telegram_ids())
@@ -407,6 +413,15 @@ class Repo:
             )
             """
         )
+        await self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS known_chats (
+                telegram_id INTEGER PRIMARY KEY,
+                first_seen_at INTEGER NOT NULL,
+                last_seen_at INTEGER NOT NULL
+            )
+            """
+        )
         await self.conn.commit()
 
     async def _ensure_payments_columns(self) -> None:
@@ -464,6 +479,21 @@ class Repo:
         )
         await self.conn.commit()
         await self.upsert_device(telegram_id, 1, marzban_username)
+        await self.touch_chat(telegram_id)
+
+    async def touch_chat(self, telegram_id: int) -> None:
+        assert self.conn is not None
+        now = int(time.time())
+        await self.conn.execute(
+            """
+            INSERT INTO known_chats (telegram_id, first_seen_at, last_seen_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(telegram_id) DO UPDATE
+            SET last_seen_at = excluded.last_seen_at
+            """,
+            (telegram_id, now, now),
+        )
+        await self.conn.commit()
 
     async def upsert_payment(
         self,
@@ -574,6 +604,8 @@ class Repo:
         assert self.conn is not None
         c = await self.conn.execute(
             """
+            SELECT telegram_id FROM known_chats
+            UNION
             SELECT telegram_id FROM users
             UNION
             SELECT telegram_id FROM devices
@@ -3125,12 +3157,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             )
         except Exception:
             logging.exception("Deploy start via systemd-run failed")
-        try:
-            subprocess.Popen([str(script)])
-            return True
-        except Exception:
-            logging.exception("Deploy failed to start")
-            return False
+        return False
 
     async def schedule_deploy_report(bot: Bot) -> None:
         await asyncio.sleep(6)
@@ -3315,6 +3342,10 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
         if not message.from_user:
             return False
         tg_id = int(message.from_user.id)
+        try:
+            await repo.touch_chat(tg_id)
+        except Exception:
+            logging.exception("Failed to touch chat %s on message", tg_id)
         if is_admin(tg_id, settings):
             return True
         if message_limiter.allow(f"msg:{tg_id}"):
@@ -3326,6 +3357,10 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
         if not callback.from_user:
             return False
         tg_id = int(callback.from_user.id)
+        try:
+            await repo.touch_chat(tg_id)
+        except Exception:
+            logging.exception("Failed to touch chat %s on callback", tg_id)
         if is_admin(tg_id, settings):
             return True
         if callback_limiter.allow(f"cb:{tg_id}"):
@@ -4417,8 +4452,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             if not body:
                 await callback.message.answer("Нет текста рассылки. Сначала введите текст.")
                 return
-            users = await repo.list_users()
-            targets = {int(row["telegram_id"]) for row in users if row.get("telegram_id") is not None}
+            targets = set(await repo.list_known_telegram_ids())
             if not targets:
                 await callback.message.answer("Нет пользователей для рассылки.")
                 return
@@ -4470,6 +4504,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                 "/link <telegram_id> <marzban_username>\n"
                 "/user <telegram_id>\n"
                 "/broadcast <текст>\n"
+                "/broadcast_menu\n"
                 "/setenv <KEY> <VALUE>\n"
                 "/deploy\n"
                 "/ref_stats [telegram_id]\n"
@@ -4483,6 +4518,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                 "/setenv DEVICE_LIMIT 0\n"
                 "/setenv PAY_RUB 149\n"
                 "/setenv DEPLOY_BROADCAST_USERS 1\n"
+                "/broadcast_menu\n"
                 "/deploy\n"
                 "/ref_stats\n"
                 "/disable 386029735\n"
@@ -4728,6 +4764,27 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             asyncio.create_task(schedule_deploy_report(message.bot))
         else:
             await message.answer("Не удалось запустить deploy.")
+
+    @router.message(Command("broadcast_menu"))
+    async def broadcast_menu_cmd(message: Message) -> None:
+        if not await guard_message_rate_limit(message):
+            return
+        if not message.from_user or not is_admin(int(message.from_user.id), settings):
+            await message.answer("Недостаточно прав.")
+            return
+        await message.answer("Запускаю принудительное обновление кнопок...")
+        try:
+            await broadcast_menu_update(
+                bot=message.bot,
+                settings=settings,
+                repo=repo,
+                force=True,
+            )
+        except Exception as exc:
+            logging.exception("broadcast_menu command failed")
+            await message.answer(f"Не удалось обновить кнопки: {exc}")
+            return
+        await message.answer("Готово. Сводка отправлена админам.")
 
     @router.message(Command("admin_stats"))
     async def admin_stats(message: Message) -> None:

@@ -86,5 +86,6 @@ async def test_list_known_telegram_ids_unions_all_sources(repo) -> None:
         pay_url="https://pay.local/inv-known-1",
         status="pending",
     )
+    await repo.touch_chat(3004)
     ids = await repo.list_known_telegram_ids()
-    assert ids == [3001, 3002, 3003]
+    assert ids == [3001, 3002, 3003, 3004]
