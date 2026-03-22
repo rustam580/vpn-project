@@ -1,0 +1,10 @@
+[Unit]
+Description=VPN Bot restore check from latest backup
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Environment=BACKUP_DIR=/opt/backups/vpn-bot
+ExecStart=/usr/local/sbin/vpn-bot-restore-check.sh

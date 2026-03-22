@@ -1,0 +1,10 @@
+[Unit]
+Description=Run VPN bot backup daily
+
+[Timer]
+OnCalendar=*-*-* 04:15:00
+Persistent=true
+Unit=vpn-bot-backup.service
+
+[Install]
+WantedBy=timers.target

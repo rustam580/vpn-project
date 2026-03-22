@@ -1,0 +1,11 @@
+[Unit]
+Description=VPN Bot backup archive
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Environment=BACKUP_DIR=/opt/backups/vpn-bot
+Environment=RETENTION_DAYS=14
+ExecStart=/usr/local/sbin/vpn-bot-backup.sh

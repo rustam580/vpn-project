@@ -1,0 +1,10 @@
+[Unit]
+Description=Run VPN bot restore check daily
+
+[Timer]
+OnCalendar=*-*-* 04:30:00
+Persistent=true
+Unit=vpn-bot-restore-check.service
+
+[Install]
+WantedBy=timers.target
