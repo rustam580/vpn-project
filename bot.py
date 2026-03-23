@@ -1445,6 +1445,7 @@ async def send_links(message: Message, user: dict[str, Any]) -> None:
     safe_link = html.escape(link)
     text = f"<code>{safe_link}</code>"
     await message.answer(text, parse_mode="HTML", disable_web_page_preview=True)
+    await message.answer(config_import_hint_text())
 
 
 def _link_preview(link: str) -> str:
@@ -1604,6 +1605,40 @@ def split_message(text: str, limit: int = 3500) -> list[str]:
     if current:
         parts.append(current)
     return parts
+
+
+def quick_connect_guide_text() -> str:
+    return (
+        "📘 Короткая инструкция по подключению VPN\n\n"
+        "1) Нажмите «🔑 Получить конфиг».\n"
+        "2) Откройте `configs.txt` и скопируйте ОДНУ ссылку для нужного устройства.\n"
+        "3) Импортируйте ссылку в клиент VPN с поддержкой VLESS.\n\n"
+        "Рекомендуемые клиенты:\n"
+        "- iOS: Happ / FoXray / v2rayTun\n"
+        "- Android: v2rayNG / Hiddify\n"
+        "- Windows: v2rayN / Hiddify / Nekoray\n"
+        "- macOS: Hiddify / Nekoray\n\n"
+        "Важно:\n"
+        "- Один конфиг = одно устройство.\n"
+        "- Для нового устройства используйте «📱 Добавить устройство».\n"
+        "- Для переноса на другой телефон используйте «🔁 Заменить устройство».\n\n"
+        "Если не подключается:\n"
+        "1) Обновите конфиг в боте и импортируйте заново.\n"
+        "2) Проверьте дату и время на устройстве (авто).\n"
+        "3) Выключите/включите VPN в клиенте.\n"
+        "4) Если не помогло — «🆘 Поддержка»."
+    )
+
+
+def config_import_hint_text() -> str:
+    return (
+        "🧭 Как подключить:\n"
+        "1) Откройте файл `configs.txt`.\n"
+        "2) Скопируйте одну ссылку под нужным устройством.\n"
+        "3) Импортируйте ссылку в VPN-клиент (VLESS).\n"
+        "4) Включите профиль.\n\n"
+        "Подробная инструкция: /guide"
+    )
 
 
 def _read_iface_bytes(iface: str) -> tuple[int, int] | None:
@@ -1874,6 +1909,7 @@ async def send_device_links(
     cfg_buttons = _configs_keyboard([(idx, label) for idx, label, _ in index_map])
     if cfg_buttons:
         await message.answer("Показать конфиг в чате:", reply_markup=cfg_buttons)
+    await message.answer(config_import_hint_text())
 
 
 def _render_config_block(label: str, link: str) -> str:
@@ -1976,6 +2012,7 @@ async def send_device_links_to_bot(
     cfg_buttons = _configs_keyboard(index_map)
     if cfg_buttons:
         await bot.send_message(telegram_id, "Показать конфиг в чате:", reply_markup=cfg_buttons)
+    await bot.send_message(telegram_id, config_import_hint_text())
 
 
 async def ensure_user(
@@ -3672,11 +3709,12 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                 "👋 Привет. Я выдам VPN и помогу подключиться.\n\n"
                 f"🎁 Триал: {settings.trial_days} день, {plan_gb_text(settings.trial_gb)}.\n"
                 f"💳 Тариф: {settings.pay_days} дней, {plan_gb_text(settings.pay_gb)}, {settings.pay_rub:.2f} RUB.\n"
-            f"📱 Лимит устройств: {format_device_limit(settings.device_limit)}\n\n"
+                f"📱 Лимит устройств: {format_device_limit(settings.device_limit)}\n\n"
                 "Шаги:\n"
                 "1) Получить конфиг\n"
                 "2) Подключить в приложении\n"
-                "3) Продлить при необходимости"
+                "3) Продлить при необходимости\n\n"
+                "Если нужна пошаговая инструкция: /guide"
             ),
             reply_markup=keyboard_for_user(is_admin=is_admin(tg_id, settings)),
         )
@@ -3699,6 +3737,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
         await message.answer(
             "Команды для пользователя:\n"
             "/config — получить/обновить конфиги\n"
+            "/guide — инструкция по подключению\n"
             "/buy — купить доступ\n"
             "/replace — переиздать конфиг устройства\n"
             "/ref — реферальная ссылка\n"
@@ -3752,12 +3791,22 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
         await message.answer(
             "FAQ:\n\n"
             "Как подключиться?\n"
-            "Нажмите «Получить конфиг» и импортируйте ссылку в V2Ray/V2Box/Happ.\n\n"
+            "Откройте /guide — там пошаговый тутор для iOS/Android/ПК.\n\n"
+            "Какой клиент выбрать?\n"
+            "Любой клиент с поддержкой VLESS. Рекомендации есть в /guide.\n\n"
             "Не работает интернет после импорта?\n"
-            "Обновите конфиг, выберите другой профиль, проверьте дату и время.\n\n"
+            "Обновите конфиг в боте, импортируйте заново, проверьте дату/время (авто), затем перезапустите VPN-клиент.\n\n"
             "Оплата прошла, но доступ не продлен?\n"
-            "Нажмите «Проверить оплату» или /check."
+            "Нажмите «Проверить оплату» или /check <provider> <payment_id>.\n\n"
+            "Как добавить еще телефон?\n"
+            "Нажмите «📱 Добавить устройство» (это отдельный слот, срок не продлевает)."
         )
+
+    @router.message(Command("guide"))
+    async def guide_cmd(message: Message) -> None:
+        if not await guard_message_rate_limit(message):
+            return
+        await message.answer(quick_connect_guide_text())
 
     @router.message(Command("support"))
     async def support_cmd(message: Message) -> None:
@@ -4782,8 +4831,9 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                 "Оплата получена, сейчас проверим вручную. Обычно подтверждение занимает до 2-5 минут. "
                 "Нажмите 'Проверить оплату' или отправьте /check <provider> <payment_id>.\n\n"
                 "2) Не подключается после импорта:\n"
-                "Проверьте дату/время на телефоне, обновите конфиг в боте и импортируйте снова. "
-                "Если не поможет, пришлите скрин ошибки клиента.\n\n"
+                "Откройте /guide и пройдите шаги подключения для вашей платформы. "
+                "Также проверьте дату/время (авто), обновите конфиг и импортируйте заново. "
+                "Если не поможет, пришлите скрин ошибки клиента и название приложения.\n\n"
                 "3) Доступ закончился:\n"
                 "Срок доступа истек. Нажмите 'Купить доступ', после оплаты доступ продлится автоматически."
             )

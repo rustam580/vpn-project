@@ -38,6 +38,14 @@ def test_normalize_channel_url_accepts_common_formats() -> None:
     assert bot.normalize_channel_url("  ") is None
 
 
+def test_quick_connect_guide_contains_core_sections() -> None:
+    text = bot.quick_connect_guide_text()
+    assert "iOS" in text
+    assert "Android" in text
+    assert "Windows" in text
+    assert "Один конфиг = одно устройство" in text
+
+
 def test_extract_links_deduplicates_and_ignores_invalid_values() -> None:
     user = {"links": [" vless://a ", "vless://a", "", 123, "vless://b"]}
     assert bot.extract_links(user) == ["vless://a", "vless://b"]
