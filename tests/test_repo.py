@@ -121,3 +121,51 @@ async def test_has_paid_plan_payment_counts_only_plan_paid(repo) -> None:
         purpose="plan",
     )
     assert await repo.has_paid_plan_payment(tg_id) is True
+
+
+async def test_events_summary_and_latest_payment(repo, repo_conn) -> None:
+    tg_id = 5006
+    now = int(time.time())
+
+    await repo.log_event(event_type="user_start", telegram_id=tg_id)
+    await repo.log_event(event_type="config_requested", telegram_id=tg_id)
+    await repo.log_event(event_type="payment_created_plan", telegram_id=tg_id)
+    summary = await repo.event_counts_since(now - 60)
+    assert summary["user_start"]["total"] >= 1
+    assert summary["config_requested"]["users"] == 1
+
+    await repo.upsert_payment(
+        provider="card",
+        external_id="older-pay",
+        telegram_id=tg_id,
+        days=30,
+        gb=0,
+        amount_rub=99.0,
+        pay_url="https://pay.local/older-pay",
+        status="pending",
+        purpose="plan",
+    )
+    await repo.upsert_payment(
+        provider="card",
+        external_id="new-pay",
+        telegram_id=tg_id,
+        days=30,
+        gb=0,
+        amount_rub=199.0,
+        pay_url="https://pay.local/new-pay",
+        status="paid_applied",
+        purpose="plan",
+    )
+    await repo_conn.execute(
+        "UPDATE payments SET updated_at = ? WHERE external_id = ?",
+        (now - 10, "older-pay"),
+    )
+    await repo_conn.execute(
+        "UPDATE payments SET updated_at = ? WHERE external_id = ?",
+        (now + 10, "new-pay"),
+    )
+    await repo_conn.commit()
+
+    latest = await repo.get_latest_payment(tg_id)
+    assert latest is not None
+    assert latest["external_id"] == "new-pay"

@@ -33,6 +33,13 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
 )
 from dotenv import load_dotenv
+from app_texts import (
+    build_config_import_hint_text,
+    build_quick_connect_guide_text,
+    build_start_text,
+    build_support_templates_text,
+    build_user_faq_text,
+)
 
 BYTES_IN_GB = 1024**3
 DEPLOY_REPORT_PATH = Path("/opt/vpn-bot/deploy/last-deploy.log")
@@ -527,6 +534,24 @@ class Repo:
             )
             """
         )
+        await self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                telegram_id INTEGER,
+                event_type TEXT NOT NULL,
+                event_value TEXT,
+                event_meta TEXT,
+                created_at INTEGER NOT NULL
+            )
+            """
+        )
+        await self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at)"
+        )
+        await self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_events_type_created ON events(event_type, created_at)"
+        )
         await self.conn.commit()
 
     async def _ensure_payments_columns(self) -> None:
@@ -827,6 +852,79 @@ class Repo:
         for row in rows:
             result[str(row["status"])] = int(row["cnt"])
         return result
+
+    async def log_event(
+        self,
+        *,
+        event_type: str,
+        telegram_id: int | None = None,
+        event_value: str = "",
+        event_meta: dict[str, Any] | None = None,
+    ) -> None:
+        assert self.conn is not None
+        meta_raw = ""
+        if event_meta:
+            try:
+                meta_raw = json.dumps(event_meta, ensure_ascii=False, separators=(",", ":"))
+            except Exception:
+                meta_raw = ""
+        await self.conn.execute(
+            """
+            INSERT INTO events (telegram_id, event_type, event_value, event_meta, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                telegram_id,
+                event_type.strip()[:80],
+                event_value.strip()[:250],
+                meta_raw,
+                int(time.time()),
+            ),
+        )
+        await self.conn.commit()
+
+    async def event_counts_since(self, since_ts: int) -> dict[str, dict[str, int]]:
+        assert self.conn is not None
+        c = await self.conn.execute(
+            """
+            SELECT
+                event_type,
+                COUNT(*) AS total,
+                COUNT(DISTINCT telegram_id) AS users
+            FROM events
+            WHERE created_at >= ?
+            GROUP BY event_type
+            """,
+            (since_ts,),
+        )
+        rows = await c.fetchall()
+        await c.close()
+        data: dict[str, dict[str, int]] = {}
+        for row in rows:
+            key = str(row["event_type"] or "").strip()
+            if not key:
+                continue
+            data[key] = {
+                "total": int(row["total"] or 0),
+                "users": int(row["users"] or 0),
+            }
+        return data
+
+    async def get_latest_payment(self, telegram_id: int) -> dict[str, Any] | None:
+        assert self.conn is not None
+        c = await self.conn.execute(
+            """
+            SELECT provider, external_id, purpose, device_slot, days, gb, amount_rub, status, updated_at
+            FROM payments
+            WHERE telegram_id = ?
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (telegram_id,),
+        )
+        row = await c.fetchone()
+        await c.close()
+        return dict(row) if row else None
 
     async def has_paid_plan_payment(self, telegram_id: int) -> bool:
         assert self.conn is not None
@@ -1360,6 +1458,22 @@ def format_time_left(expire_ts: int) -> str:
     return f"{hours} ч."
 
 
+def format_last_online(raw: Any) -> str:
+    if raw is None:
+        return "нет данных"
+    text = str(raw).strip()
+    if not text:
+        return "нет данных"
+    normalized = text.replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(normalized)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).strftime("%d.%m.%Y %H:%M UTC")
+    except Exception:
+        return text
+
+
 def build_username(telegram_id: int) -> str:
     return f"tg_{telegram_id}"
 
@@ -1608,37 +1722,11 @@ def split_message(text: str, limit: int = 3500) -> list[str]:
 
 
 def quick_connect_guide_text() -> str:
-    return (
-        "📘 Короткая инструкция по подключению VPN\n\n"
-        "1) Нажмите «🔑 Получить конфиг».\n"
-        "2) Откройте `configs.txt` и скопируйте ОДНУ ссылку для нужного устройства.\n"
-        "3) Импортируйте ссылку в клиент VPN с поддержкой VLESS.\n\n"
-        "Рекомендуемые клиенты:\n"
-        "- iOS: Happ / FoXray / v2rayTun\n"
-        "- Android: v2rayNG / Hiddify\n"
-        "- Windows: v2rayN / Hiddify / Nekoray\n"
-        "- macOS: Hiddify / Nekoray\n\n"
-        "Важно:\n"
-        "- Один конфиг = одно устройство.\n"
-        "- Для нового устройства используйте «📱 Добавить устройство».\n"
-        "- Для переноса на другой телефон используйте «🔁 Заменить устройство».\n\n"
-        "Если не подключается:\n"
-        "1) Обновите конфиг в боте и импортируйте заново.\n"
-        "2) Проверьте дату и время на устройстве (авто).\n"
-        "3) Выключите/включите VPN в клиенте.\n"
-        "4) Если не помогло — «🆘 Поддержка»."
-    )
+    return build_quick_connect_guide_text()
 
 
 def config_import_hint_text() -> str:
-    return (
-        "🧭 Как подключить:\n"
-        "1) Откройте файл `configs.txt`.\n"
-        "2) Скопируйте одну ссылку под нужным устройством.\n"
-        "3) Импортируйте ссылку в VPN-клиент (VLESS).\n"
-        "4) Включите профиль.\n\n"
-        "Подробная инструкция: /guide"
-    )
+    return build_config_import_hint_text()
 
 
 def _read_iface_bytes(iface: str) -> tuple[int, int] | None:
@@ -2642,6 +2730,19 @@ async def check_and_apply_payment(
         await repo.set_payment_status(provider, external_id, status)
         raise
     await repo.set_payment_status(provider, external_id, "paid_applied")
+    try:
+        await repo.log_event(
+            event_type=("payment_paid_device" if purpose == "device_add" else "payment_paid_plan"),
+            telegram_id=telegram_id,
+            event_value=provider,
+            event_meta={
+                "external_id": external_id,
+                "purpose": purpose,
+                "device_slot": int(payment.get("device_slot") or 0),
+            },
+        )
+    except Exception:
+        logging.exception("Payment event track failed for %s", external_id)
     if bot is not None:
         try:
             await notify_admin_payment(bot=bot, settings=settings, repo=repo, payment=payment)
@@ -2779,6 +2880,38 @@ async def notify_admin_requeued_processing(
             logging.exception("Requeue notify: failed to send to admin %s", admin_id)
 
 
+def _event_users(summary: dict[str, dict[str, int]], key: str) -> int:
+    item = summary.get(key) or {}
+    return int(item.get("users", 0) or 0)
+
+
+async def build_funnel_24h_text(repo: Repo) -> str:
+    since_ts = int(time.time()) - 86400
+    summary = await repo.event_counts_since(since_ts)
+    start_users = _event_users(summary, "user_start")
+    config_users = _event_users(summary, "config_requested")
+    trial_users = _event_users(summary, "trial_issued")
+    pay_create_users = _event_users(summary, "payment_created_plan")
+    pay_apply_users = _event_users(summary, "payment_paid_plan")
+    issue_users = _event_users(summary, "issue_reported")
+
+    if start_users <= 0 and config_users <= 0 and pay_create_users <= 0 and pay_apply_users <= 0:
+        return "Воронка 24ч:\n- данных пока нет"
+
+    config_conv = (config_users / start_users * 100.0) if start_users > 0 else 0.0
+    pay_conv = (pay_apply_users / start_users * 100.0) if start_users > 0 else 0.0
+    checkout_conv = (pay_apply_users / pay_create_users * 100.0) if pay_create_users > 0 else 0.0
+    return (
+        "Воронка 24ч:\n"
+        f"- Стартов: {start_users}\n"
+        f"- Получили конфиг: {config_users} ({config_conv:.1f}% от стартов)\n"
+        f"- Выдано триалов: {trial_users}\n"
+        f"- Создали платеж (тариф): {pay_create_users}\n"
+        f"- Оплатили тариф: {pay_apply_users} ({pay_conv:.1f}% от стартов, {checkout_conv:.1f}% от checkout)\n"
+        f"- Жалобы на подключение: {issue_users}"
+    )
+
+
 async def build_admin_stats_text(repo: Repo, marzban: MarzbanClient) -> str:
     rows = await repo.list_users()
     total_local = len(rows)
@@ -2815,6 +2948,11 @@ async def build_admin_stats_text(repo: Repo, marzban: MarzbanClient) -> str:
     paid_applied = pay_counts.get("paid_applied", 0)
     ref_counts = await repo.get_referral_global_stats()
 
+    funnel_text = await build_funnel_24h_text(repo)
+    db_tip = ""
+    if active >= 300:
+        db_tip = "\n\n⚠️ Рекомендация: активных пользователей много, запланируйте миграцию с SQLite на Postgres."
+
     return (
         "Статистика:\n"
         f"- Пользователей в локальной БД: {total_local}\n"
@@ -2830,7 +2968,9 @@ async def build_admin_stats_text(repo: Repo, marzban: MarzbanClient) -> str:
         "Рефералка:\n"
         f"- Всего приглашений: {ref_counts['total']}\n"
         f"- Бонус выдан: {ref_counts['rewarded']}\n"
-        f"- Ожидают первую оплату: {ref_counts['pending']}"
+        f"- Ожидают первую оплату: {ref_counts['pending']}\n\n"
+        f"{funnel_text}"
+        f"{db_tip}"
     )
 
 
@@ -3193,6 +3333,19 @@ async def cryptobot_auto_worker(
                             )
                         await repo.set_payment_status("crypto", external_id, "paid_applied")
                         try:
+                            await repo.log_event(
+                                event_type=("payment_paid_device" if purpose == "device_add" else "payment_paid_plan"),
+                                telegram_id=int(payment["telegram_id"]),
+                                event_value="crypto",
+                                event_meta={
+                                    "external_id": external_id,
+                                    "purpose": purpose,
+                                    "device_slot": int(payment.get("device_slot") or 0),
+                                },
+                            )
+                        except Exception:
+                            logging.exception("Auto crypto: failed to track payment event %s", external_id)
+                        try:
                             await notify_admin_payment(
                                 bot=bot,
                                 settings=settings,
@@ -3319,6 +3472,19 @@ async def yookassa_auto_worker(
                                 )
                             await repo.set_payment_status("card", external_id, "paid_applied")
                             try:
+                                await repo.log_event(
+                                    event_type=("payment_paid_device" if purpose == "device_add" else "payment_paid_plan"),
+                                    telegram_id=int(payment["telegram_id"]),
+                                    event_value="card",
+                                    event_meta={
+                                        "external_id": external_id,
+                                        "purpose": purpose,
+                                        "device_slot": int(payment.get("device_slot") or 0),
+                                    },
+                                )
+                            except Exception:
+                                logging.exception("Auto yookassa: failed to track payment event %s", external_id)
+                            try:
                                 await notify_admin_payment(
                                     bot=bot,
                                     settings=settings,
@@ -3387,6 +3553,23 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
     pending_broadcast_text: dict[int, str] = {}
     pending_broadcast_format: dict[int, str] = {}
     pending_broadcast_buttons: dict[int, bool] = {}
+
+    async def track_event(
+        event_type: str,
+        *,
+        telegram_id: int | None = None,
+        event_value: str = "",
+        event_meta: dict[str, Any] | None = None,
+    ) -> None:
+        try:
+            await repo.log_event(
+                event_type=event_type,
+                telegram_id=telegram_id,
+                event_value=event_value,
+                event_meta=event_meta,
+            )
+        except Exception:
+            logging.exception("Failed to track event %s", event_type)
 
     def start_deploy(script: Path) -> bool:
         unit_name = f"vpn-ops-deploy-{int(time.time())}"
@@ -3476,12 +3659,44 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                 device_id = int(row["device_id"])
                 label = _device_label(device_id, row.get("device_name"))
                 username = str(row.get("marzban_username") or "")
-                if label.startswith("Устройство"):
-                    lines.append(f"- {device_id}. {html.escape(label)} ({html.escape(username)})")
+                mz_user = await marzban.get_user(username) if username else None
+                if not mz_user:
+                    state = "не найден в Marzban"
                 else:
-                    lines.append(f"- {device_id}. Устройство {device_id} — {html.escape(label)} ({html.escape(username)})")
+                    state = (
+                        f"{mz_user.get('status', 'unknown')}, "
+                        f"online: {format_last_online(mz_user.get('online_at') or mz_user.get('last_online') or mz_user.get('last_online_at'))}, "
+                        f"traffic: {format_used(int(mz_user.get('used_traffic', 0) or 0))}"
+                    )
+                if label.startswith("Устройство"):
+                    lines.append(
+                        f"- {device_id}. {html.escape(label)} ({html.escape(username)}): {html.escape(state)}"
+                    )
+                else:
+                    lines.append(
+                        f"- {device_id}. Устройство {device_id} — {html.escape(label)} ({html.escape(username)}): {html.escape(state)}"
+                    )
         else:
             lines.append("Устройства: нет")
+
+        latest_payment = await repo.get_latest_payment(target_id)
+        if latest_payment:
+            purpose = str(latest_payment.get("purpose") or "plan")
+            provider = str(latest_payment.get("provider") or "")
+            status = str(latest_payment.get("status") or "")
+            amount = float(latest_payment.get("amount_rub") or 0)
+            updated = int(latest_payment.get("updated_at") or 0)
+            updated_text = (
+                datetime.fromtimestamp(updated, tz=timezone.utc).strftime("%d.%m.%Y %H:%M UTC")
+                if updated > 0
+                else "n/a"
+            )
+            lines.append(
+                f"Последний платеж: {html.escape(provider)}, {html.escape(purpose)}, "
+                f"{amount:.2f} RUB, {html.escape(status)}, {updated_text}"
+            )
+        else:
+            lines.append("Последний платеж: нет данных")
 
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
@@ -3705,19 +3920,18 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                     await message.answer("Нельзя указать себя как реферера.")
 
         await message.answer(
-            (
-                "👋 Привет. Я выдам VPN и помогу подключиться.\n\n"
-                f"🎁 Триал: {settings.trial_days} день, {plan_gb_text(settings.trial_gb)}.\n"
-                f"💳 Тариф: {settings.pay_days} дней, {plan_gb_text(settings.pay_gb)}, {settings.pay_rub:.2f} RUB.\n"
-                f"📱 Лимит устройств: {format_device_limit(settings.device_limit)}\n\n"
-                "Шаги:\n"
-                "1) Получить конфиг\n"
-                "2) Подключить в приложении\n"
-                "3) Продлить при необходимости\n\n"
-                "Если нужна пошаговая инструкция: /guide"
+            build_start_text(
+                trial_days=settings.trial_days,
+                trial_gb_text=plan_gb_text(settings.trial_gb),
+                pay_days=settings.pay_days,
+                pay_gb_text=plan_gb_text(settings.pay_gb),
+                pay_rub=settings.pay_rub,
+                device_limit_text=format_device_limit(settings.device_limit),
             ),
             reply_markup=keyboard_for_user(is_admin=is_admin(tg_id, settings)),
         )
+        if tg_id is not None:
+            await track_event("user_start", telegram_id=tg_id)
 
     @router.message(F.text.contains("/grant_perm"))
     async def grant_perm_any(message: Message) -> None:
@@ -3738,6 +3952,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             "Команды для пользователя:\n"
             "/config — получить/обновить конфиги\n"
             "/guide — инструкция по подключению\n"
+            "/diag — диагностика подключения\n"
             "/buy — купить доступ\n"
             "/replace — переиздать конфиг устройства\n"
             "/ref — реферальная ссылка\n"
@@ -3788,19 +4003,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
     async def faq_cmd(message: Message) -> None:
         if not await guard_message_rate_limit(message):
             return
-        await message.answer(
-            "FAQ:\n\n"
-            "Как подключиться?\n"
-            "Откройте /guide — там пошаговый тутор для iOS/Android/ПК.\n\n"
-            "Какой клиент выбрать?\n"
-            "Любой клиент с поддержкой VLESS. Рекомендации есть в /guide.\n\n"
-            "Не работает интернет после импорта?\n"
-            "Обновите конфиг в боте, импортируйте заново, проверьте дату/время (авто), затем перезапустите VPN-клиент.\n\n"
-            "Оплата прошла, но доступ не продлен?\n"
-            "Нажмите «Проверить оплату» или /check <provider> <payment_id>.\n\n"
-            "Как добавить еще телефон?\n"
-            "Нажмите «📱 Добавить устройство» (это отдельный слот, срок не продлевает)."
-        )
+        await message.answer(build_user_faq_text())
 
     @router.message(Command("guide"))
     async def guide_cmd(message: Message) -> None:
@@ -3812,6 +4015,9 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
     async def support_cmd(message: Message) -> None:
         if not await guard_message_rate_limit(message):
             return
+        tg_id = int(message.from_user.id) if message.from_user else None
+        if tg_id is not None:
+            await track_event("support_opened", telegram_id=tg_id)
         if settings.support_username:
             await message.answer(
                 f"{settings.support_text}\n\nКонтакт: https://t.me/{settings.support_username}"
@@ -3825,6 +4031,9 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
     async def channel_cmd(message: Message) -> None:
         if not await guard_message_rate_limit(message):
             return
+        tg_id = int(message.from_user.id) if message.from_user else None
+        if tg_id is not None:
+            await track_event("channel_opened", telegram_id=tg_id)
         link = normalize_channel_url(settings.channel_url)
         if link:
             await message.answer(f"📢 Наш канал:\n{link}")
@@ -3919,6 +4128,61 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             marzban=marzban,
             settings=settings,
         )
+
+    @router.message(Command("diag"))
+    async def diag_cmd(message: Message) -> None:
+        if not await guard_message_rate_limit(message):
+            return
+        if not message.from_user:
+            return
+        tg_id = int(message.from_user.id)
+        lines: list[str] = [f"🧪 Диагностика\nTG: {tg_id}"]
+
+        devices = await repo.list_devices(tg_id)
+        if not devices:
+            lines.append("Профиль не найден. Нажмите «🔑 Получить конфиг».")
+            await message.answer("\n".join(lines))
+            return
+
+        lines.append("Устройства:")
+        for row in devices:
+            device_id = int(row["device_id"])
+            label = _device_label(device_id, row.get("device_name"))
+            username = str(row.get("marzban_username") or "").strip()
+            mz_user = await marzban.get_user(username) if username else None
+            if not mz_user:
+                lines.append(f"- {device_id}. {label}: не найдено в Marzban")
+                continue
+            status = str(mz_user.get("status", "unknown"))
+            used = format_used(int(mz_user.get("used_traffic", 0) or 0))
+            expire = format_expire(int(mz_user.get("expire", 0) or 0))
+            online = format_last_online(
+                mz_user.get("online_at") or mz_user.get("last_online") or mz_user.get("last_online_at")
+            )
+            lines.append(
+                f"- {device_id}. {label}: {status}, онлайн: {online}, трафик: {used}, до: {expire}"
+            )
+
+        latest_payment = await repo.get_latest_payment(tg_id)
+        if latest_payment:
+            purpose = str(latest_payment.get("purpose") or "plan")
+            provider = str(latest_payment.get("provider") or "")
+            status = str(latest_payment.get("status") or "")
+            amount = float(latest_payment.get("amount_rub") or 0)
+            updated = int(latest_payment.get("updated_at") or 0)
+            updated_text = (
+                datetime.fromtimestamp(updated, tz=timezone.utc).strftime("%d.%m.%Y %H:%M UTC")
+                if updated > 0
+                else "n/a"
+            )
+            lines.append(
+                f"Последний платеж: {provider}, {purpose}, {amount:.2f} RUB, {status}, {updated_text}"
+            )
+        else:
+            lines.append("Платежи: не найдено")
+
+        lines.append("Если есть проблемы, отправьте «⚠️ Проблема с подключением».")
+        await message.answer("\n".join(lines))
 
     @router.message(Command("buy"))
     async def buy_cmd(message: Message) -> None:
@@ -4079,8 +4343,10 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             return
         if not message.from_user:
             return
+        tg_id = int(message.from_user.id)
+        await track_event("config_requested", telegram_id=tg_id)
         _, user, created = await ensure_device(
-            telegram_id=int(message.from_user.id),
+            telegram_id=tg_id,
             device_id=1,
             repo=repo,
             marzban=marzban,
@@ -4091,12 +4357,13 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             await message.answer(
                 f"🎁 Тестовый доступ выдан: {settings.trial_days} день, {plan_gb_text(settings.trial_gb)}."
             )
+            await track_event("trial_issued", telegram_id=tg_id)
         else:
             await message.answer("📊 Ваш текущий доступ:")
         await send_status(message, user or {})
         await send_device_links(
             message=message,
-            telegram_id=int(message.from_user.id),
+            telegram_id=tg_id,
             repo=repo,
             marzban=marzban,
             settings=settings,
@@ -4421,6 +4688,11 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             if username:
                 header += f" (@{username})"
             report = f"{header}\n\n{text}"
+            await track_event(
+                "issue_reported",
+                telegram_id=tg_id,
+                event_meta={"text_len": len(text)},
+            )
             for admin_id in settings.admin_ids:
                 try:
                     await message.bot.send_message(int(admin_id), report)
@@ -4520,6 +4792,12 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                 status="pending",
                 purpose="plan",
             )
+            await track_event(
+                "payment_created_plan",
+                telegram_id=tg_id,
+                event_value=provider,
+                event_meta={"external_id": external_id, "amount_rub": settings.pay_rub},
+            )
             await callback.message.answer(
                 f"✅ Платеж создан ({provider}).\nID: {external_id}",
                 reply_markup=pay_action_keyboard(provider, external_id, pay_url),
@@ -4585,6 +4863,16 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                 status="pending",
                 purpose="device_add",
                 device_slot=slot,
+            )
+            await track_event(
+                "payment_created_device",
+                telegram_id=tg_id,
+                event_value=provider,
+                event_meta={
+                    "external_id": external_id,
+                    "slot": slot,
+                    "amount_rub": settings.device_add_rub,
+                },
             )
             await callback.message.answer(
                 f"✅ Платеж за устройство создан ({provider}).\n"
@@ -4825,18 +5113,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             return
         if action == "support_templates":
             await callback.answer("Готово")
-            await callback.message.answer(
-                "Шаблоны поддержки:\n\n"
-                "1) Оплата не подтвердилась:\n"
-                "Оплата получена, сейчас проверим вручную. Обычно подтверждение занимает до 2-5 минут. "
-                "Нажмите 'Проверить оплату' или отправьте /check <provider> <payment_id>.\n\n"
-                "2) Не подключается после импорта:\n"
-                "Откройте /guide и пройдите шаги подключения для вашей платформы. "
-                "Также проверьте дату/время (авто), обновите конфиг и импортируйте заново. "
-                "Если не поможет, пришлите скрин ошибки клиента и название приложения.\n\n"
-                "3) Доступ закончился:\n"
-                "Срок доступа истек. Нажмите 'Купить доступ', после оплаты доступ продлится автоматически."
-            )
+            await callback.message.answer(build_support_templates_text())
             return
         await callback.answer("Неизвестное действие", show_alert=True)
 

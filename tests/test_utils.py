@@ -81,3 +81,9 @@ def test_parse_sar_dev_output_ampm_format() -> None:
     assert mbps is not None
     # ((12+18)+(18+30))/2 = 39 kB/s => 0.3046875 Mbps
     assert abs(mbps - 0.3046875) < 1e-6
+
+
+def test_format_last_online_handles_none_and_iso() -> None:
+    assert bot.format_last_online(None) == "нет данных"
+    formatted = bot.format_last_online("2026-03-23T08:04:46.023092")
+    assert "UTC" in formatted

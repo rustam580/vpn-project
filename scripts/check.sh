@@ -10,6 +10,6 @@ if [ -x ".venv/bin/python" ]; then
   PYTHON_BIN=".venv/bin/python"
 fi
 
-"$PYTHON_BIN" -B -m py_compile bot.py
-"$PYTHON_BIN" -m ruff check --no-cache bot.py tests
+"$PYTHON_BIN" -B -m py_compile bot.py app_texts.py
+"$PYTHON_BIN" -m ruff check --no-cache bot.py app_texts.py tests
 "$PYTHON_BIN" -m pytest -q -p no:cacheprovider
