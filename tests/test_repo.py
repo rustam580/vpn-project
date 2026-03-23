@@ -89,3 +89,35 @@ async def test_list_known_telegram_ids_unions_all_sources(repo) -> None:
     await repo.touch_chat(3004)
     ids = await repo.list_known_telegram_ids()
     assert ids == [3001, 3002, 3003, 3004]
+
+
+async def test_has_paid_plan_payment_counts_only_plan_paid(repo) -> None:
+    tg_id = 4004
+    assert await repo.has_paid_plan_payment(tg_id) is False
+
+    await repo.upsert_payment(
+        provider="card",
+        external_id="dev-4004",
+        telegram_id=tg_id,
+        days=0,
+        gb=0,
+        amount_rub=99.0,
+        pay_url="https://pay.local/dev-4004",
+        status="paid_applied",
+        purpose="device_add",
+        device_slot=2,
+    )
+    assert await repo.has_paid_plan_payment(tg_id) is False
+
+    await repo.upsert_payment(
+        provider="card",
+        external_id="plan-4004",
+        telegram_id=tg_id,
+        days=30,
+        gb=0,
+        amount_rub=199.0,
+        pay_url="https://pay.local/plan-4004",
+        status="paid_applied",
+        purpose="plan",
+    )
+    assert await repo.has_paid_plan_payment(tg_id) is True

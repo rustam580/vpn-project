@@ -826,6 +826,23 @@ class Repo:
             result[str(row["status"])] = int(row["cnt"])
         return result
 
+    async def has_paid_plan_payment(self, telegram_id: int) -> bool:
+        assert self.conn is not None
+        c = await self.conn.execute(
+            """
+            SELECT 1
+            FROM payments
+            WHERE telegram_id = ?
+              AND status = 'paid_applied'
+              AND purpose = 'plan'
+            LIMIT 1
+            """,
+            (telegram_id,),
+        )
+        row = await c.fetchone()
+        await c.close()
+        return row is not None
+
     async def list_unfinished_crypto_payments(self, limit: int = 100) -> list[dict[str, Any]]:
         assert self.conn is not None
         c = await self.conn.execute(
@@ -2137,6 +2154,52 @@ async def extend_access_all_devices(
         if updated_primary is None:
             updated_primary = updated
     return updated_primary or {}
+
+
+async def extend_access_device(
+    *,
+    telegram_id: int,
+    device_id: int,
+    days: int,
+    gb: int,
+    repo: Repo,
+    marzban: MarzbanClient,
+    settings: Settings,
+) -> dict[str, Any]:
+    username, user, _ = await ensure_device(
+        telegram_id=telegram_id,
+        device_id=device_id,
+        repo=repo,
+        marzban=marzban,
+        settings=settings,
+        create_if_missing=True,
+    )
+    if not username:
+        raise RuntimeError("Не удалось получить слот устройства.")
+
+    if user:
+        old_exp = int(user.get("expire", 0) or 0)
+        if days <= 0:
+            new_exp = 0
+        else:
+            new_exp = max(int(time.time()), old_exp) + days * 24 * 3600
+        if gb <= 0:
+            new_limit = 0
+        else:
+            old_limit = int(user.get("data_limit", 0) or 0)
+            new_limit = old_limit + gb * BYTES_IN_GB if old_limit > 0 else gb * BYTES_IN_GB
+        updated = await marzban.modify_user(
+            username,
+            {"expire": new_exp, "data_limit": new_limit, "status": "active"},
+        )
+    else:
+        updated = await marzban.create_user(
+            username=username,
+            expire=0 if days <= 0 else int(time.time()) + days * 24 * 3600,
+            data_limit=0 if gb <= 0 else gb * BYTES_IN_GB,
+        )
+    await repo.upsert_device(telegram_id, device_id, username)
+    return updated
 
 
 async def set_permanent_access(
@@ -3626,6 +3689,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             "/ref_grant <telegram_id> [days] — реф-бонус вручную\n"
             "/grant <telegram_id> <days> <gb> (days=0 → бессрочно)\n"
             "/grant_perm <telegram_id> [gb] — бессрочный доступ\n"
+            "/grant_device <telegram_id> <slot> <days> <gb> — доступ на слот\n"
             "/device_add <telegram_id> [slot]\n"
             "/device_replace <telegram_id> <slot>\n"
             "/disable <telegram_id>\n"
@@ -3798,8 +3862,16 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
         if settings.device_limit > 0 and len(devices) >= settings.device_limit:
             await message.answer("Лимит устройств уже исчерпан.")
             return
+        if not await repo.has_paid_plan_payment(tg_id):
+            await message.answer(
+                "📱 Доп. устройство доступно только после оплаты основного тарифа.\n"
+                "Сначала нажмите «Купить доступ»."
+            )
+            return
         await message.answer(
             f"📱 Доп. устройство: {settings.device_add_rub:.2f} RUB.\n"
+            "Оплата добавляет только новый слот устройства.\n"
+            "Срок доступа не продлевается.\n"
             "После оплаты устройство появится автоматически.\n"
             "Название можно задать через «Переименовать устройство».",
             reply_markup=device_methods_keyboard(settings),
@@ -4384,6 +4456,12 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             if settings.device_limit > 0 and len(devices) >= settings.device_limit:
                 await callback.answer("Лимит устройств исчерпан", show_alert=True)
                 return
+            if not await repo.has_paid_plan_payment(tg_id):
+                await callback.answer(
+                    "Сначала оплатите основной тариф, затем добавляйте устройства.",
+                    show_alert=True,
+                )
+                return
             used_slots = {int(d["device_id"]) for d in devices}
             slot = next_device_slot(used_slots, settings.device_limit)
             if slot is None:
@@ -4425,6 +4503,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                 f"✅ Платеж за устройство создан ({provider}).\n"
                 f"ID: {external_id}\n"
                 f"Слот: {slot}\n"
+                "Срок доступа не продлевается.\n"
                 "Важно: один конфиг = одно устройство.",
                 reply_markup=pay_action_keyboard(provider, external_id, pay_url),
             )
@@ -4627,6 +4706,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                 "/grant <telegram_id> <days> <gb>\n"
                 "/ref_grant <telegram_id> [days]\n"
                 "/grant_perm <telegram_id> [gb]\n"
+                "/grant_device <telegram_id> <slot> <days> <gb>\n"
                 "/device_replace <telegram_id> <slot>\n"
                 "/disable <telegram_id>\n"
                 "/link <telegram_id> <marzban_username>\n"
@@ -4642,6 +4722,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                 "/grant 386029735 30 0\n"
                 "/ref_grant 386029735 3\n"
                 "/grant_perm 386029735 0\n"
+                "/grant_device 386029735 2 30 0\n"
                 "/device_replace 386029735 2\n"
                 "/setenv DEVICE_LIMIT 0\n"
                 "/setenv PAY_RUB 149\n"
@@ -4779,6 +4860,79 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             return
         msg = f"Устройство {slot} создано." if created else f"Устройство {slot} уже существует."
         await message.answer(msg)
+
+    @router.message(Command("grant_device"))
+    async def grant_device(message: Message) -> None:
+        if not await guard_message_rate_limit(message):
+            return
+        if not message.from_user or not is_admin(int(message.from_user.id), settings):
+            await message.answer("Недостаточно прав.")
+            return
+        parts = (message.text or "").split()
+        if len(parts) != 5:
+            await message.answer("Использование: /grant_device <telegram_id> <slot> <days> <gb>")
+            return
+        try:
+            target = int(parts[1])
+            slot = int(parts[2])
+            days = int(parts[3])
+            gb = int(parts[4])
+        except ValueError:
+            await message.answer("Ошибка формата. Пример: /grant_device 386029735 2 30 0")
+            return
+        if slot < 1:
+            await message.answer("Слот должен быть >= 1")
+            return
+        if settings.device_limit > 0 and slot > settings.device_limit:
+            await message.answer(f"Слот должен быть 1..{settings.device_limit}")
+            return
+        if days < 0:
+            await message.answer("Количество дней должно быть >= 0.")
+            return
+        if gb < 0:
+            await message.answer("GB должно быть >= 0.")
+            return
+
+        try:
+            updated = await extend_access_device(
+                telegram_id=target,
+                device_id=slot,
+                days=days,
+                gb=gb,
+                repo=repo,
+                marzban=marzban,
+                settings=settings,
+            )
+        except Exception as exc:
+            logging.exception("grant_device failed for tg=%s slot=%s", target, slot)
+            await message.answer(f"Не удалось выдать доступ на устройство: {exc}")
+            return
+
+        if days == 0:
+            await message.answer(f"Готово. Устройству {slot} выдан бессрочный доступ.")
+            user_text = (
+                f"✅ Администратор выдал бессрочный доступ для устройства {slot}."
+            )
+        else:
+            await message.answer(f"Готово. Устройство {slot} продлено на {days} дн.")
+            user_text = (
+                f"✅ Администратор продлил доступ для устройства {slot} на {days} дн."
+            )
+
+        try:
+            await message.bot.send_message(target, user_text)
+            if slot == 1:
+                await send_status_to_bot(message.bot, target, updated)
+            await send_device_links_to_bot(
+                bot=message.bot,
+                telegram_id=target,
+                repo=repo,
+                marzban=marzban,
+                settings=settings,
+            )
+        except Exception:
+            logging.exception("grant_device: failed to notify user %s", target)
+            await message.answer("Доступ выдан, но не удалось отправить уведомление пользователю.")
 
     @router.message(Command("device_replace"))
     async def device_replace_cmd(message: Message) -> None:
