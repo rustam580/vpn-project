@@ -186,6 +186,7 @@ class Settings:
     callback_rate_limit_window_sec: int
     support_username: str
     support_text: str
+    channel_url: str
     referral_bonus_days: int
     device_limit: int
     device_add_rub: float
@@ -260,6 +261,7 @@ class Settings:
             callback_rate_limit_window_sec=int(os.getenv("CALLBACK_RATE_LIMIT_WINDOW_SEC", "30")),
             support_username=os.getenv("SUPPORT_USERNAME", "").strip().lstrip("@"),
             support_text=os.getenv("SUPPORT_TEXT", "Напишите нам, поможем с подключением и оплатой.").strip(),
+            channel_url=os.getenv("CHANNEL_URL", "").strip(),
             referral_bonus_days=int(os.getenv("REFERRAL_BONUS_DAYS", "3")),
             device_limit=int(os.getenv("DEVICE_LIMIT", "1")),
             device_add_rub=float(os.getenv("DEVICE_ADD_RUB", "99")),
@@ -1166,6 +1168,7 @@ def keyboard_for_user(*, is_admin: bool) -> ReplyKeyboardMarkup:
         [KeyboardButton(text="⚠️ Проблема с подключением")],
         [KeyboardButton(text="🎁 Рефералка")],
         [KeyboardButton(text="❓ FAQ"), KeyboardButton(text="🆘 Поддержка")],
+        [KeyboardButton(text="📢 Наш канал")],
     ]
     if is_admin:
         rows.append([KeyboardButton(text="🛠 Админ-кабинет")])
@@ -1510,6 +1513,7 @@ ENV_EDITABLE_KEYS: dict[str, str] = {
     "REFERRAL_BONUS_DAYS": "int",
     "SUPPORT_USERNAME": "str",
     "SUPPORT_TEXT": "str",
+    "CHANNEL_URL": "str",
     "DEPLOY_BROADCAST_USERS": "bool",
     "OPS_REPORT_ENABLED": "bool",
     "OPS_REPORT_HOUR": "int",
@@ -1564,6 +1568,25 @@ def coerce_env_value(value: str, kind: str) -> str | None:
             return "0"
         return None
     return raw
+
+
+def normalize_channel_url(raw: str) -> str | None:
+    value = raw.strip()
+    if not value:
+        return None
+    if value.startswith("@"):
+        slug = value.lstrip("@").strip("/")
+        return f"https://t.me/{slug}" if slug else None
+    lower = value.lower()
+    if lower.startswith("https://t.me/") or lower.startswith("http://t.me/"):
+        return value
+    if lower.startswith("t.me/"):
+        return f"https://{value}"
+    if re.fullmatch(r"[A-Za-z0-9_]{4,64}", value):
+        return f"https://t.me/{value}"
+    if lower.startswith("https://") or lower.startswith("http://"):
+        return value
+    return None
 
 
 def split_message(text: str, limit: int = 3500) -> list[str]:
@@ -3681,7 +3704,8 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             "/ref — реферальная ссылка\n"
             f"{check_hint}\n"
             "/faq — частые вопросы\n"
-            "/support — поддержка\n\n"
+            "/support — поддержка\n"
+            "/channel — наш канал\n\n"
             "Команды для админа:\n"
             "/admin — админ-кабинет\n"
             "/admin_stats — краткая статистика\n"
@@ -3747,6 +3771,16 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             await message.answer(
                 f"{settings.support_text}\n\nКонтакт поддержки пока не задан администратором."
             )
+
+    @router.message(Command("channel"))
+    async def channel_cmd(message: Message) -> None:
+        if not await guard_message_rate_limit(message):
+            return
+        link = normalize_channel_url(settings.channel_url)
+        if link:
+            await message.answer(f"📢 Наш канал:\n{link}")
+            return
+        await message.answer("Канал пока не настроен. Администратор скоро добавит ссылку.")
 
     @router.message(Command("menu"))
     async def menu_cmd(message: Message) -> None:
@@ -4059,6 +4093,10 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
     @router.message(F.text == "🆘 Поддержка")
     async def support_btn(message: Message) -> None:
         await support_cmd(message)
+
+    @router.message(F.text == "📢 Наш канал")
+    async def channel_btn(message: Message) -> None:
+        await channel_cmd(message)
 
     @router.message(F.text == "⚠️ Проблема с подключением")
     async def issue_btn(message: Message) -> None:
@@ -4727,6 +4765,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                 "/setenv DEVICE_LIMIT 0\n"
                 "/setenv PAY_RUB 149\n"
                 "/setenv DEPLOY_BROADCAST_USERS 1\n"
+                "/setenv CHANNEL_URL https://t.me/rootvpn_news\n"
                 "/broadcast_menu\n"
                 "/deploy\n"
                 "/ref_stats\n"

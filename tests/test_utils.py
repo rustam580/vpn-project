@@ -30,6 +30,14 @@ def test_coerce_env_value_parses_supported_types() -> None:
     assert bot.coerce_env_value("x", "int") is None
 
 
+def test_normalize_channel_url_accepts_common_formats() -> None:
+    assert bot.normalize_channel_url("@rootvpn_news") == "https://t.me/rootvpn_news"
+    assert bot.normalize_channel_url("t.me/rootvpn_news") == "https://t.me/rootvpn_news"
+    assert bot.normalize_channel_url("https://t.me/rootvpn_news") == "https://t.me/rootvpn_news"
+    assert bot.normalize_channel_url("rootvpn_news") == "https://t.me/rootvpn_news"
+    assert bot.normalize_channel_url("  ") is None
+
+
 def test_extract_links_deduplicates_and_ignores_invalid_values() -> None:
     user = {"links": [" vless://a ", "vless://a", "", 123, "vless://b"]}
     assert bot.extract_links(user) == ["vless://a", "vless://b"]
