@@ -45,6 +45,10 @@ from payments_service import (
     yookassa_check_payment as ps_yookassa_check_payment,
     yookassa_create_payment as ps_yookassa_create_payment,
 )
+from payment_flow import (
+    apply_paid_payment as pf_apply_paid_payment,
+    check_and_apply_payment as pf_check_and_apply_payment,
+)
 
 BYTES_IN_GB = 1024**3
 DEPLOY_REPORT_PATH = Path("/opt/vpn-bot/deploy/last-deploy.log")
@@ -2500,6 +2504,33 @@ async def altyn_check_payment(settings: Settings, external_id: str) -> str:
     return await ps_altyn_check_payment(settings, external_id)
 
 
+async def apply_paid_payment(
+    *,
+    provider: str,
+    external_id: str,
+    payment: dict[str, Any],
+    repo: Repo,
+    marzban: MarzbanClient,
+    settings: Settings,
+    bot: Bot | None,
+    strict_device_slot: bool,
+) -> tuple[dict[str, Any], str, str | None]:
+    return await pf_apply_paid_payment(
+        provider=provider,
+        external_id=external_id,
+        payment=payment,
+        repo=repo,
+        marzban=marzban,
+        settings=settings,
+        bot=bot,
+        strict_device_slot=strict_device_slot,
+        ensure_device_fn=ensure_device,
+        extend_access_all_devices_fn=extend_access_all_devices,
+        apply_referral_bonus_if_needed_fn=apply_referral_bonus_if_needed,
+        notify_admin_payment_fn=notify_admin_payment,
+    )
+
+
 async def check_and_apply_payment(
     *,
     provider: str,
@@ -2510,113 +2541,19 @@ async def check_and_apply_payment(
     settings: Settings,
     bot: Bot | None = None,
 ) -> tuple[str, dict[str, Any] | None]:
-    payment = await repo.get_payment(provider, external_id)
-    if not payment:
-        return "❌ Платеж не найден.", None
-    if int(payment["telegram_id"]) != telegram_id:
-        return "❌ Этот платеж создан для другого пользователя.", None
-    if payment["status"] == "paid_applied":
-        return "✅ Этот платеж уже обработан.", None
-
-    if provider == "crypto":
-        status = await cryptobot_check_invoice(settings, external_id)
-        paid = status == "paid"
-    elif provider == "altyn":
-        status = await altyn_check_payment(settings, external_id)
-        paid = status in {"2", "OK", "ok", "paid", "succeeded"}
-    elif provider == "card":
-        status = await yookassa_check_payment(settings, external_id)
-        paid = status == "succeeded"
-    else:
-        return "❌ Неизвестный провайдер.", None
-
-    if not paid:
-        await repo.set_payment_status(provider, external_id, status)
-        return f"⏳ Платеж еще не подтвержден (статус: {status}).", None
-
-    claimed = await repo.claim_payment_for_apply(provider, external_id)
-    if not claimed:
-        latest = await repo.get_payment(provider, external_id)
-        if latest and latest.get("status") == "paid_applied":
-            return "✅ Этот платеж уже обработан.", None
-        if latest and latest.get("status") == "processing":
-            updated_at = int(latest.get("updated_at") or 0)
-            age = int(time.time()) - updated_at if updated_at > 0 else 0
-            if age >= settings.payment_processing_requeue_seconds:
-                await repo.set_payment_status(provider, external_id, "pending")
-                claimed = await repo.claim_payment_for_apply(provider, external_id)
-                if not claimed:
-                    return "⏳ Платеж был перезапущен. Нажмите «Проверить оплату» еще раз.", None
-            else:
-                return "⏳ Платеж обрабатывается, подождите 5-10 секунд.", None
-        if not claimed:
-            return "⏳ Платеж обрабатывается, подождите 5-10 секунд.", None
-
-    purpose = str(payment.get("purpose") or "plan")
-    try:
-        if purpose == "device_add":
-            slot = int(payment.get("device_slot") or 0)
-            if slot <= 0 or (settings.device_limit > 0 and slot > settings.device_limit):
-                await repo.set_payment_status(provider, external_id, "failed")
-                return "❌ Некорректный слот устройства.", None
-            _, updated_user, _ = await ensure_device(
-                telegram_id=telegram_id,
-                device_id=slot,
-                repo=repo,
-                marzban=marzban,
-                settings=settings,
-                create_if_missing=True,
-            )
-            updated = updated_user or {}
-        else:
-            updated = await extend_access_all_devices(
-                telegram_id=telegram_id,
-                days=int(payment["days"]),
-                gb=int(payment["gb"]),
-                repo=repo,
-                marzban=marzban,
-                settings=settings,
-            )
-            try:
-                await apply_referral_bonus_if_needed(
-                    paid_telegram_id=telegram_id,
-                    repo=repo,
-                    marzban=marzban,
-                    settings=settings,
-                    bot=bot,
-                )
-            except Exception:
-                logging.exception("Referral bonus apply failed for user %s", telegram_id)
-    except Exception:
-        await repo.set_payment_status(provider, external_id, status)
-        raise
-    await repo.set_payment_status(provider, external_id, "paid_applied")
-    try:
-        await repo.log_event(
-            event_type=("payment_paid_device" if purpose == "device_add" else "payment_paid_plan"),
-            telegram_id=telegram_id,
-            event_value=provider,
-            event_meta={
-                "external_id": external_id,
-                "purpose": purpose,
-                "device_slot": int(payment.get("device_slot") or 0),
-            },
-        )
-    except Exception:
-        logging.exception("Payment event track failed for %s", external_id)
-    if bot is not None:
-        try:
-            await notify_admin_payment(bot=bot, settings=settings, repo=repo, payment=payment)
-        except Exception:
-            logging.exception("Payment notify: failed after apply for %s", external_id)
-    if purpose == "device_add":
-        slot = int(payment.get("device_slot") or 0)
-        return (
-            f"✅ Устройство {slot} добавлено.\n"
-            f"Назовите его командой: /device_name {slot} Мой ноутбук",
-            updated,
-        )
-    return "✅ Оплата подтверждена, доступ продлен.", updated
+    return await pf_check_and_apply_payment(
+        provider=provider,
+        external_id=external_id,
+        telegram_id=telegram_id,
+        repo=repo,
+        marzban=marzban,
+        settings=settings,
+        bot=bot,
+        cryptobot_check_invoice_fn=cryptobot_check_invoice,
+        altyn_check_payment_fn=altyn_check_payment,
+        yookassa_check_payment_fn=yookassa_check_payment,
+        apply_paid_payment_fn=apply_paid_payment,
+    )
 
 
 async def notify_access_updated(
@@ -3155,69 +3092,21 @@ async def cryptobot_auto_worker(
                         continue
 
                     if status == "paid":
-                        purpose = str(payment.get("purpose") or "plan")
-                        if purpose == "device_add":
-                            slot = int(payment.get("device_slot") or 0)
-                            if slot > 0:
-                                _, updated_user, _ = await ensure_device(
-                                    telegram_id=int(payment["telegram_id"]),
-                                    device_id=slot,
-                                    repo=repo,
-                                    marzban=marzban,
-                                    settings=settings,
-                                    create_if_missing=True,
-                                )
-                                updated = updated_user or {}
-                            else:
-                                updated = {}
-                        else:
-                            updated = await extend_access_all_devices(
-                                telegram_id=int(payment["telegram_id"]),
-                                days=int(payment["days"]),
-                                gb=int(payment["gb"]),
-                                repo=repo,
-                                marzban=marzban,
-                                settings=settings,
-                            )
                         try:
-                            await apply_referral_bonus_if_needed(
-                                paid_telegram_id=int(payment["telegram_id"]),
-                                repo=repo,
-                                marzban=marzban,
-                                settings=settings,
-                                bot=bot,
-                            )
-                        except Exception:
-                            logging.exception(
-                                "Auto check: referral bonus apply failed for user %s",
-                                payment["telegram_id"],
-                            )
-                        await repo.set_payment_status("crypto", external_id, "paid_applied")
-                        try:
-                            await repo.log_event(
-                                event_type=("payment_paid_device" if purpose == "device_add" else "payment_paid_plan"),
-                                telegram_id=int(payment["telegram_id"]),
-                                event_value="crypto",
-                                event_meta={
-                                    "external_id": external_id,
-                                    "purpose": purpose,
-                                    "device_slot": int(payment.get("device_slot") or 0),
-                                },
-                            )
-                        except Exception:
-                            logging.exception("Auto crypto: failed to track payment event %s", external_id)
-                        try:
-                            await notify_admin_payment(
-                                bot=bot,
-                                settings=settings,
-                                repo=repo,
+                            updated, purpose, _ = await apply_paid_payment(
+                                provider="crypto",
+                                external_id=external_id,
                                 payment=payment,
+                                repo=repo,
+                                marzban=marzban,
+                                settings=settings,
+                                bot=bot,
+                                strict_device_slot=False,
                             )
                         except Exception:
-                            logging.exception(
-                                "Auto crypto: admin payment notify failed for %s",
-                                external_id,
-                            )
+                            logging.exception("Auto check: failed to apply payment %s", external_id)
+                            await repo.set_payment_status("crypto", external_id, status)
+                            continue
                         try:
                             if purpose == "device_add":
                                 slot = int(payment.get("device_slot") or 0)
@@ -3296,91 +3185,34 @@ async def yookassa_auto_worker(
                         claimed = await repo.claim_payment_for_apply("card", external_id)
                         if not claimed:
                             continue
-                        purpose = str(payment.get("purpose") or "plan")
                         try:
+                            updated, purpose, _ = await apply_paid_payment(
+                                provider="card",
+                                external_id=external_id,
+                                payment=payment,
+                                repo=repo,
+                                marzban=marzban,
+                                settings=settings,
+                                bot=bot,
+                                strict_device_slot=False,
+                            )
                             if purpose == "device_add":
                                 slot = int(payment.get("device_slot") or 0)
-                                _, updated_user, _ = await ensure_device(
-                                    telegram_id=int(payment["telegram_id"]),
-                                    device_id=slot,
-                                    repo=repo,
-                                    marzban=marzban,
-                                    settings=settings,
-                                    create_if_missing=True,
+                                text = (
+                                    f"✅ Оплата подтверждена. Устройство {slot} добавлено.\n"
+                                    f"Назовите его командой: /device_name {slot} Мой ноутбук"
                                 )
-                                updated = updated_user or {}
                             else:
-                                updated = await extend_access_all_devices(
-                                    telegram_id=int(payment["telegram_id"]),
-                                    days=int(payment["days"]),
-                                    gb=int(payment["gb"]),
-                                    repo=repo,
-                                    marzban=marzban,
-                                    settings=settings,
-                                )
-                            try:
-                                await apply_referral_bonus_if_needed(
-                                    paid_telegram_id=int(payment["telegram_id"]),
-                                    repo=repo,
-                                    marzban=marzban,
-                                    settings=settings,
-                                    bot=bot,
-                                )
-                            except Exception:
-                                logging.exception(
-                                    "Auto yookassa: referral bonus apply failed for user %s",
-                                    payment["telegram_id"],
-                                )
-                            await repo.set_payment_status("card", external_id, "paid_applied")
-                            try:
-                                await repo.log_event(
-                                    event_type=("payment_paid_device" if purpose == "device_add" else "payment_paid_plan"),
-                                    telegram_id=int(payment["telegram_id"]),
-                                    event_value="card",
-                                    event_meta={
-                                        "external_id": external_id,
-                                        "purpose": purpose,
-                                        "device_slot": int(payment.get("device_slot") or 0),
-                                    },
-                                )
-                            except Exception:
-                                logging.exception("Auto yookassa: failed to track payment event %s", external_id)
-                            try:
-                                await notify_admin_payment(
-                                    bot=bot,
-                                    settings=settings,
-                                    repo=repo,
-                                    payment=payment,
-                                )
-                            except Exception:
-                                logging.exception(
-                                    "Auto yookassa: admin payment notify failed for %s",
-                                    external_id,
-                                )
-                            try:
-                                if purpose == "device_add":
-                                    slot = int(payment.get("device_slot") or 0)
-                                    text = (
-                                        f"✅ Оплата подтверждена. Устройство {slot} добавлено.\n"
-                                        f"Назовите его командой: /device_name {slot} Мой ноутбук"
-                                    )
-                                else:
-                                    text = "Оплата подтверждена автоматически. Доступ продлен."
-                                await notify_access_updated(
-                                    bot,
-                                    int(payment["telegram_id"]),
-                                    updated,
-                                    text,
-                                    repo=repo,
-                                    marzban=marzban,
-                                    settings=settings,
-                                )
-                            except Exception:
-                                logging.exception(
-                                    "Auto yookassa: failed to notify user %s for payment %s",
-                                    payment["telegram_id"],
-                                    external_id,
-                                )
+                                text = "Оплата подтверждена автоматически. Доступ продлен."
+                            await notify_access_updated(
+                                bot,
+                                int(payment["telegram_id"]),
+                                updated,
+                                text,
+                                repo=repo,
+                                marzban=marzban,
+                                settings=settings,
+                            )
                         except Exception:
                             logging.exception("Auto yookassa: failed to apply payment %s", external_id)
                             await repo.set_payment_status("card", external_id, status)
