@@ -1563,7 +1563,7 @@ async def send_links(message: Message, user: dict[str, Any]) -> None:
     safe_link = html.escape(link)
     text = f"<code>{safe_link}</code>"
     await message.answer(text, parse_mode="HTML", disable_web_page_preview=True)
-    await message.answer(config_import_hint_text())
+    await message.answer(config_import_hint_text(), parse_mode="HTML")
 
 
 def _link_preview(link: str) -> str:
@@ -2000,7 +2000,7 @@ async def send_device_links(
     cfg_buttons = _configs_keyboard([(idx, label) for idx, label, _ in index_map])
     if cfg_buttons:
         await message.answer("Показать конфиг в чате:", reply_markup=cfg_buttons)
-    await message.answer(config_import_hint_text())
+    await message.answer(config_import_hint_text(), parse_mode="HTML")
 
 
 def _render_config_block(label: str, link: str) -> str:
@@ -2103,7 +2103,7 @@ async def send_device_links_to_bot(
     cfg_buttons = _configs_keyboard(index_map)
     if cfg_buttons:
         await bot.send_message(telegram_id, "Показать конфиг в чате:", reply_markup=cfg_buttons)
-    await bot.send_message(telegram_id, config_import_hint_text())
+    await bot.send_message(telegram_id, config_import_hint_text(), parse_mode="HTML")
 
 
 async def ensure_user(
@@ -3706,6 +3706,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                 device_limit_text=format_device_limit(settings.device_limit),
             ),
             reply_markup=keyboard_for_user(is_admin=is_admin(tg_id, settings)),
+            parse_mode="HTML",
         )
         if tg_id is not None:
             await track_event("user_start", telegram_id=tg_id)
@@ -3721,37 +3722,47 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             return
         providers = enabled_payment_providers(settings)
         check_hint = (
-            "/check <" + "|".join(providers) + "> <payment_id> — проверить оплату"
+            "<code>/check &lt;" + "|".join(providers) + "&gt; &lt;payment_id&gt;</code> — проверить оплату"
             if providers
-            else "/check — провайдеры оплаты не настроены"
+            else "<code>/check</code> — провайдеры оплаты не настроены"
         )
-        await message.answer(
-            "Команды для пользователя:\n"
-            "/config — получить/обновить конфиги\n"
-            "/guide — инструкция по подключению\n"
-            "/diag — диагностика подключения\n"
-            "/buy — купить доступ\n"
-            "/replace — переиздать конфиг устройства\n"
-            "/ref — реферальная ссылка\n"
-            f"{check_hint}\n"
-            "/faq — частые вопросы\n"
-            "/support — поддержка\n"
-            "/channel — наш канал\n\n"
-            "Команды для админа:\n"
-            "/admin — админ-кабинет\n"
-            "/admin_stats — краткая статистика\n"
-            "/ref_stats [telegram_id] — реф-статистика\n"
-            "/ref_grant <telegram_id> [days] — реф-бонус вручную\n"
-            "/grant <telegram_id> <days> <gb> (days=0 → бессрочно)\n"
-            "/grant_perm <telegram_id> [gb] — бессрочный доступ\n"
-            "/grant_device <telegram_id> <slot> <days> <gb> — доступ на слот\n"
-            "/sync_expire <telegram_id> [max|min|slot:<id>] — синхронизировать сроки слотов\n"
-            "/device_add <telegram_id> [slot]\n"
-            "/device_replace <telegram_id> <slot>\n"
-            "/disable <telegram_id>\n"
-            "/link <telegram_id> <marzban_username>\n"
-            "/ops — health-отчет"
+        is_admin_user = bool(message.from_user and is_admin(int(message.from_user.id), settings))
+
+        user_block = (
+            "<b>👤 Команды пользователя</b>\n"
+            "• <code>/config</code> — получить/обновить конфиги\n"
+            "• <code>/guide</code> — инструкция по подключению\n"
+            "• <code>/diag</code> — диагностика подключения\n"
+            "• <code>/buy</code> — продлить доступ\n"
+            "• <code>/replace</code> — переиздать конфиг устройства\n"
+            "• <code>/ref</code> — реферальная ссылка\n"
+            f"• {check_hint}\n"
+            "• <code>/faq</code> — частые вопросы\n"
+            "• <code>/support</code> — поддержка\n"
+            "• <code>/channel</code> — наш канал"
         )
+
+        if not is_admin_user:
+            await message.answer(user_block, parse_mode="HTML")
+            return
+
+        admin_block = (
+            "<b>🛠 Команды администратора</b>\n"
+            "• <code>/admin</code> — админ-кабинет\n"
+            "• <code>/admin_stats</code> — краткая статистика\n"
+            "• <code>/ref_stats [telegram_id]</code> — реф-статистика\n"
+            "• <code>/ref_grant &lt;telegram_id&gt; [days]</code> — реф-бонус вручную\n"
+            "• <code>/grant &lt;telegram_id&gt; &lt;days&gt; &lt;gb&gt;</code> — доступ всем слотам\n"
+            "• <code>/grant_perm &lt;telegram_id&gt; [gb]</code> — бессрочный доступ\n"
+            "• <code>/grant_device &lt;telegram_id&gt; &lt;slot&gt; &lt;days&gt; &lt;gb&gt;</code>\n"
+            "• <code>/sync_expire &lt;telegram_id&gt; [max|min|slot:&lt;id&gt;]</code>\n"
+            "• <code>/device_add &lt;telegram_id&gt; [slot]</code>\n"
+            "• <code>/device_replace &lt;telegram_id&gt; &lt;slot&gt;</code>\n"
+            "• <code>/disable &lt;telegram_id&gt;</code>\n"
+            "• <code>/link &lt;telegram_id&gt; &lt;marzban_username&gt;</code>\n"
+            "• <code>/ops</code> — health-отчет"
+        )
+        await message.answer(user_block + "\n\n" + admin_block, parse_mode="HTML")
 
     @router.message(Command("ref"))
     async def ref_cmd(message: Message) -> None:
@@ -3781,13 +3792,13 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
     async def faq_cmd(message: Message) -> None:
         if not await guard_message_rate_limit(message):
             return
-        await message.answer(build_user_faq_text())
+        await message.answer(build_user_faq_text(), parse_mode="HTML")
 
     @router.message(Command("guide"))
     async def guide_cmd(message: Message) -> None:
         if not await guard_message_rate_limit(message):
             return
-        await message.answer(quick_connect_guide_text())
+        await message.answer(quick_connect_guide_text(), parse_mode="HTML")
 
     @router.message(Command("support"))
     async def support_cmd(message: Message) -> None:
@@ -3796,13 +3807,20 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
         tg_id = int(message.from_user.id) if message.from_user else None
         if tg_id is not None:
             await track_event("support_opened", telegram_id=tg_id)
+        safe_support_text = html.escape(settings.support_text)
         if settings.support_username:
             await message.answer(
-                f"{settings.support_text}\n\nКонтакт: https://t.me/{settings.support_username}"
+                "<b>🆘 Поддержка</b>\n"
+                f"{safe_support_text}\n\n"
+                f"Контакт: https://t.me/{settings.support_username}",
+                parse_mode="HTML",
             )
         else:
             await message.answer(
-                f"{settings.support_text}\n\nКонтакт поддержки пока не задан администратором."
+                "<b>🆘 Поддержка</b>\n"
+                f"{safe_support_text}\n\n"
+                "Контакт поддержки пока не задан администратором.",
+                parse_mode="HTML",
             )
 
     @router.message(Command("channel"))
@@ -3814,7 +3832,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             await track_event("channel_opened", telegram_id=tg_id)
         link = normalize_channel_url(settings.channel_url)
         if link:
-            await message.answer(f"📢 Наш канал:\n{link}")
+            await message.answer(f"<b>📢 Наш канал</b>\n{link}", parse_mode="HTML")
             return
         await message.answer("Канал пока не настроен. Администратор скоро добавит ссылку.")
 
@@ -5026,7 +5044,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             return
         if action == "support_templates":
             await callback.answer("Готово")
-            await callback.message.answer(build_support_templates_text())
+            await callback.message.answer(build_support_templates_text(), parse_mode="HTML")
             return
         await callback.answer("Неизвестное действие", show_alert=True)
 
