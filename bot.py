@@ -21,7 +21,6 @@ from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import (
-    BufferedInputFile,
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -1981,38 +1980,11 @@ async def send_device_links(
         await message.answer("⚠️ Активные конфиги не найдены.")
         return
 
-    labels_seen: list[str] = []
-    index_map: list[tuple[int, str, str]] = []
-    counter = 1
-    for device_id, label, link in items:
-        if label not in labels_seen:
-            labels_seen.append(label)
-        index_map.append((counter, label, link))
-        counter += 1
-
-    await message.answer(f"🔑 Готово. Активных конфигов: {len(items)} для {len(labels_seen)} устройств.")
-
-    file_lines: list[str] = []
-    for device_id, label, link in items:
-        header = label if label.startswith("Устройство") else f"Устройство {device_id} — {label}"
-        file_lines.append(header)
-        file_lines.append(link)
-        file_lines.append("")
-    payload = "\n".join(file_lines).strip() + "\n"
-    try:
-        await message.answer_document(
-            BufferedInputFile(payload.encode("utf-8"), filename="configs.txt"),
-            caption="configs.txt — все активные конфиги.",
-        )
-    except Exception:
-        logging.exception("Failed to send configs.txt to user %s", telegram_id)
-        await message.answer("Не удалось отправить файл. Показываю все конфиги в чате.")
-        await send_configs_in_chat(message, items)
-
-    cfg_buttons = _configs_keyboard([(idx, label) for idx, label, _ in index_map])
-    if cfg_buttons:
-        await message.answer("Нужен просмотр в чате?", reply_markup=cfg_buttons)
-    await message.answer(config_import_hint_text(), parse_mode="HTML")
+    await message.answer(
+        f"🔑 Ниже ваши активные конфиги ({len(items)}).\n"
+        "Нажмите на код конфига, чтобы скопировать."
+    )
+    await send_configs_in_chat(message, items)
 
 
 def _render_config_block(label: str, link: str) -> str:
@@ -2083,39 +2055,12 @@ async def send_device_links_to_bot(
     if not items:
         await bot.send_message(telegram_id, "⚠️ Активные конфиги не найдены.")
         return
-    labels_seen: list[str] = []
-    index_map: list[tuple[int, str]] = []
-    counter = 1
-    for _, label, _ in items:
-        if label not in labels_seen:
-            labels_seen.append(label)
-        index_map.append((counter, label))
-        counter += 1
     await bot.send_message(
         telegram_id,
-        f"🔑 Готово. Активных конфигов: {len(items)} для {len(labels_seen)} устройств.",
+        f"🔑 Ниже ваши активные конфиги ({len(items)}).\n"
+        "Нажмите на код конфига, чтобы скопировать.",
     )
-    file_lines: list[str] = []
-    for device_id, label, link in items:
-        header = label if label.startswith("Устройство") else f"Устройство {device_id} — {label}"
-        file_lines.append(header)
-        file_lines.append(link)
-        file_lines.append("")
-    payload = "\n".join(file_lines).strip() + "\n"
-    try:
-        await bot.send_document(
-            telegram_id,
-            BufferedInputFile(payload.encode("utf-8"), filename="configs.txt"),
-            caption="configs.txt — все активные конфиги.",
-        )
-    except Exception:
-        logging.exception("Failed to send configs.txt via bot to user %s", telegram_id)
-        await bot.send_message(telegram_id, "Не удалось отправить файл. Показываю все конфиги в чате.")
-        await send_configs_in_chat_to_bot(bot=bot, telegram_id=telegram_id, items=items)
-    cfg_buttons = _configs_keyboard(index_map)
-    if cfg_buttons:
-        await bot.send_message(telegram_id, "Нужен просмотр в чате?", reply_markup=cfg_buttons)
-    await bot.send_message(telegram_id, config_import_hint_text(), parse_mode="HTML")
+    await send_configs_in_chat_to_bot(bot=bot, telegram_id=telegram_id, items=items)
 
 
 async def ensure_user(
