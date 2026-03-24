@@ -1548,10 +1548,16 @@ def status_text(user: dict[str, Any]) -> str:
     expire_ts = int(user.get("expire", 0) or 0)
     status = str(user.get("status", "unknown"))
     status_icon = "🟢" if status == "active" else "⚪"
+    status_label = {
+        "active": "активен",
+        "disabled": "отключен",
+        "expired": "истек",
+        "limited": "ограничен",
+    }.get(status, status)
     cfg_count = 1 if links else 0
     return (
         f"👤 <b>Пользователь:</b> {user.get('username', 'unknown')}\n"
-        f"{status_icon} <b>Статус:</b> {status}\n"
+        f"{status_icon} <b>Статус:</b> {status_label}\n"
         f"📊 <b>Трафик:</b> {format_used(int(user.get('used_traffic', 0) or 0))} из {format_limit(int(user.get('data_limit', 0) or 0))}\n"
         f"🗓 <b>Действует до:</b> {format_expire(expire_ts)}\n"
         f"⏳ <b>Осталось:</b> {format_time_left(expire_ts)}\n"
