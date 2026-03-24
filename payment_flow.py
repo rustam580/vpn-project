@@ -95,15 +95,11 @@ async def _resolve_provider_status(
     external_id: str,
     settings: Any,
     cryptobot_check_invoice_fn: CheckerFn,
-    altyn_check_payment_fn: CheckerFn,
     yookassa_check_payment_fn: CheckerFn,
 ) -> tuple[str, bool]:
     if provider == "crypto":
         status = await cryptobot_check_invoice_fn(settings, external_id)
         return status, status == "paid"
-    if provider == "altyn":
-        status = await altyn_check_payment_fn(settings, external_id)
-        return status, status in {"2", "OK", "ok", "paid", "succeeded"}
     if provider == "card":
         status = await yookassa_check_payment_fn(settings, external_id)
         return status, status == "succeeded"
@@ -120,7 +116,6 @@ async def check_and_apply_payment(
     settings: Any,
     bot: Any | None = None,
     cryptobot_check_invoice_fn: CheckerFn,
-    altyn_check_payment_fn: CheckerFn,
     yookassa_check_payment_fn: CheckerFn,
     apply_paid_payment_fn: ApplyFn,
 ) -> tuple[str, dict[str, Any] | None]:
@@ -138,7 +133,6 @@ async def check_and_apply_payment(
             external_id=external_id,
             settings=settings,
             cryptobot_check_invoice_fn=cryptobot_check_invoice_fn,
-            altyn_check_payment_fn=altyn_check_payment_fn,
             yookassa_check_payment_fn=yookassa_check_payment_fn,
         )
     except ValueError:

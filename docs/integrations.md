@@ -38,23 +38,7 @@ Required env:
 - `YOOKASSA_SECRET_KEY`
 - `YOOKASSA_RETURN_URL`
 
-## 5) Altyn Payments
-Status: supported in code as optional provider (`altyn`).
-API auth: Merchant HMAC headers.
-
-Required env:
-- `ALTYN_BASE_URL`
-- `ALTYN_API_KEY_ID`
-- `ALTYN_API_SECRET`
-- `ALTYN_ACCOUNT_NUMBER`
-- `ALTYN_BANK_ID`
-
-Current signing model:
-- Sign string: `<timestamp>\n<nonce>\n<absolute_url>\n<body>`
-- Algo: `HMAC-SHA256`
-- Header: `X-Signature: v1=<base64>`
-
-## 6) Referral Program
+## 5) Referral Program
 Status: active.
 
 Required env:
@@ -66,7 +50,7 @@ Behavior:
 - User command: `/ref`
 - Admin commands: `/ref_stats`, `/ref_grant`
 
-## 6.1) Device Limits
+## 5.1) Device Limits
 Status: active.
 
 Required env:
@@ -79,7 +63,7 @@ Behavior:
 - Users can add a device by paying through the bot (button "Добавить устройство").
 - Payments extend access for all device slots.
 
-## 7) Robokassa (planned)
+## 6) Robokassa (planned)
 Status: not integrated in current bot code.
 Notes:
 - Merchant setup requires public offer page for activation.

@@ -38,8 +38,6 @@ from app_texts import (
     build_user_faq_text,
 )
 from payments_service import (
-    altyn_check_payment as ps_altyn_check_payment,
-    altyn_create_payment as ps_altyn_create_payment,
     cryptobot_check_invoice as ps_cryptobot_check_invoice,
     cryptobot_create_invoice as ps_cryptobot_create_invoice,
     yookassa_check_payment as ps_yookassa_check_payment,
@@ -190,12 +188,6 @@ class Settings:
     yookassa_shop_id: str
     yookassa_secret_key: str
     yookassa_return_url: str
-    altyn_enabled_flag: bool
-    altyn_base_url: str
-    altyn_api_key_id: str
-    altyn_api_secret: str
-    altyn_account_number: str
-    altyn_bank_id: str
     user_rate_limit_count: int
     user_rate_limit_window_sec: int
     callback_rate_limit_count: int
@@ -265,12 +257,6 @@ class Settings:
             payment_processing_requeue_seconds=max(
                 60, int(os.getenv("PAYMENT_PROCESSING_REQUEUE_SECONDS", "600"))
             ),
-            altyn_enabled_flag=env_bool("ALTYN_ENABLED", True),
-            altyn_base_url=os.getenv("ALTYN_BASE_URL", "https://api.merchants.altyn.one/gate").strip().rstrip("/"),
-            altyn_api_key_id=os.getenv("ALTYN_API_KEY_ID", "").strip(),
-            altyn_api_secret=os.getenv("ALTYN_API_SECRET", "").strip(),
-            altyn_account_number=os.getenv("ALTYN_ACCOUNT_NUMBER", "").strip(),
-            altyn_bank_id=os.getenv("ALTYN_BANK_ID", "").strip(),
             user_rate_limit_count=int(os.getenv("USER_RATE_LIMIT_COUNT", "12")),
             user_rate_limit_window_sec=int(os.getenv("USER_RATE_LIMIT_WINDOW_SEC", "30")),
             callback_rate_limit_count=int(os.getenv("CALLBACK_RATE_LIMIT_COUNT", "20")),
@@ -297,17 +283,6 @@ class Settings:
 
     def yookassa_enabled(self) -> bool:
         return bool(self.yookassa_shop_id and self.yookassa_secret_key and self.yookassa_return_url)
-
-    def altyn_enabled(self) -> bool:
-        if not self.altyn_enabled_flag:
-            return False
-        return bool(
-            self.altyn_base_url
-            and self.altyn_api_key_id
-            and self.altyn_api_secret
-            and self.altyn_account_number
-            and self.altyn_bank_id
-        )
 
 
 async def broadcast_menu_update(
@@ -1344,11 +1319,9 @@ def payment_methods_keyboard(settings: Settings) -> InlineKeyboardMarkup:
             )
         ]
     )
-    if settings.altyn_enabled():
-        rows.append([InlineKeyboardButton(text="🏦 СБП/Карта (Altyn)", callback_data="buy:altyn")])
     if settings.yookassa_enabled():
         rows.append([InlineKeyboardButton(text="💳 Карта (YooKassa)", callback_data="buy:card")])
-    if not settings.altyn_enabled() and not settings.yookassa_enabled():
+    if not settings.yookassa_enabled():
         rows.append([InlineKeyboardButton(text="💳 Оплата картой (не настроена)", callback_data="buy:card")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -1363,11 +1336,9 @@ def device_methods_keyboard(settings: Settings) -> InlineKeyboardMarkup:
             )
         ]
     )
-    if settings.altyn_enabled():
-        rows.append([InlineKeyboardButton(text="🏦 СБП/Карта (Altyn)", callback_data="device:altyn")])
     if settings.yookassa_enabled():
         rows.append([InlineKeyboardButton(text="💳 Карта (YooKassa)", callback_data="device:card")])
-    if not settings.altyn_enabled() and not settings.yookassa_enabled():
+    if not settings.yookassa_enabled():
         rows.append([InlineKeyboardButton(text="💳 Оплата картой (не настроена)", callback_data="device:card")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -1376,8 +1347,6 @@ def enabled_payment_providers(settings: Settings) -> list[str]:
     providers: list[str] = []
     if settings.cryptobot_enabled():
         providers.append("crypto")
-    if settings.altyn_enabled():
-        providers.append("altyn")
     if settings.yookassa_enabled():
         providers.append("card")
     return providers
@@ -1647,7 +1616,6 @@ ENV_EDITABLE_KEYS: dict[str, str] = {
     "YOOKASSA_SECRET_KEY": "str",
     "YOOKASSA_RETURN_URL": "str",
     "PAYMENT_PROCESSING_REQUEUE_SECONDS": "int",
-    "ALTYN_ENABLED": "bool",
 }
 
 
@@ -2496,14 +2464,6 @@ async def yookassa_check_payment(settings: Settings, external_id: str) -> str:
     return await ps_yookassa_check_payment(settings, external_id)
 
 
-async def altyn_create_payment(settings: Settings, telegram_id: int) -> tuple[str, str]:
-    return await ps_altyn_create_payment(settings, telegram_id)
-
-
-async def altyn_check_payment(settings: Settings, external_id: str) -> str:
-    return await ps_altyn_check_payment(settings, external_id)
-
-
 async def apply_paid_payment(
     *,
     provider: str,
@@ -2550,7 +2510,6 @@ async def check_and_apply_payment(
         settings=settings,
         bot=bot,
         cryptobot_check_invoice_fn=cryptobot_check_invoice,
-        altyn_check_payment_fn=altyn_check_payment,
         yookassa_check_payment_fn=yookassa_check_payment,
         apply_paid_payment_fn=apply_paid_payment,
     )
@@ -4460,11 +4419,6 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                     await callback.answer("CryptoBot не настроен", show_alert=True)
                     return
                 external_id, pay_url = await cryptobot_create_invoice(settings, tg_id)
-            elif provider == "altyn":
-                if not settings.altyn_enabled():
-                    await callback.answer("Altyn не настроен", show_alert=True)
-                    return
-                external_id, pay_url = await altyn_create_payment(settings, tg_id)
             elif provider == "card":
                 if not settings.yookassa_enabled():
                     await callback.answer("YooKassa не настроена", show_alert=True)
@@ -4531,11 +4485,6 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                     await callback.answer("CryptoBot не настроен", show_alert=True)
                     return
                 external_id, pay_url = await cryptobot_create_invoice(settings, tg_id)
-            elif provider == "altyn":
-                if not settings.altyn_enabled():
-                    await callback.answer("Altyn не настроен", show_alert=True)
-                    return
-                external_id, pay_url = await altyn_create_payment(settings, tg_id)
             elif provider == "card":
                 if not settings.yookassa_enabled():
                     await callback.answer("YooKassa не настроена", show_alert=True)

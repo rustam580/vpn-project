@@ -24,7 +24,6 @@ Last updated: 2026-03-08
 - Supported providers in code:
 - `crypto` (CryptoBot)
 - `card` (YooKassa)
-- `altyn` (Altyn API, optional)
 - Access is extended only after successful payment confirmation.
 - Duplicate apply is blocked by payment status lock (`processing` / `paid_applied`).
 

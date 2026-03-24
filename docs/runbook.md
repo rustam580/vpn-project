@@ -55,7 +55,7 @@ curl -I http://127.0.0.1:8000/dashboard/
 
 ## 6) Payment Support Commands
 User fallback:
-- `/check <crypto|altyn|card> <payment_id>`
+- `/check <crypto|card> <payment_id>`
 
 Admin:
 - Use admin panel payment check shortcut
