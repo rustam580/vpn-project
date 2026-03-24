@@ -10,7 +10,7 @@ Last updated: 2026-03-08
 ## Access Model
 - User gets config links from bot.
 - Trial is auto-issued on first config request.
-- Main paid plan extends existing access.
+- Paid renewal works per selected device slot; optional "renew all slots" is supported.
 - Traffic policy for current plans: unlimited (`GB=0` in bot config means no cap).
 - Device policy: one config per device, enforced by device slots in bot.
 

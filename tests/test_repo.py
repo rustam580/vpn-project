@@ -111,14 +111,28 @@ async def test_has_paid_plan_payment_counts_only_plan_paid(repo) -> None:
 
     await repo.upsert_payment(
         provider="card",
-        external_id="plan-4004",
+        external_id="plan-device-4004",
         telegram_id=tg_id,
         days=30,
         gb=0,
         amount_rub=199.0,
-        pay_url="https://pay.local/plan-4004",
+        pay_url="https://pay.local/plan-device-4004",
         status="paid_applied",
-        purpose="plan",
+        purpose="plan_device",
+        device_slot=1,
+    )
+    assert await repo.has_paid_plan_payment(tg_id) is True
+
+    await repo.upsert_payment(
+        provider="card",
+        external_id="plan-all-4004",
+        telegram_id=tg_id,
+        days=30,
+        gb=0,
+        amount_rub=199.0,
+        pay_url="https://pay.local/plan-all-4004",
+        status="paid_applied",
+        purpose="plan_all",
     )
     assert await repo.has_paid_plan_payment(tg_id) is True
 

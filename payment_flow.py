@@ -18,6 +18,7 @@ async def apply_paid_payment(
     bot: Any | None,
     strict_device_slot: bool,
     ensure_device_fn: Callable[..., Awaitable[tuple[str | None, dict[str, Any] | None, bool]]],
+    extend_access_device_fn: Callable[..., Awaitable[dict[str, Any]]],
     extend_access_all_devices_fn: Callable[..., Awaitable[dict[str, Any]]],
     apply_referral_bonus_if_needed_fn: Callable[..., Awaitable[None]],
     notify_admin_payment_fn: Callable[..., Awaitable[None]] | None = None,
@@ -40,6 +41,20 @@ async def apply_paid_payment(
             updated = updated_user or {}
         else:
             updated = {}
+    elif purpose == "plan_device":
+        slot = int(payment.get("device_slot") or 0)
+        if slot <= 0 or (settings.device_limit > 0 and slot > settings.device_limit):
+            await repo.set_payment_status(provider, external_id, "failed")
+            return {}, purpose, "❌ Некорректный слот устройства."
+        updated = await extend_access_device_fn(
+            telegram_id=int(payment["telegram_id"]),
+            device_id=slot,
+            days=int(payment["days"]),
+            gb=int(payment["gb"]),
+            repo=repo,
+            marzban=marzban,
+            settings=settings,
+        )
     else:
         updated = await extend_access_all_devices_fn(
             telegram_id=int(payment["telegram_id"]),
@@ -184,4 +199,9 @@ async def check_and_apply_payment(
             f"Назовите его командой: /device_name {slot} Мой ноутбук",
             updated,
         )
+    if purpose == "plan_device":
+        slot = int(payment.get("device_slot") or 0)
+        return f"✅ Оплата подтверждена. Доступ для устройства {slot} продлен.", updated
+    if purpose == "plan_all":
+        return "✅ Оплата подтверждена, доступ продлен для всех устройств.", updated
     return "✅ Оплата подтверждена, доступ продлен.", updated

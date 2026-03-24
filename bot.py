@@ -918,7 +918,7 @@ class Repo:
             FROM payments
             WHERE telegram_id = ?
               AND status = 'paid_applied'
-              AND purpose = 'plan'
+              AND purpose IN ('plan', 'plan_device', 'plan_all')
             LIMIT 1
             """,
             (telegram_id,),
@@ -1309,20 +1309,46 @@ def admin_panel_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def payment_methods_keyboard(settings: Settings) -> InlineKeyboardMarkup:
+def payment_methods_keyboard(
+    settings: Settings,
+    *,
+    target: str,
+    device_id: int = 1,
+) -> InlineKeyboardMarkup:
+    suffix = "all" if target == "all" else f"slot:{device_id}"
     rows: list[list[InlineKeyboardButton]] = []
     rows.append(
         [
             InlineKeyboardButton(
                 text=("₿ CryptoBot" if settings.cryptobot_enabled() else "₿ CryptoBot (не настроен)"),
-                callback_data="buy:crypto",
+                callback_data=f"buy:crypto:{suffix}",
             )
         ]
     )
     if settings.yookassa_enabled():
-        rows.append([InlineKeyboardButton(text="💳 Карта (YooKassa)", callback_data="buy:card")])
+        rows.append([InlineKeyboardButton(text="💳 Карта (YooKassa)", callback_data=f"buy:card:{suffix}")])
     if not settings.yookassa_enabled():
-        rows.append([InlineKeyboardButton(text="💳 Оплата картой (не настроена)", callback_data="buy:card")])
+        rows.append(
+            [InlineKeyboardButton(text="💳 Оплата картой (не настроена)", callback_data=f"buy:card:{suffix}")]
+        )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def buy_target_keyboard(devices: list[dict[str, Any]]) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    ordered = sorted(devices, key=lambda d: int(d["device_id"]))
+    for row in ordered:
+        device_id = int(row["device_id"])
+        label = _device_label(device_id, row.get("device_name"))
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"🔑 Продлить {_short_label(label, limit=22)}",
+                    callback_data=f"buyselect:slot:{device_id}",
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton(text="🧩 Продлить все ключи", callback_data="buyselect:all")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -2448,16 +2474,38 @@ async def apply_referral_bonus_if_needed(
         logging.exception("Referral bonus: failed to notify referrer %s", referrer_id)
 
 
-async def cryptobot_create_invoice(settings: Settings, telegram_id: int) -> tuple[str, str]:
-    return await ps_cryptobot_create_invoice(settings, telegram_id)
+async def cryptobot_create_invoice(
+    settings: Settings,
+    telegram_id: int,
+    *,
+    amount_rub: float | None = None,
+    description: str | None = None,
+) -> tuple[str, str]:
+    return await ps_cryptobot_create_invoice(
+        settings,
+        telegram_id,
+        amount_rub=amount_rub,
+        description=description,
+    )
 
 
 async def cryptobot_check_invoice(settings: Settings, external_id: str) -> str:
     return await ps_cryptobot_check_invoice(settings, external_id)
 
 
-async def yookassa_create_payment(settings: Settings, telegram_id: int) -> tuple[str, str]:
-    return await ps_yookassa_create_payment(settings, telegram_id)
+async def yookassa_create_payment(
+    settings: Settings,
+    telegram_id: int,
+    *,
+    amount_rub: float | None = None,
+    description: str | None = None,
+) -> tuple[str, str]:
+    return await ps_yookassa_create_payment(
+        settings,
+        telegram_id,
+        amount_rub=amount_rub,
+        description=description,
+    )
 
 
 async def yookassa_check_payment(settings: Settings, external_id: str) -> str:
@@ -2485,6 +2533,7 @@ async def apply_paid_payment(
         bot=bot,
         strict_device_slot=strict_device_slot,
         ensure_device_fn=ensure_device,
+        extend_access_device_fn=extend_access_device,
         extend_access_all_devices_fn=extend_access_all_devices,
         apply_referral_bonus_if_needed_fn=apply_referral_bonus_if_needed,
         notify_admin_payment_fn=notify_admin_payment,
@@ -3073,6 +3122,11 @@ async def cryptobot_auto_worker(
                                     f"✅ Оплата подтверждена. Устройство {slot} добавлено.\n"
                                     f"Назовите его командой: /device_name {slot} Мой ноутбук"
                                 )
+                            elif purpose == "plan_device":
+                                slot = int(payment.get("device_slot") or 0)
+                                text = f"✅ Оплата подтверждена автоматически. Устройство {slot} продлено."
+                            elif purpose == "plan_all":
+                                text = "✅ Оплата подтверждена автоматически. Все ключи продлены."
                             else:
                                 text = "Оплата подтверждена автоматически. Доступ продлен."
                             await notify_access_updated(
@@ -3161,6 +3215,11 @@ async def yookassa_auto_worker(
                                     f"✅ Оплата подтверждена. Устройство {slot} добавлено.\n"
                                     f"Назовите его командой: /device_name {slot} Мой ноутбук"
                                 )
+                            elif purpose == "plan_device":
+                                slot = int(payment.get("device_slot") or 0)
+                                text = f"✅ Оплата подтверждена автоматически. Устройство {slot} продлено."
+                            elif purpose == "plan_all":
+                                text = "✅ Оплата подтверждена автоматически. Все ключи продлены."
                             else:
                                 text = "Оплата подтверждена автоматически. Доступ продлен."
                             await notify_access_updated(
@@ -3840,10 +3899,38 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
     async def buy_cmd(message: Message) -> None:
         if not await guard_message_rate_limit(message):
             return
+        if not message.from_user:
+            await message.answer(
+                f"💳 Продление одного устройства: {settings.pay_rub:.2f} RUB за {settings.pay_days} дней.\n"
+                "Выберите способ оплаты:",
+                reply_markup=payment_methods_keyboard(settings, target="slot", device_id=1),
+            )
+            return
+        tg_id = int(message.from_user.id)
+        devices = await repo.list_devices(tg_id)
+        if not devices:
+            await message.answer(
+                f"💳 Продление одного устройства: {settings.pay_rub:.2f} RUB за {settings.pay_days} дней.\n"
+                "Сначала будет продлен основной ключ (устройство 1).\n"
+                "Выберите способ оплаты:",
+                reply_markup=payment_methods_keyboard(settings, target="slot", device_id=1),
+            )
+            return
+        if len(devices) == 1:
+            only_slot = int(devices[0]["device_id"])
+            await message.answer(
+                f"💳 Продление одного устройства: {settings.pay_rub:.2f} RUB за {settings.pay_days} дней.\n"
+                f"Будет продлен слот {only_slot}.\n"
+                "Выберите способ оплаты:",
+                reply_markup=payment_methods_keyboard(settings, target="slot", device_id=only_slot),
+            )
+            return
+        total = settings.pay_rub * len(devices)
         await message.answer(
-            f"💳 Тариф: {settings.pay_days} дней, {plan_gb_text(settings.pay_gb)}, {settings.pay_rub:.2f} RUB.\n"
-            "Выберите способ оплаты:",
-            reply_markup=payment_methods_keyboard(settings),
+            f"💳 Продление одного устройства: {settings.pay_rub:.2f} RUB за {settings.pay_days} дней.\n"
+            f"💳 Продление всех ключей ({len(devices)} шт): {total:.2f} RUB.\n"
+            "Выберите, что продлить:",
+            reply_markup=buy_target_keyboard(devices),
         )
 
     @router.message(Command("device"))
@@ -4404,6 +4491,52 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             return
         await callback.answer("Неверный callback", show_alert=True)
 
+    @router.callback_query(F.data.startswith("buyselect:"))
+    async def buy_select_callback(callback: CallbackQuery) -> None:
+        if not await guard_callback_rate_limit(callback):
+            return
+        if not callback.data or not callback.from_user or callback.message is None:
+            await callback.answer("Ошибка callback", show_alert=True)
+            return
+        tg_id = int(callback.from_user.id)
+        devices = await repo.list_devices(tg_id)
+        parts = callback.data.split(":")
+        if len(parts) < 2:
+            await callback.answer("Неверный формат", show_alert=True)
+            return
+        if parts[1] == "all":
+            if not devices:
+                await callback.answer("Сначала получите конфиг.", show_alert=True)
+                return
+            total = settings.pay_rub * len(devices)
+            await callback.message.answer(
+                f"🧩 Продление всех ключей ({len(devices)} шт): {total:.2f} RUB.\n"
+                f"Срок: +{settings.pay_days} дней, трафик: {plan_gb_text(settings.pay_gb)}.\n"
+                "Выберите способ оплаты:",
+                reply_markup=payment_methods_keyboard(settings, target="all"),
+            )
+            await callback.answer()
+            return
+        if parts[1] == "slot" and len(parts) >= 3:
+            try:
+                slot = int(parts[2])
+            except ValueError:
+                await callback.answer("Неверный слот", show_alert=True)
+                return
+            row = await repo.get_device(tg_id, slot)
+            if not row:
+                await callback.answer("Слот не найден", show_alert=True)
+                return
+            await callback.message.answer(
+                f"🔑 Продление устройства {slot}: {settings.pay_rub:.2f} RUB.\n"
+                f"Срок: +{settings.pay_days} дней, трафик: {plan_gb_text(settings.pay_gb)}.\n"
+                "Выберите способ оплаты:",
+                reply_markup=payment_methods_keyboard(settings, target="slot", device_id=slot),
+            )
+            await callback.answer()
+            return
+        await callback.answer("Неверный формат", show_alert=True)
+
     @router.callback_query(F.data.startswith("buy:"))
     async def buy_callback(callback: CallbackQuery) -> None:
         if not await guard_callback_rate_limit(callback):
@@ -4411,19 +4544,67 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
         if not callback.data or not callback.from_user or callback.message is None:
             await callback.answer("Ошибка callback", show_alert=True)
             return
-        provider = callback.data.split(":", 1)[1]
+        parts = callback.data.split(":")
+        provider = parts[1] if len(parts) >= 2 else ""
         tg_id = int(callback.from_user.id)
         try:
+            target = "slot"
+            slot = 1
+            if len(parts) >= 3:
+                if parts[2] == "all":
+                    target = "all"
+                elif parts[2] == "slot" and len(parts) >= 4:
+                    try:
+                        slot = int(parts[3])
+                    except ValueError:
+                        await callback.answer("Неверный слот", show_alert=True)
+                        return
+
+            if target == "slot":
+                if slot < 1:
+                    await callback.answer("Неверный слот", show_alert=True)
+                    return
+                if slot > 1:
+                    slot_row = await repo.get_device(tg_id, slot)
+                    if not slot_row:
+                        await callback.answer("Слот не найден", show_alert=True)
+                        return
+                amount_rub = settings.pay_rub
+                purpose = "plan_device"
+                device_slot = slot
+                pay_desc = f"VPN продление устройства {slot}: +{settings.pay_days}d"
+                pay_title = f"Продление устройства {slot}"
+            else:
+                devices = await repo.list_devices(tg_id)
+                if not devices:
+                    await callback.answer("Сначала получите конфиг.", show_alert=True)
+                    return
+                amount_rub = settings.pay_rub * len(devices)
+                purpose = "plan_all"
+                device_slot = 0
+                pay_desc = f"VPN продление всех устройств ({len(devices)} шт): +{settings.pay_days}d"
+                pay_title = f"Продление всех устройств ({len(devices)} шт)"
+
             if provider == "crypto":
                 if not settings.cryptobot_enabled():
                     await callback.answer("CryptoBot не настроен", show_alert=True)
                     return
-                external_id, pay_url = await cryptobot_create_invoice(settings, tg_id)
+                external_id, pay_url = await cryptobot_create_invoice(
+                    settings,
+                    tg_id,
+                    amount_rub=amount_rub,
+                    description=pay_desc,
+                )
             elif provider == "card":
                 if not settings.yookassa_enabled():
                     await callback.answer("YooKassa не настроена", show_alert=True)
                     return
-                external_id, pay_url = await yookassa_create_payment(settings, tg_id)
+                external_id, pay_url = await yookassa_create_payment(
+                    settings,
+                    tg_id,
+                    amount_rub=amount_rub,
+                    description=pay_desc,
+                )
             else:
                 await callback.answer("Неизвестный метод", show_alert=True)
                 return
@@ -4434,19 +4615,28 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                 telegram_id=tg_id,
                 days=settings.pay_days,
                 gb=settings.pay_gb,
-                amount_rub=settings.pay_rub,
+                amount_rub=amount_rub,
                 pay_url=pay_url,
                 status="pending",
-                purpose="plan",
+                purpose=purpose,
+                device_slot=device_slot,
             )
             await track_event(
                 "payment_created_plan",
                 telegram_id=tg_id,
                 event_value=provider,
-                event_meta={"external_id": external_id, "amount_rub": settings.pay_rub},
+                event_meta={
+                    "external_id": external_id,
+                    "amount_rub": amount_rub,
+                    "purpose": purpose,
+                    "device_slot": device_slot,
+                },
             )
             await callback.message.answer(
-                f"✅ Платеж создан ({provider}).\nID: {external_id}",
+                f"✅ Платеж создан ({provider}).\n"
+                f"Тип: {pay_title}\n"
+                f"Сумма: {amount_rub:.2f} RUB\n"
+                f"ID: {external_id}",
                 reply_markup=pay_action_keyboard(provider, external_id, pay_url),
             )
             await callback.answer()
@@ -4484,12 +4674,22 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                 if not settings.cryptobot_enabled():
                     await callback.answer("CryptoBot не настроен", show_alert=True)
                     return
-                external_id, pay_url = await cryptobot_create_invoice(settings, tg_id)
+                external_id, pay_url = await cryptobot_create_invoice(
+                    settings,
+                    tg_id,
+                    amount_rub=settings.device_add_rub,
+                    description=f"VPN добавление устройства {slot}",
+                )
             elif provider == "card":
                 if not settings.yookassa_enabled():
                     await callback.answer("YooKassa не настроена", show_alert=True)
                     return
-                external_id, pay_url = await yookassa_create_payment(settings, tg_id)
+                external_id, pay_url = await yookassa_create_payment(
+                    settings,
+                    tg_id,
+                    amount_rub=settings.device_add_rub,
+                    description=f"VPN добавление устройства {slot}",
+                )
             else:
                 await callback.answer("Неизвестный метод", show_alert=True)
                 return

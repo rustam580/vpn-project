@@ -61,7 +61,7 @@ Behavior:
 - Device 1 is default.
 - Additional devices can be created by admin via `/device_add <telegram_id> [slot]`.
 - Users can add a device by paying through the bot (button "Добавить устройство").
-- Payments extend access for all device slots.
+- Plan payments support two modes: one selected slot (`plan_device`) or all slots (`plan_all`).
 
 ## 6) Robokassa (planned)
 Status: not integrated in current bot code.
