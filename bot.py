@@ -1244,17 +1244,32 @@ def is_admin(telegram_id: int | None, settings: Settings) -> bool:
 def keyboard_for_user(*, is_admin: bool) -> ReplyKeyboardMarkup:
     rows: list[list[KeyboardButton]] = [
         [KeyboardButton(text="🔑 Получить конфиг"), KeyboardButton(text="💳 Купить доступ")],
-        [KeyboardButton(text="📊 Мой статус"), KeyboardButton(text="📱 Добавить устройство")],
-        [KeyboardButton(text="🔁 Заменить устройство")],
-        [KeyboardButton(text="✏️ Переименовать устройство")],
-        [KeyboardButton(text="⚠️ Проблема с подключением")],
-        [KeyboardButton(text="🎁 Рефералка")],
-        [KeyboardButton(text="❓ FAQ"), KeyboardButton(text="🆘 Поддержка")],
-        [KeyboardButton(text="📢 Наш канал")],
+        [KeyboardButton(text="📊 Мой статус"), KeyboardButton(text="📂 Еще")],
+        [KeyboardButton(text="🆘 Поддержка")],
     ]
     if is_admin:
         rows.append([KeyboardButton(text="🛠 Админ-кабинет")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True, is_persistent=True)
+
+
+def more_actions_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="📱 Добавить устройство", callback_data="quick:device"),
+                InlineKeyboardButton(text="🔁 Заменить устройство", callback_data="quick:replace"),
+            ],
+            [
+                InlineKeyboardButton(text="✏️ Переименовать устройство", callback_data="quick:rename"),
+                InlineKeyboardButton(text="🎁 Рефералка", callback_data="quick:ref"),
+            ],
+            [
+                InlineKeyboardButton(text="❓ FAQ", callback_data="quick:faq"),
+                InlineKeyboardButton(text="📢 Наш канал", callback_data="quick:channel"),
+            ],
+            [InlineKeyboardButton(text="⚠️ Проблема с подключением", callback_data="quick:issue")],
+        ]
+    )
 
 
 def admin_panel_keyboard() -> InlineKeyboardMarkup:
@@ -4201,6 +4216,17 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
     async def buy_btn(message: Message) -> None:
         await buy_cmd(message)
 
+    @router.message(F.text == "📂 Еще")
+    async def more_btn(message: Message) -> None:
+        if not await guard_message_rate_limit(message):
+            return
+        await message.answer(
+            "<b>Дополнительные действия</b>\n"
+            "Выберите нужный пункт:",
+            reply_markup=more_actions_keyboard(),
+            parse_mode="HTML",
+        )
+
     @router.message(F.text == "📱 Добавить устройство")
     async def device_btn(message: Message) -> None:
         await device_cmd(message)
@@ -4259,6 +4285,118 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
     @router.message(F.text == "🛠 Админ-кабинет")
     async def admin_btn(message: Message) -> None:
         await admin_cmd(message)
+
+    @router.callback_query(F.data.startswith("quick:"))
+    async def quick_action_callback(callback: CallbackQuery) -> None:
+        if not await guard_callback_rate_limit(callback):
+            return
+        if not callback.data or not callback.from_user or callback.message is None:
+            await callback.answer("Ошибка callback", show_alert=True)
+            return
+        action = callback.data.split(":", 1)[1].strip()
+        tg_id = int(callback.from_user.id)
+
+        if action == "device":
+            row = await repo.get_user(tg_id)
+            if not row:
+                await callback.answer()
+                await callback.message.answer("❗ Сначала получите основной конфиг.")
+                return
+            devices = await repo.list_devices(tg_id)
+            if settings.device_limit > 0 and len(devices) >= settings.device_limit:
+                await callback.answer()
+                await callback.message.answer("Лимит устройств уже исчерпан.")
+                return
+            if not await repo.has_paid_plan_payment(tg_id):
+                await callback.answer()
+                await callback.message.answer(
+                    "📱 Доп. устройство доступно только после оплаты основного тарифа.\n"
+                    "Сначала нажмите «Купить доступ»."
+                )
+                return
+            await callback.answer()
+            await callback.message.answer(
+                f"📱 Доп. устройство: {settings.device_add_rub:.2f} RUB.\n"
+                "Оплата добавляет только новый слот устройства.\n"
+                "Срок доступа не продлевается.\n"
+                "После оплаты устройство появится автоматически.\n"
+                "Название можно задать через «Переименовать устройство».",
+                reply_markup=device_methods_keyboard(settings),
+            )
+            return
+
+        if action == "replace":
+            devices = await list_replaceable_devices(tg_id)
+            await callback.answer()
+            if not devices:
+                await callback.message.answer("Активные устройства не найдены. Сначала получите конфиг.")
+                return
+            kb = _devices_replace_keyboard(devices)
+            await callback.message.answer(
+                "Выберите устройство для переиздания конфига.\n"
+                "Старый конфиг выбранного устройства будет отключен.",
+                reply_markup=kb,
+            )
+            return
+
+        if action == "rename":
+            devices = await repo.list_devices(tg_id)
+            await callback.answer()
+            if not devices:
+                await callback.message.answer("Устройства не найдены. Сначала получите конфиг.")
+                return
+            kb = _devices_rename_keyboard(devices)
+            await callback.message.answer("Выберите устройство для переименования:", reply_markup=kb)
+            return
+
+        if action == "ref":
+            username = await get_bot_username(callback.message.bot)
+            await callback.answer()
+            if not username:
+                await callback.message.answer("Не удалось получить username бота. Попробуйте позже.")
+                return
+            link = f"https://t.me/{username}?start=ref_{tg_id}"
+            stats = await repo.get_referral_stats(tg_id)
+            await callback.message.answer(
+                "🎁 Реферальная программа:\n"
+                f"- Бонус за оплаченного друга: +{max(0, settings.referral_bonus_days)} дн.\n"
+                f"- Приглашено: {stats['total']}\n"
+                f"- Бонус выдан: {stats['rewarded']}\n"
+                f"- Ожидают первую оплату: {stats['pending']}\n\n"
+                "Ваша ссылка:\n"
+                f"{link}"
+            )
+            return
+
+        if action == "faq":
+            await callback.answer()
+            await callback.message.answer(build_user_faq_text(), parse_mode="HTML")
+            return
+
+        if action == "channel":
+            await callback.answer()
+            link = normalize_channel_url(settings.channel_url)
+            if link:
+                await callback.message.answer(f"<b>📢 Наш канал</b>\n{link}", parse_mode="HTML")
+            else:
+                await callback.message.answer("Канал пока не настроен. Администратор скоро добавит ссылку.")
+            return
+
+        if action == "issue":
+            pending_issue.add(tg_id)
+            await callback.answer()
+            await callback.message.answer(
+                "Опишите проблему одним сообщением по шаблону:\n"
+                "1) Время (дата и время по МСК)\n"
+                "2) Устройство и приложение (iOS/Android/Windows + клиент)\n"
+                "3) Что именно не работает\n"
+                "4) Ошибка/скрин (если есть)\n"
+                "5) Пробовали переимпорт/перезапуск\n\n"
+                "Напишите «отмена» чтобы выйти."
+            )
+            return
+
+        await callback.answer("Неизвестное действие", show_alert=True)
 
     @router.callback_query(F.data.startswith("devrename:"))
     async def device_rename_callback(callback: CallbackQuery) -> None:
