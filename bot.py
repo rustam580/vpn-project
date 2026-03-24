@@ -1853,18 +1853,17 @@ async def measure_iface_mbps_sar(iface: str, duration: int = 60) -> float | None
 def _configs_keyboard(items: list[tuple[int, str]]) -> InlineKeyboardMarkup | None:
     if not items:
         return None
-    if len(items) > 8:
-        return None
     rows: list[list[InlineKeyboardButton]] = []
-    for index, label in items:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text=f"Показать #{index} ({_short_label(label)})",
-                    callback_data=f"cfg:show:{index}",
-                )
-            ]
-        )
+    if len(items) <= 2:
+        for index, label in items:
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=f"Показать #{index} ({_short_label(label)})",
+                        callback_data=f"cfg:show:{index}",
+                    )
+                ]
+            )
     rows.append([InlineKeyboardButton(text="Показать все в чате", callback_data="cfg:showall")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -1982,18 +1981,16 @@ async def send_device_links(
         await message.answer("⚠️ Активные конфиги не найдены.")
         return
 
-    lines: list[str] = []
+    labels_seen: list[str] = []
     index_map: list[tuple[int, str, str]] = []
     counter = 1
     for device_id, label, link in items:
-        lines.append(f"{counter}. {label}: {_link_preview(link)}")
+        if label not in labels_seen:
+            labels_seen.append(label)
         index_map.append((counter, label, link))
         counter += 1
 
-    await message.answer(
-        f"🔑 Активные конфиги: {len(items)}.\n"
-        "Короткий список (для ориентира):\n" + "\n".join(lines)
-    )
+    await message.answer(f"🔑 Готово. Активных конфигов: {len(items)} для {len(labels_seen)} устройств.")
 
     file_lines: list[str] = []
     for device_id, label, link in items:
@@ -2005,7 +2002,7 @@ async def send_device_links(
     try:
         await message.answer_document(
             BufferedInputFile(payload.encode("utf-8"), filename="configs.txt"),
-            caption="Полный список конфигов в одном файле.",
+            caption="configs.txt — все активные конфиги.",
         )
     except Exception:
         logging.exception("Failed to send configs.txt to user %s", telegram_id)
@@ -2014,7 +2011,7 @@ async def send_device_links(
 
     cfg_buttons = _configs_keyboard([(idx, label) for idx, label, _ in index_map])
     if cfg_buttons:
-        await message.answer("Показать конфиг в чате:", reply_markup=cfg_buttons)
+        await message.answer("Нужен просмотр в чате?", reply_markup=cfg_buttons)
     await message.answer(config_import_hint_text(), parse_mode="HTML")
 
 
@@ -2086,17 +2083,17 @@ async def send_device_links_to_bot(
     if not items:
         await bot.send_message(telegram_id, "⚠️ Активные конфиги не найдены.")
         return
-    lines: list[str] = []
+    labels_seen: list[str] = []
     index_map: list[tuple[int, str]] = []
     counter = 1
-    for _, label, link in items:
-        lines.append(f"{counter}. {label}: {_link_preview(link)}")
+    for _, label, _ in items:
+        if label not in labels_seen:
+            labels_seen.append(label)
         index_map.append((counter, label))
         counter += 1
     await bot.send_message(
         telegram_id,
-        f"🔑 Активные конфиги: {len(items)}.\n"
-        "Короткий список (для ориентира):\n" + "\n".join(lines),
+        f"🔑 Готово. Активных конфигов: {len(items)} для {len(labels_seen)} устройств.",
     )
     file_lines: list[str] = []
     for device_id, label, link in items:
@@ -2109,7 +2106,7 @@ async def send_device_links_to_bot(
         await bot.send_document(
             telegram_id,
             BufferedInputFile(payload.encode("utf-8"), filename="configs.txt"),
-            caption="Полный список конфигов в одном файле.",
+            caption="configs.txt — все активные конфиги.",
         )
     except Exception:
         logging.exception("Failed to send configs.txt via bot to user %s", telegram_id)
@@ -2117,7 +2114,7 @@ async def send_device_links_to_bot(
         await send_configs_in_chat_to_bot(bot=bot, telegram_id=telegram_id, items=items)
     cfg_buttons = _configs_keyboard(index_map)
     if cfg_buttons:
-        await bot.send_message(telegram_id, "Показать конфиг в чате:", reply_markup=cfg_buttons)
+        await bot.send_message(telegram_id, "Нужен просмотр в чате?", reply_markup=cfg_buttons)
     await bot.send_message(telegram_id, config_import_hint_text(), parse_mode="HTML")
 
 
@@ -4197,8 +4194,6 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                 f"🎁 Тестовый доступ выдан: {settings.trial_days} день, {plan_gb_text(settings.trial_gb)}."
             )
             await track_event("trial_issued", telegram_id=tg_id)
-        else:
-            await message.answer("📊 Ваш текущий доступ:")
         await send_status(message, user or {})
         await send_device_links(
             message=message,
