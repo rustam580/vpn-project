@@ -2353,6 +2353,72 @@ async def extend_access_device(
     return updated
 
 
+async def sync_expire_across_devices(
+    *,
+    telegram_id: int,
+    repo: Repo,
+    marzban: MarzbanClient,
+    mode: str = "max",
+    source_slot: int | None = None,
+) -> tuple[int, int, int, int]:
+    """
+    Align expire timestamp for all known device slots.
+    Returns: (target_expire, changed_count, found_count, missing_count)
+    """
+    rows = await repo.list_devices(telegram_id)
+    if not rows:
+        primary = await repo.get_user(telegram_id)
+        if primary:
+            rows = [
+                {
+                    "device_id": 1,
+                    "marzban_username": str(primary.get("marzban_username") or "").strip(),
+                    "device_name": None,
+                }
+            ]
+        else:
+            return 0, 0, 0, 0
+
+    found: list[tuple[int, str, int]] = []
+    missing_count = 0
+    for row in rows:
+        device_id = int(row.get("device_id") or 0)
+        username = str(row.get("marzban_username") or "").strip()
+        if not username:
+            missing_count += 1
+            continue
+        user = await marzban.get_user(username)
+        if not user:
+            missing_count += 1
+            continue
+        expire = int(user.get("expire", 0) or 0)
+        found.append((device_id, username, expire))
+
+    if not found:
+        return 0, 0, 0, missing_count
+
+    if mode == "min":
+        target_expire = min(expire for _, _, expire in found)
+    elif mode == "slot":
+        if source_slot is None or source_slot < 1:
+            raise ValueError("Укажите корректный слот для синхронизации.")
+        slot_expire = next((expire for d_id, _, expire in found if d_id == source_slot), None)
+        if slot_expire is None:
+            raise ValueError(f"Слот {source_slot} не найден в Marzban.")
+        target_expire = slot_expire
+    else:
+        target_expire = max(expire for _, _, expire in found)
+
+    changed = 0
+    for _, username, expire in found:
+        if expire == target_expire:
+            continue
+        await marzban.modify_user(username, {"expire": target_expire})
+        changed += 1
+
+    return target_expire, changed, len(found), missing_count
+
+
 async def set_permanent_access(
     *,
     telegram_id: int,
@@ -3679,6 +3745,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             "/grant <telegram_id> <days> <gb> (days=0 → бессрочно)\n"
             "/grant_perm <telegram_id> [gb] — бессрочный доступ\n"
             "/grant_device <telegram_id> <slot> <days> <gb> — доступ на слот\n"
+            "/sync_expire <telegram_id> [max|min|slot:<id>] — синхронизировать сроки слотов\n"
             "/device_add <telegram_id> [slot]\n"
             "/device_replace <telegram_id> <slot>\n"
             "/disable <telegram_id>\n"
@@ -4924,6 +4991,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                 "/ref_grant <telegram_id> [days]\n"
                 "/grant_perm <telegram_id> [gb]\n"
                 "/grant_device <telegram_id> <slot> <days> <gb>\n"
+                "/sync_expire <telegram_id> [max|min|slot:<id>]\n"
                 "/device_replace <telegram_id> <slot>\n"
                 "/disable <telegram_id>\n"
                 "/link <telegram_id> <marzban_username>\n"
@@ -4940,6 +5008,9 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                 "/ref_grant 386029735 3\n"
                 "/grant_perm 386029735 0\n"
                 "/grant_device 386029735 2 30 0\n"
+                "/sync_expire 386029735\n"
+                "/sync_expire 386029735 min\n"
+                "/sync_expire 386029735 slot:2\n"
                 "/device_replace 386029735 2\n"
                 "/setenv DEVICE_LIMIT 0\n"
                 "/setenv PAY_RUB 149\n"
@@ -5141,6 +5212,99 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
         except Exception:
             logging.exception("grant_device: failed to notify user %s", target)
             await message.answer("Доступ выдан, но не удалось отправить уведомление пользователю.")
+
+    @router.message(Command("sync_expire"))
+    async def sync_expire_cmd(message: Message) -> None:
+        if not await guard_message_rate_limit(message):
+            return
+        if not message.from_user or not is_admin(int(message.from_user.id), settings):
+            await message.answer("Недостаточно прав.")
+            return
+        parts = (message.text or "").split()
+        if len(parts) not in {2, 3}:
+            await message.answer("Использование: /sync_expire <telegram_id> [max|min|slot:<id>]")
+            return
+        try:
+            target = int(parts[1])
+        except ValueError:
+            await message.answer("Ошибка формата. Пример: /sync_expire 386029735")
+            return
+
+        mode = "max"
+        source_slot: int | None = None
+        mode_label = "максимальному сроку"
+        if len(parts) == 3:
+            raw_mode = parts[2].strip().lower()
+            if raw_mode == "max":
+                mode = "max"
+                mode_label = "максимальному сроку"
+            elif raw_mode == "min":
+                mode = "min"
+                mode_label = "минимальному сроку"
+            elif raw_mode.startswith("slot:"):
+                try:
+                    source_slot = int(raw_mode.split(":", 1)[1])
+                except ValueError:
+                    await message.answer("Неверный формат слота. Пример: slot:2")
+                    return
+                if source_slot < 1:
+                    await message.answer("Слот должен быть >= 1")
+                    return
+                mode = "slot"
+                mode_label = f"сроку слота {source_slot}"
+            else:
+                await message.answer("Режим: max, min или slot:<id>")
+                return
+
+        try:
+            target_expire, changed, found_count, missing_count = await sync_expire_across_devices(
+                telegram_id=target,
+                repo=repo,
+                marzban=marzban,
+                mode=mode,
+                source_slot=source_slot,
+            )
+        except ValueError as exc:
+            await message.answer(str(exc))
+            return
+        except Exception as exc:
+            logging.exception("sync_expire failed for tg=%s", target)
+            await message.answer(f"Не удалось синхронизировать сроки: {exc}")
+            return
+
+        if found_count == 0:
+            await message.answer("Не найдено активных профилей пользователя в Marzban.")
+            return
+
+        await message.answer(
+            "Готово.\n"
+            f"Режим: по {mode_label}\n"
+            f"Целевой срок: {format_expire(target_expire)}\n"
+            f"Изменено профилей: {changed}/{found_count}\n"
+            f"Не найдено в Marzban: {missing_count}"
+        )
+
+        try:
+            await message.bot.send_message(
+                target,
+                "✅ Администратор синхронизировал срок всех ваших устройств.\n"
+                f"Новый общий срок: {format_expire(target_expire)}",
+            )
+            primary_row = await repo.get_user(target)
+            if primary_row:
+                primary = await marzban.get_user(str(primary_row["marzban_username"]))
+                if primary:
+                    await send_status_to_bot(message.bot, target, primary)
+            await send_device_links_to_bot(
+                bot=message.bot,
+                telegram_id=target,
+                repo=repo,
+                marzban=marzban,
+                settings=settings,
+            )
+        except Exception:
+            logging.exception("sync_expire: failed to notify user %s", target)
+            await message.answer("Сроки синхронизированы, но не удалось отправить уведомление пользователю.")
 
     @router.message(Command("device_replace"))
     async def device_replace_cmd(message: Message) -> None:

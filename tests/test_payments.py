@@ -130,3 +130,90 @@ async def test_check_payment_rejects_foreign_user(repo) -> None:
     )
     assert "другого пользователя" in result
     assert updated is None
+
+async def test_sync_expire_across_devices_aligns_to_max(repo) -> None:
+    tg_id = 8118
+    username1 = f"tg_{tg_id}"
+    username2 = f"tg_{tg_id}_d2"
+
+    marzban = FakeMarzban()
+    await marzban.create_user(username=username1, expire=1700001000, data_limit=0)
+    await marzban.create_user(username=username2, expire=1700009000, data_limit=0)
+
+    await repo.upsert_user(tg_id, username1)
+    await repo.upsert_device(tg_id, 1, username1)
+    await repo.upsert_device(tg_id, 2, username2)
+
+    target_expire, changed, found_count, missing_count = await bot.sync_expire_across_devices(
+        telegram_id=tg_id,
+        repo=repo,
+        marzban=marzban,
+    )
+
+    assert target_expire == 1700009000
+    assert changed == 1
+    assert found_count == 2
+    assert missing_count == 0
+    assert (await marzban.get_user(username1))["expire"] == 1700009000
+    assert (await marzban.get_user(username2))["expire"] == 1700009000
+
+
+async def test_sync_expire_across_devices_aligns_to_min(repo) -> None:
+    tg_id = 8119
+    username1 = f"tg_{tg_id}"
+    username2 = f"tg_{tg_id}_d2"
+
+    marzban = FakeMarzban()
+    await marzban.create_user(username=username1, expire=1700001000, data_limit=0)
+    await marzban.create_user(username=username2, expire=1700009000, data_limit=0)
+
+    await repo.upsert_user(tg_id, username1)
+    await repo.upsert_device(tg_id, 1, username1)
+    await repo.upsert_device(tg_id, 2, username2)
+
+    target_expire, changed, found_count, missing_count = await bot.sync_expire_across_devices(
+        telegram_id=tg_id,
+        repo=repo,
+        marzban=marzban,
+        mode="min",
+    )
+
+    assert target_expire == 1700001000
+    assert changed == 1
+    assert found_count == 2
+    assert missing_count == 0
+    assert (await marzban.get_user(username1))["expire"] == 1700001000
+    assert (await marzban.get_user(username2))["expire"] == 1700001000
+
+
+async def test_sync_expire_across_devices_aligns_to_source_slot(repo) -> None:
+    tg_id = 8120
+    username1 = f"tg_{tg_id}"
+    username2 = f"tg_{tg_id}_d2"
+    username3 = f"tg_{tg_id}_d3"
+
+    marzban = FakeMarzban()
+    await marzban.create_user(username=username1, expire=1700001000, data_limit=0)
+    await marzban.create_user(username=username2, expire=1700009000, data_limit=0)
+    await marzban.create_user(username=username3, expire=1700005000, data_limit=0)
+
+    await repo.upsert_user(tg_id, username1)
+    await repo.upsert_device(tg_id, 1, username1)
+    await repo.upsert_device(tg_id, 2, username2)
+    await repo.upsert_device(tg_id, 3, username3)
+
+    target_expire, changed, found_count, missing_count = await bot.sync_expire_across_devices(
+        telegram_id=tg_id,
+        repo=repo,
+        marzban=marzban,
+        mode="slot",
+        source_slot=3,
+    )
+
+    assert target_expire == 1700005000
+    assert changed == 2
+    assert found_count == 3
+    assert missing_count == 0
+    assert (await marzban.get_user(username1))["expire"] == 1700005000
+    assert (await marzban.get_user(username2))["expire"] == 1700005000
+    assert (await marzban.get_user(username3))["expire"] == 1700005000
