@@ -87,3 +87,10 @@ def test_format_last_online_handles_none_and_iso() -> None:
     assert bot.format_last_online(None) == "нет данных"
     formatted = bot.format_last_online("2026-03-23T08:04:46.023092")
     assert "UTC" in formatted
+
+def test_parse_int_csv_sorts_and_filters_invalid_values() -> None:
+    assert bot.parse_int_csv("72, 24, x, -1, 6, 24", default=(1,)) == (6, 24, 72)
+
+
+def test_parse_int_csv_returns_default_on_empty_input() -> None:
+    assert bot.parse_int_csv(" , ", default=(6, 24, 72)) == (6, 24, 72)

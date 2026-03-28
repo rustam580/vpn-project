@@ -59,6 +59,23 @@ def env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def parse_int_csv(raw: str, *, default: tuple[int, ...]) -> tuple[int, ...]:
+    values: set[int] = set()
+    for part in str(raw or "").split(","):
+        token = part.strip()
+        if not token:
+            continue
+        try:
+            value = int(token)
+        except ValueError:
+            continue
+        if value > 0:
+            values.add(value)
+    if not values:
+        return default
+    return tuple(sorted(values))
+
+
 
 
 def parse_admin_ids(raw: str) -> set[int]:
@@ -316,6 +333,15 @@ class Settings:
     port_speed_mbps: float
     port_utilization: float
     concurrency_ratio: float
+    renewal_alerts_enabled: bool
+    renewal_alert_interval_sec: int
+    renewal_reminder_hours: tuple[int, ...]
+    renewal_expired_alert_enabled: bool
+    auto_renew_invoice_enabled: bool
+    auto_renew_invoice_hours_before: int
+    auto_renew_invoice_provider: str
+    auto_renew_invoice_plan_key: str
+    auto_renew_invoice_target: str
 
     @staticmethod
     def load() -> "Settings":
@@ -354,6 +380,16 @@ class Settings:
             logging.warning("Invalid PLANS_JSON, fallback to PAY_* defaults: %s", exc)
             plans = _default_plan(days=default_pay_days, gb=default_pay_gb, rub=default_pay_rub)
         base_plan = plans[0]
+        reminder_hours = parse_int_csv(
+            os.getenv("RENEWAL_REMINDER_HOURS", "72,24,6"),
+            default=(6, 24, 72),
+        )
+        auto_provider = os.getenv("AUTO_RENEW_INVOICE_PROVIDER", "card").strip().lower()
+        if auto_provider not in {"card", "crypto"}:
+            auto_provider = "card"
+        auto_target = os.getenv("AUTO_RENEW_INVOICE_TARGET", "all").strip().lower()
+        if auto_target not in {"all", "slot"}:
+            auto_target = "all"
 
         return Settings(
             bot_token=bot_token,
@@ -401,6 +437,17 @@ class Settings:
             port_speed_mbps=port_speed_mbps,
             port_utilization=float(os.getenv("PORT_UTILIZATION", "0.8")),
             concurrency_ratio=float(os.getenv("CONCURRENCY_RATIO", "0.05")),
+            renewal_alerts_enabled=env_bool("RENEWAL_ALERTS_ENABLED", True),
+            renewal_alert_interval_sec=max(60, int(os.getenv("RENEWAL_ALERT_INTERVAL_SEC", "300"))),
+            renewal_reminder_hours=reminder_hours,
+            renewal_expired_alert_enabled=env_bool("RENEWAL_EXPIRED_ALERT_ENABLED", True),
+            auto_renew_invoice_enabled=env_bool("AUTO_RENEW_INVOICE_ENABLED", False),
+            auto_renew_invoice_hours_before=max(
+                1, int(os.getenv("AUTO_RENEW_INVOICE_HOURS_BEFORE", "12"))
+            ),
+            auto_renew_invoice_provider=auto_provider,
+            auto_renew_invoice_plan_key=os.getenv("AUTO_RENEW_INVOICE_PLAN_KEY", "").strip(),
+            auto_renew_invoice_target=auto_target,
         )
 
     def cryptobot_enabled(self) -> bool:
@@ -660,6 +707,21 @@ class Repo:
         )
         await self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_events_type_created ON events(event_type, created_at)"
+        )
+        await self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS notification_marks (
+                telegram_id INTEGER NOT NULL,
+                device_id INTEGER NOT NULL,
+                mark_type TEXT NOT NULL,
+                expire_ts INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY(telegram_id, device_id, mark_type, expire_ts)
+            )
+            """
+        )
+        await self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_notification_marks_created ON notification_marks(created_at)"
         )
         await self.conn.commit()
 
@@ -1035,6 +1097,30 @@ class Repo:
         await c.close()
         return dict(row) if row else None
 
+    async def has_open_plan_payment(
+        self,
+        *,
+        telegram_id: int,
+        purpose: str,
+        device_slot: int = 0,
+    ) -> bool:
+        assert self.conn is not None
+        c = await self.conn.execute(
+            """
+            SELECT 1
+            FROM payments
+            WHERE telegram_id = ?
+              AND purpose = ?
+              AND COALESCE(device_slot, 0) = ?
+              AND status IN ('pending', 'processing')
+            LIMIT 1
+            """,
+            (telegram_id, purpose, device_slot),
+        )
+        row = await c.fetchone()
+        await c.close()
+        return row is not None
+
     async def has_paid_plan_payment(self, telegram_id: int) -> bool:
         assert self.conn is not None
         c = await self.conn.execute(
@@ -1121,6 +1207,43 @@ class Repo:
             )
         await self.conn.commit()
         return [dict(row) for row in rows]
+
+    async def mark_notification_once(
+        self,
+        *,
+        telegram_id: int,
+        device_id: int,
+        mark_type: str,
+        expire_ts: int,
+    ) -> bool:
+        assert self.conn is not None
+        cur = await self.conn.execute(
+            """
+            INSERT OR IGNORE INTO notification_marks (
+                telegram_id, device_id, mark_type, expire_ts, created_at
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                telegram_id,
+                device_id,
+                str(mark_type).strip()[:80],
+                int(expire_ts),
+                int(time.time()),
+            ),
+        )
+        await self.conn.commit()
+        return cur.rowcount > 0
+
+    async def prune_notification_marks(self, *, older_than_sec: int) -> int:
+        assert self.conn is not None
+        cutoff = int(time.time()) - max(86400, older_than_sec)
+        cur = await self.conn.execute(
+            "DELETE FROM notification_marks WHERE created_at < ?",
+            (cutoff,),
+        )
+        await self.conn.commit()
+        return int(cur.rowcount or 0)
 
     async def bind_referrer(self, invited_telegram_id: int, referrer_telegram_id: int) -> str:
         assert self.conn is not None
@@ -1564,6 +1687,20 @@ def pay_action_keyboard(provider: str, external_id: str, pay_url: str) -> Inline
     )
 
 
+def renewal_actions_keyboard(*, device_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"💳 Продлить устройство {device_id}",
+                    callback_data=f"buyselect:slot:{device_id}",
+                )
+            ],
+            [InlineKeyboardButton(text="🧩 Продлить все ключи", callback_data="buyselect:all")],
+        ]
+    )
+
+
 def broadcast_confirm_keyboard(*, fmt_key: str, with_buttons: bool) -> InlineKeyboardMarkup:
     fmt_label = broadcast_format_label(fmt_key)
     buttons_label = "Кнопки: вкл" if with_buttons else "Кнопки: выкл"
@@ -1863,6 +2000,15 @@ ENV_EDITABLE_KEYS: dict[str, str] = {
     "YOOKASSA_SECRET_KEY": "str",
     "YOOKASSA_RETURN_URL": "str",
     "PAYMENT_PROCESSING_REQUEUE_SECONDS": "int",
+    "RENEWAL_ALERTS_ENABLED": "bool",
+    "RENEWAL_ALERT_INTERVAL_SEC": "int",
+    "RENEWAL_REMINDER_HOURS": "str",
+    "RENEWAL_EXPIRED_ALERT_ENABLED": "bool",
+    "AUTO_RENEW_INVOICE_ENABLED": "bool",
+    "AUTO_RENEW_INVOICE_HOURS_BEFORE": "int",
+    "AUTO_RENEW_INVOICE_PROVIDER": "str",
+    "AUTO_RENEW_INVOICE_PLAN_KEY": "str",
+    "AUTO_RENEW_INVOICE_TARGET": "str",
 }
 
 
@@ -3469,6 +3615,276 @@ async def yookassa_auto_worker(
         except Exception:
             logging.exception("Auto yookassa worker iteration failed")
 
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval)
+        except asyncio.TimeoutError:
+            pass
+
+
+def auto_renew_plan(settings: Settings) -> Plan:
+    if settings.auto_renew_invoice_plan_key:
+        selected = find_plan(settings, settings.auto_renew_invoice_plan_key)
+        if selected is not None:
+            return selected
+    return settings.plans[0]
+
+
+def auto_renew_provider(settings: Settings) -> str | None:
+    preferred = settings.auto_renew_invoice_provider
+    if preferred == "card" and settings.yookassa_enabled():
+        return "card"
+    if preferred == "crypto" and settings.cryptobot_enabled():
+        return "crypto"
+    if settings.yookassa_enabled():
+        return "card"
+    if settings.cryptobot_enabled():
+        return "crypto"
+    return None
+
+
+async def subscription_renewal_worker(
+    *,
+    settings: Settings,
+    repo: Repo,
+    marzban: MarzbanClient,
+    bot: Bot,
+    stop_event: asyncio.Event,
+) -> None:
+    if (
+        not settings.renewal_alerts_enabled
+        and not settings.renewal_expired_alert_enabled
+        and not settings.auto_renew_invoice_enabled
+    ):
+        return
+
+    interval = max(60, settings.renewal_alert_interval_sec)
+    reminder_hours = tuple(sorted({h for h in settings.renewal_reminder_hours if h > 0}))
+    prune_every_sec = 6 * 3600
+    last_prune = 0
+    while not stop_event.is_set():
+        try:
+            now = int(time.time())
+            if now - last_prune >= prune_every_sec:
+                try:
+                    await repo.prune_notification_marks(older_than_sec=180 * 86400)
+                except Exception:
+                    logging.exception("Renewal worker: prune notification marks failed")
+                last_prune = now
+
+            users = await repo.list_users()
+            for user_row in users:
+                tg_id = int(user_row["telegram_id"])
+                devices = await repo.list_devices(tg_id)
+                if not devices:
+                    continue
+
+                soonest_expire = 0
+                soonest_slot = 1
+                for row in devices:
+                    device_id = int(row["device_id"])
+                    username = str(row.get("marzban_username") or "").strip()
+                    if not username:
+                        continue
+                    user = await marzban.get_user(username)
+                    if not user:
+                        continue
+
+                    expire_ts = int(user.get("expire", 0) or 0)
+                    if expire_ts <= 0:
+                        continue
+                    left = expire_ts - now
+                    if soonest_expire == 0 or expire_ts < soonest_expire:
+                        soonest_expire = expire_ts
+                        soonest_slot = device_id
+
+                    device_label = _device_label(device_id, row.get("device_name"))
+                    if settings.renewal_expired_alert_enabled and left <= 0:
+                        created = await repo.mark_notification_once(
+                            telegram_id=tg_id,
+                            device_id=device_id,
+                            mark_type="renewal_expired",
+                            expire_ts=expire_ts,
+                        )
+                        if created:
+                            try:
+                                await bot.send_message(
+                                    tg_id,
+                                    (
+                                        f"⛔ Доступ для {device_label} истек.\n"
+                                        f"Дата окончания: {format_expire(expire_ts)}\n\n"
+                                        "Нажмите продление ниже:"
+                                    ),
+                                    reply_markup=renewal_actions_keyboard(device_id=device_id),
+                                )
+                            except Exception:
+                                logging.exception(
+                                    "Renewal worker: failed to send expired alert tg=%s slot=%s",
+                                    tg_id,
+                                    device_id,
+                                )
+                            try:
+                                await repo.log_event(
+                                    event_type="renewal_expired_notice",
+                                    telegram_id=tg_id,
+                                    event_meta={"slot": device_id, "expire": expire_ts},
+                                )
+                            except Exception:
+                                logging.exception("Renewal worker: failed to track expired event")
+                        continue
+
+                    if not settings.renewal_alerts_enabled or left <= 0:
+                        continue
+
+                    threshold = next((h for h in reminder_hours if left <= h * 3600), None)
+                    if threshold is None:
+                        continue
+                    created = await repo.mark_notification_once(
+                        telegram_id=tg_id,
+                        device_id=device_id,
+                        mark_type=f"renewal_reminder_{threshold}h",
+                        expire_ts=expire_ts,
+                    )
+                    if not created:
+                        continue
+                    try:
+                        await bot.send_message(
+                            tg_id,
+                            (
+                                f"⏰ Напоминание: срок доступа для {device_label} скоро закончится.\n"
+                                f"Осталось: {format_time_left(expire_ts)}\n"
+                                f"До: {format_expire(expire_ts)}\n\n"
+                                "Нажмите продление ниже:"
+                            ),
+                            reply_markup=renewal_actions_keyboard(device_id=device_id),
+                        )
+                    except Exception:
+                        logging.exception(
+                            "Renewal worker: failed to send reminder tg=%s slot=%s",
+                            tg_id,
+                            device_id,
+                        )
+                    try:
+                        await repo.log_event(
+                            event_type="renewal_reminder_notice",
+                            telegram_id=tg_id,
+                            event_meta={
+                                "slot": device_id,
+                                "expire": expire_ts,
+                                "hours": threshold,
+                            },
+                        )
+                    except Exception:
+                        logging.exception("Renewal worker: failed to track reminder event")
+
+                if not settings.auto_renew_invoice_enabled or soonest_expire <= 0:
+                    continue
+                left_for_auto = soonest_expire - now
+                if left_for_auto <= 0 or left_for_auto > settings.auto_renew_invoice_hours_before * 3600:
+                    continue
+                provider = auto_renew_provider(settings)
+                if provider is None:
+                    continue
+                plan = auto_renew_plan(settings)
+                auto_target = settings.auto_renew_invoice_target
+                if auto_target == "all":
+                    purpose = "plan_all"
+                    device_slot = 0
+                    if await repo.has_open_plan_payment(
+                        telegram_id=tg_id,
+                        purpose=purpose,
+                        device_slot=device_slot,
+                    ):
+                        continue
+                    created = await repo.mark_notification_once(
+                        telegram_id=tg_id,
+                        device_id=0,
+                        mark_type=f"auto_invoice_{provider}_{plan.key}_{auto_target}",
+                        expire_ts=soonest_expire,
+                    )
+                    if not created:
+                        continue
+                    amount_rub = plan.rub * max(1, len(devices))
+                    pay_desc = (
+                        f"VPN {plan_title(plan)}: автосчет на продление всех устройств "
+                        f"({len(devices)} шт), +{plan.days}d"
+                    )
+                    pay_title = f"{plan_title(plan)} / все устройства ({len(devices)} шт)"
+                else:
+                    purpose = "plan_device"
+                    device_slot = soonest_slot
+                    if await repo.has_open_plan_payment(
+                        telegram_id=tg_id,
+                        purpose=purpose,
+                        device_slot=device_slot,
+                    ):
+                        continue
+                    created = await repo.mark_notification_once(
+                        telegram_id=tg_id,
+                        device_id=device_slot,
+                        mark_type=f"auto_invoice_{provider}_{plan.key}_{auto_target}",
+                        expire_ts=soonest_expire,
+                    )
+                    if not created:
+                        continue
+                    amount_rub = plan.rub
+                    pay_desc = f"VPN {plan_title(plan)}: автосчет на продление устройства {device_slot}, +{plan.days}d"
+                    pay_title = f"{plan_title(plan)} / устройство {device_slot}"
+
+                try:
+                    if provider == "card":
+                        external_id, pay_url = await yookassa_create_payment(
+                            settings,
+                            tg_id,
+                            amount_rub=amount_rub,
+                            description=pay_desc,
+                        )
+                    else:
+                        external_id, pay_url = await cryptobot_create_invoice(
+                            settings,
+                            tg_id,
+                            amount_rub=amount_rub,
+                            description=pay_desc,
+                        )
+                    await repo.upsert_payment(
+                        provider=provider,
+                        external_id=external_id,
+                        telegram_id=tg_id,
+                        days=plan.days,
+                        gb=plan.gb,
+                        amount_rub=amount_rub,
+                        pay_url=pay_url,
+                        status="pending",
+                        purpose=purpose,
+                        device_slot=device_slot,
+                    )
+                    await repo.log_event(
+                        event_type="payment_created_plan",
+                        telegram_id=tg_id,
+                        event_value=provider,
+                        event_meta={
+                            "external_id": external_id,
+                            "amount_rub": amount_rub,
+                            "purpose": purpose,
+                            "device_slot": device_slot,
+                            "plan_key": plan.key,
+                            "auto_invoice": 1,
+                        },
+                    )
+                    await bot.send_message(
+                        tg_id,
+                        (
+                            "🔁 Автопродление: счет создан заранее.\n"
+                            f"Тип: {pay_title}\n"
+                            f"Сумма: {amount_rub:.2f} RUB\n"
+                            f"Срок: +{plan.days} дней\n"
+                            f"ID: {external_id}"
+                        ),
+                        reply_markup=pay_action_keyboard(provider, external_id, pay_url),
+                    )
+                except Exception:
+                    logging.exception("Renewal worker: auto invoice failed for tg=%s", tg_id)
+        except Exception:
+            logging.exception("Renewal worker iteration failed")
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=interval)
         except asyncio.TimeoutError:
@@ -6085,6 +6501,15 @@ async def main() -> None:
             stop_event=stop_event,
         )
     )
+    renewal_task = asyncio.create_task(
+        subscription_renewal_worker(
+            settings=settings,
+            repo=repo,
+            marzban=marzban,
+            bot=bot,
+            stop_event=stop_event,
+        )
+    )
 
     try:
         await dp.start_polling(bot)
@@ -6094,6 +6519,7 @@ async def main() -> None:
         yookassa_task.cancel()
         report_task.cancel()
         deploy_report_task.cancel()
+        renewal_task.cancel()
         try:
             await worker_task
         except asyncio.CancelledError:
@@ -6108,6 +6534,10 @@ async def main() -> None:
             pass
         try:
             await deploy_report_task
+        except asyncio.CancelledError:
+            pass
+        try:
+            await renewal_task
         except asyncio.CancelledError:
             pass
         await marzban.close()

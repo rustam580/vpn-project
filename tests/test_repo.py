@@ -183,3 +183,51 @@ async def test_events_summary_and_latest_payment(repo, repo_conn) -> None:
     latest = await repo.get_latest_payment(tg_id)
     assert latest is not None
     assert latest["external_id"] == "new-pay"
+
+async def test_notification_mark_is_deduplicated(repo) -> None:
+    first = await repo.mark_notification_once(
+        telegram_id=9001,
+        device_id=2,
+        mark_type="renewal_reminder_24h",
+        expire_ts=1700000000,
+    )
+    second = await repo.mark_notification_once(
+        telegram_id=9001,
+        device_id=2,
+        mark_type="renewal_reminder_24h",
+        expire_ts=1700000000,
+    )
+    assert first is True
+    assert second is False
+
+
+async def test_has_open_plan_payment_detects_pending(repo) -> None:
+    tg_id = 9010
+    assert (
+        await repo.has_open_plan_payment(
+            telegram_id=tg_id,
+            purpose="plan_all",
+            device_slot=0,
+        )
+    ) is False
+
+    await repo.upsert_payment(
+        provider="card",
+        external_id="open-plan-9010",
+        telegram_id=tg_id,
+        days=30,
+        gb=0,
+        amount_rub=199.0,
+        pay_url="https://pay.local/open-plan-9010",
+        status="pending",
+        purpose="plan_all",
+        device_slot=0,
+    )
+
+    assert (
+        await repo.has_open_plan_payment(
+            telegram_id=tg_id,
+            purpose="plan_all",
+            device_slot=0,
+        )
+    ) is True
