@@ -1,11 +1,11 @@
 ﻿from __future__ import annotations
 
-from typing import Any
+from typing import Any, Protocol
 
 import httpx
 
 class MarzbanClient:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: "SettingsLike"):
         self.settings = settings
         self.client = httpx.AsyncClient(
             base_url=settings.marzban_base_url,
@@ -71,4 +71,12 @@ class MarzbanClient:
 
     async def modify_user(self, username: str, payload: dict[str, Any]) -> dict[str, Any]:
         return await self.req("PUT", f"/api/user/{username}", json=payload)
+
+
+class SettingsLike(Protocol):
+    marzban_base_url: str
+    marzban_verify_ssl: bool
+    marzban_username: str
+    marzban_password: str
+    marzban_proxy_protocol: str
 

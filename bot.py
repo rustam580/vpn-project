@@ -14,8 +14,6 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 from aiogram import Bot, Dispatcher, F, Router
-from aiogram.dispatcher.event.bases import SkipHandler
-from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import (
     CallbackQuery,
@@ -52,6 +50,17 @@ from bot_formatters import (
     plan_title,
     plans_list_text,
 )
+from bot_handlers_admin import AdminMessageDeps, register_admin_message_handlers
+from bot_handlers_callbacks_user import (
+    UserCallbackDeps,
+    register_user_callback_handlers,
+)
+from bot_handlers_callbacks_admin import (
+    AdminCallbackDeps,
+    register_admin_callback_handlers,
+)
+from bot_handlers_fallback import FallbackDeps, register_fallback_handler
+from bot_handlers_user import UserMessageDeps, register_user_message_handlers
 from bot_keyboards import (
     admin_panel_keyboard,
     admin_plans_keyboard,
@@ -89,6 +98,12 @@ from bot_ops import (
 )
 from bot_rate_limit import InMemoryRateLimiter
 from bot_repo import Repo
+from bot_router_helpers import (
+    BroadcastPreviewContext,
+    UserLookupContext,
+    send_broadcast_preview as send_broadcast_preview_impl,
+    send_user_lookup as send_user_lookup_impl,
+)
 from bot_workers import (
     auto_renew_plan as _auto_renew_plan,
     auto_renew_provider as _auto_renew_provider,
@@ -1639,151 +1654,40 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
         bot_username_cache = str(me.username or "").strip()
         return bot_username_cache
 
+    user_lookup_ctx = UserLookupContext(
+        repo=repo,
+        marzban=marzban,
+        build_username=build_username,
+        format_expire=format_expire,
+        format_limit=format_limit,
+        format_used=format_used,
+        format_last_online=format_last_online,
+        device_label=_device_label,
+    )
+
+    broadcast_preview_ctx = BroadcastPreviewContext(
+        repo=repo,
+        pending_broadcast_format=pending_broadcast_format,
+        pending_broadcast_buttons=pending_broadcast_buttons,
+        broadcast_format_label=broadcast_format_label,
+        broadcast_parse_mode=broadcast_parse_mode,
+        broadcast_confirm_keyboard=broadcast_confirm_keyboard,
+    )
+
     async def send_user_lookup(message: Message, target_id: int) -> None:
-        if target_id <= 0:
-            await message.answer("ID должен быть положительным числом.")
-            return
-        chat = None
-        try:
-            chat = await message.bot.get_chat(target_id)
-        except Exception:
-            pass
-
-        lines: list[str] = []
-        link = f'<a href="tg://user?id={target_id}">ID {target_id}</a>'
-        lines.append(f"👤 Пользователь: {link}")
-        if chat is not None:
-            name_parts = [chat.first_name or "", chat.last_name or ""]
-            name = " ".join(p for p in name_parts if p).strip()
-            if name:
-                lines.append(f"Имя: {html.escape(name)}")
-            username = str(chat.username or "").strip()
-            if username:
-                lines.append(f"Username: @{html.escape(username)}")
-
-        row = await repo.get_user(target_id)
-        marzban_user = None
-        if row:
-            username = str(row["marzban_username"])
-            marzban_user = await marzban.get_user(username)
-            if marzban_user:
-                lines.append(f"Marzban: {html.escape(username)}")
-            else:
-                lines.append(f"Marzban: {html.escape(username)} (не найден)")
-        else:
-            guessed = build_username(target_id)
-            marzban_user = await marzban.get_user(guessed)
-            if marzban_user:
-                lines.append(f"Marzban: {html.escape(guessed)}")
-            else:
-                lines.append("Marzban: не найден")
-
-        if marzban_user:
-            expire_ts = int(marzban_user.get("expire", 0) or 0)
-            data_limit = int(marzban_user.get("data_limit", 0) or 0)
-            used = int(marzban_user.get("used_traffic", 0) or 0)
-            status = str(marzban_user.get("status", "unknown"))
-            lines.append(f"Статус: {html.escape(status)}")
-            lines.append(f"Действует до: {format_expire(expire_ts)}")
-            lines.append(f"Трафик: {format_used(used)} из {format_limit(data_limit)}")
-
-        devices = await repo.list_devices(target_id)
-        if devices:
-            lines.append("Устройства:")
-            for row in devices:
-                device_id = int(row["device_id"])
-                label = _device_label(device_id, row.get("device_name"))
-                username = str(row.get("marzban_username") or "")
-                mz_user = await marzban.get_user(username) if username else None
-                if not mz_user:
-                    state = "не найден в Marzban"
-                else:
-                    state = (
-                        f"{mz_user.get('status', 'unknown')}, "
-                        f"online: {format_last_online(mz_user.get('online_at') or mz_user.get('last_online') or mz_user.get('last_online_at'))}, "
-                        f"traffic: {format_used(int(mz_user.get('used_traffic', 0) or 0))}"
-                    )
-                if label.startswith("Устройство"):
-                    lines.append(
-                        f"- {device_id}. {html.escape(label)} ({html.escape(username)}): {html.escape(state)}"
-                    )
-                else:
-                    lines.append(
-                        f"- {device_id}. Устройство {device_id} — {html.escape(label)} ({html.escape(username)}): {html.escape(state)}"
-                    )
-        else:
-            lines.append("Устройства: нет")
-
-        latest_payment = await repo.get_latest_payment(target_id)
-        if latest_payment:
-            purpose = str(latest_payment.get("purpose") or "plan")
-            provider = str(latest_payment.get("provider") or "")
-            status = str(latest_payment.get("status") or "")
-            amount = float(latest_payment.get("amount_rub") or 0)
-            updated = int(latest_payment.get("updated_at") or 0)
-            updated_text = (
-                datetime.fromtimestamp(updated, tz=timezone.utc).strftime("%d.%m.%Y %H:%M UTC")
-                if updated > 0
-                else "n/a"
-            )
-            lines.append(
-                f"Последний платеж: {html.escape(provider)}, {html.escape(purpose)}, "
-                f"{amount:.2f} RUB, {html.escape(status)}, {updated_text}"
-            )
-        else:
-            lines.append("Последний платеж: нет данных")
-
-        kb = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="Открыть диалог", url=f"tg://user?id={target_id}")]
-            ]
+        await send_user_lookup_impl(
+            message=message,
+            target_id=target_id,
+            ctx=user_lookup_ctx,
         )
-        text = "\n".join(lines)
-        try:
-            await message.answer(text, parse_mode="HTML", reply_markup=kb)
-        except TelegramBadRequest as exc:
-            # Some users restrict profile linking in buttons. Fallback to plain message.
-            if "BUTTON_USER_PRIVACY_RESTRICTED" not in str(exc):
-                raise
-            await message.answer(
-                text + "\n\n⚠️ Кнопка «Открыть диалог» недоступна из-за privacy-настроек пользователя.",
-                parse_mode="HTML",
-            )
 
     async def send_broadcast_preview(message: Message, body: str, *, admin_id: int | None = None) -> None:
-        if admin_id is None:
-            if not message.from_user:
-                return
-            admin_id = int(message.from_user.id)
-        targets = {int(tg_id) for tg_id in await repo.list_known_telegram_ids()}
-        count_total = len(targets)
-        count_without_admin = len({tg for tg in targets if tg != admin_id})
-        fmt_key = pending_broadcast_format.get(admin_id, "plain")
-        with_buttons = pending_broadcast_buttons.get(admin_id, True)
-        fmt_label = broadcast_format_label(fmt_key)
-        buttons_label = "вкл" if with_buttons else "выкл"
-        preview = (
-            f"📣 Рассылка (получателей: {count_without_admin}, всего: {count_total})\n"
-            f"Формат: {fmt_label}\n"
-            f"Кнопки: {buttons_label}\n\n"
-            f"{body}"
+        await send_broadcast_preview_impl(
+            message=message,
+            body=body,
+            admin_id=admin_id,
+            ctx=broadcast_preview_ctx,
         )
-        parse_mode = broadcast_parse_mode(fmt_key)
-        kwargs: dict[str, Any] = {}
-        if parse_mode:
-            kwargs["parse_mode"] = parse_mode
-        try:
-            await message.answer(
-                preview,
-                reply_markup=broadcast_confirm_keyboard(fmt_key=fmt_key, with_buttons=with_buttons),
-                **kwargs,
-            )
-        except Exception:
-            logging.exception("Broadcast preview failed")
-            await message.answer(
-                "Не удалось показать предпросмотр с форматированием. Проверьте разметку или выберите «Текст».",
-                reply_markup=broadcast_confirm_keyboard(fmt_key=fmt_key, with_buttons=with_buttons),
-            )
 
     async def replace_device_slot(
         *,
@@ -1937,173 +1841,39 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
         )
         return True
 
-    @router.message(Command("start"))
-    async def start(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        tg_id = int(message.from_user.id) if message.from_user else None
-        if tg_id is not None:
-            payload = extract_start_payload(message.text)
-            referrer_id = parse_referrer_from_payload(payload)
-            if referrer_id is not None:
-                bind_result = await repo.bind_referrer(
-                    invited_telegram_id=tg_id,
-                    referrer_telegram_id=referrer_id,
-                )
-                if bind_result == "bound":
-                    await message.answer("Реферальная привязка сохранена. Бонус начислим после вашей первой оплаты.")
-                elif bind_result == "self":
-                    await message.answer("Нельзя указать себя как реферера.")
 
-        await message.answer(
-            build_start_text(
-                trial_days=settings.trial_days,
-                trial_gb_text=plan_gb_text(settings.trial_gb),
-                pay_days=settings.pay_days,
-                pay_gb_text=plan_gb_text(settings.pay_gb),
-                pay_rub=settings.pay_rub,
-                device_limit_text=format_device_limit(settings.device_limit),
-            ),
-            reply_markup=keyboard_for_user(is_admin=is_admin(tg_id, settings)),
-            parse_mode="HTML",
-        )
-        if tg_id is not None:
-            await track_event("user_start", telegram_id=tg_id)
-
+    register_user_message_handlers(
+        router=router,
+        deps=UserMessageDeps(
+            settings=settings,
+            repo=repo,
+            guard_message_rate_limit=guard_message_rate_limit,
+            extract_start_payload=extract_start_payload,
+            parse_referrer_from_payload=parse_referrer_from_payload,
+            build_start_text=build_start_text,
+            plan_gb_text=plan_gb_text,
+            format_device_limit=format_device_limit,
+            keyboard_for_user=keyboard_for_user,
+            is_admin_fn=is_admin,
+            track_event=track_event,
+            enabled_payment_providers=enabled_payment_providers,
+            get_bot_username=get_bot_username,
+            build_user_faq_text=build_user_faq_text,
+            quick_connect_guide_text=quick_connect_guide_text,
+            normalize_channel_url=normalize_channel_url,
+        ),
+    )
     @router.message(F.text.contains("/grant_perm"))
     async def grant_perm_any(message: Message) -> None:
         if await handle_grant_perm(message):
             return
 
-    @router.message(Command("help"))
-    async def help_cmd(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        providers = enabled_payment_providers(settings)
-        check_hint = (
-            "<code>/check &lt;" + "|".join(providers) + "&gt; &lt;payment_id&gt;</code> — проверить оплату"
-            if providers
-            else "<code>/check</code> — провайдеры оплаты не настроены"
-        )
-        is_admin_user = bool(message.from_user and is_admin(int(message.from_user.id), settings))
 
-        user_block = (
-            "<b>👤 Команды пользователя</b>\n"
-            "• <code>/config</code> — получить/обновить конфиги\n"
-            "• <code>/guide</code> — инструкция по подключению\n"
-            "• <code>/diag</code> — диагностика подключения\n"
-            "• <code>/buy</code> — продлить доступ\n"
-            "• <code>/replace</code> — переиздать конфиг устройства\n"
-            "• <code>/ref</code> — реферальная ссылка\n"
-            f"• {check_hint}\n"
-            "• <code>/faq</code> — частые вопросы\n"
-            "• <code>/support</code> — поддержка\n"
-            "• <code>/channel</code> — наш канал"
-        )
 
-        if not is_admin_user:
-            await message.answer(user_block, parse_mode="HTML")
-            return
 
-        admin_block = (
-            "<b>🛠 Команды администратора</b>\n"
-            "• <code>/admin</code> — админ-кабинет\n"
-            "• <code>/admin_stats</code> — краткая статистика\n"
-            "• <code>/ref_stats [telegram_id]</code> — реф-статистика\n"
-            "• <code>/ref_grant &lt;telegram_id&gt; [days]</code> — реф-бонус вручную\n"
-            "• <code>/grant &lt;telegram_id&gt; &lt;days&gt; &lt;gb&gt;</code> — доступ всем слотам\n"
-            "• <code>/grant_perm &lt;telegram_id&gt; [gb]</code> — бессрочный доступ\n"
-            "• <code>/grant_device &lt;telegram_id&gt; &lt;slot&gt; &lt;days&gt; &lt;gb&gt;</code>\n"
-            "• <code>/sync_expire &lt;telegram_id&gt; [max|min|slot:&lt;id&gt;]</code>\n"
-            "• <code>/device_add &lt;telegram_id&gt; [slot]</code>\n"
-            "• <code>/device_replace &lt;telegram_id&gt; &lt;slot&gt;</code>\n"
-            "• <code>/disable &lt;telegram_id&gt;</code>\n"
-            "• <code>/link &lt;telegram_id&gt; &lt;marzban_username&gt;</code>\n"
-            "• <code>/ops</code> — health-отчет"
-        )
-        await message.answer(user_block + "\n\n" + admin_block, parse_mode="HTML")
 
-    @router.message(Command("ref"))
-    async def ref_cmd(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        if not message.from_user:
-            return
-        tg_id = int(message.from_user.id)
-        username = await get_bot_username(message.bot)
-        if not username:
-            await message.answer("Не удалось получить username бота. Попробуйте позже.")
-            return
 
-        link = f"https://t.me/{username}?start=ref_{tg_id}"
-        stats = await repo.get_referral_stats(tg_id)
-        await message.answer(
-            "🎁 Реферальная программа:\n"
-            f"- Бонус за оплаченного друга: +{max(0, settings.referral_bonus_days)} дн.\n"
-            f"- Приглашено: {stats['total']}\n"
-            f"- Бонус выдан: {stats['rewarded']}\n"
-            f"- Ожидают первую оплату: {stats['pending']}\n\n"
-            "Ваша ссылка:\n"
-            f"{link}"
-        )
 
-    @router.message(Command("faq"))
-    async def faq_cmd(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        await message.answer(build_user_faq_text(), parse_mode="HTML")
-
-    @router.message(Command("guide"))
-    async def guide_cmd(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        await message.answer(quick_connect_guide_text(), parse_mode="HTML")
-
-    @router.message(Command("support"))
-    async def support_cmd(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        tg_id = int(message.from_user.id) if message.from_user else None
-        if tg_id is not None:
-            await track_event("support_opened", telegram_id=tg_id)
-        safe_support_text = html.escape(settings.support_text)
-        if settings.support_username:
-            await message.answer(
-                "<b>🆘 Поддержка</b>\n"
-                f"{safe_support_text}\n\n"
-                f"Контакт: https://t.me/{settings.support_username}",
-                parse_mode="HTML",
-            )
-        else:
-            await message.answer(
-                "<b>🆘 Поддержка</b>\n"
-                f"{safe_support_text}\n\n"
-                "Контакт поддержки пока не задан администратором.",
-                parse_mode="HTML",
-            )
-
-    @router.message(Command("channel"))
-    async def channel_cmd(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        tg_id = int(message.from_user.id) if message.from_user else None
-        if tg_id is not None:
-            await track_event("channel_opened", telegram_id=tg_id)
-        link = normalize_channel_url(settings.channel_url)
-        if link:
-            await message.answer(f"<b>📢 Наш канал</b>\n{link}", parse_mode="HTML")
-            return
-        await message.answer("Канал пока не настроен. Администратор скоро добавит ссылку.")
-
-    @router.message(Command("menu"))
-    async def menu_cmd(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        tg_id = int(message.from_user.id) if message.from_user else None
-        await message.answer(
-            "Меню обновлено.",
-            reply_markup=keyboard_for_user(is_admin=is_admin(tg_id, settings)),
-        )
 
     @router.message(Command("admin"))
     async def admin_cmd(message: Message) -> None:
@@ -2487,19 +2257,68 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
 
     @router.message(F.text == "🎁 Рефералка")
     async def ref_btn(message: Message) -> None:
-        await ref_cmd(message)
+        if not await guard_message_rate_limit(message):
+            return
+        if not message.from_user:
+            return
+        tg_id = int(message.from_user.id)
+        username = await get_bot_username(message.bot)
+        if not username:
+            await message.answer("Не удалось получить username бота. Попробуйте позже.")
+            return
+        link = f"https://t.me/{username}?start=ref_{tg_id}"
+        stats = await repo.get_referral_stats(tg_id)
+        await message.answer(
+            "🎁 Реферальная программа:\n"
+            f"- Бонус за оплаченного друга: +{max(0, settings.referral_bonus_days)} дн.\n"
+            f"- Приглашено: {stats['total']}\n"
+            f"- Бонус выдан: {stats['rewarded']}\n"
+            f"- Ожидают первую оплату: {stats['pending']}\n\n"
+            "Ваша ссылка:\n"
+            f"{link}"
+        )
 
     @router.message(F.text == "❓ FAQ")
     async def faq_btn(message: Message) -> None:
-        await faq_cmd(message)
+        if not await guard_message_rate_limit(message):
+            return
+        await message.answer(build_user_faq_text(), parse_mode="HTML")
 
     @router.message(F.text == "🆘 Поддержка")
     async def support_btn(message: Message) -> None:
-        await support_cmd(message)
+        if not await guard_message_rate_limit(message):
+            return
+        tg_id = int(message.from_user.id) if message.from_user else None
+        if tg_id is not None:
+            await track_event("support_opened", telegram_id=tg_id)
+        safe_support_text = html.escape(settings.support_text)
+        if settings.support_username:
+            await message.answer(
+                "<b>🆘 Поддержка</b>\n"
+                f"{safe_support_text}\n\n"
+                f"Контакт: https://t.me/{settings.support_username}",
+                parse_mode="HTML",
+            )
+        else:
+            await message.answer(
+                "<b>🆘 Поддержка</b>\n"
+                f"{safe_support_text}\n\n"
+                "Контакт поддержки пока не задан администратором.",
+                parse_mode="HTML",
+            )
 
     @router.message(F.text == "📢 Наш канал")
     async def channel_btn(message: Message) -> None:
-        await channel_cmd(message)
+        if not await guard_message_rate_limit(message):
+            return
+        tg_id = int(message.from_user.id) if message.from_user else None
+        if tg_id is not None:
+            await track_event("channel_opened", telegram_id=tg_id)
+        link = normalize_channel_url(settings.channel_url)
+        if link:
+            await message.answer(f"<b>📢 Наш канал</b>\n{link}", parse_mode="HTML")
+            return
+        await message.answer("Канал пока не настроен. Администратор скоро добавит ссылку.")
 
     @router.message(F.text == "⚠️ Проблема с подключением")
     async def issue_btn(message: Message) -> None:
@@ -2523,1607 +2342,137 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
     async def admin_btn(message: Message) -> None:
         await admin_cmd(message)
 
-    @router.callback_query(F.data.startswith("quick:"))
-    async def quick_action_callback(callback: CallbackQuery) -> None:
-        if not await guard_callback_rate_limit(callback):
-            return
-        if not callback.data or not callback.from_user or callback.message is None:
-            await callback.answer("Ошибка callback", show_alert=True)
-            return
-        action = callback.data.split(":", 1)[1].strip()
-        tg_id = int(callback.from_user.id)
-
-        if action == "device":
-            row = await repo.get_user(tg_id)
-            if not row:
-                await callback.answer()
-                await callback.message.answer("❗ Сначала получите основной конфиг.")
-                return
-            devices = await repo.list_devices(tg_id)
-            if settings.device_limit > 0 and len(devices) >= settings.device_limit:
-                await callback.answer()
-                await callback.message.answer("Лимит устройств уже исчерпан.")
-                return
-            if not await repo.has_paid_plan_payment(tg_id):
-                await callback.answer()
-                await callback.message.answer(
-                    "📱 Доп. устройство доступно только после оплаты основного тарифа.\n"
-                    "Сначала нажмите «Купить доступ»."
-                )
-                return
-            await callback.answer()
-            await callback.message.answer(
-                f"📱 Доп. устройство: {settings.device_add_rub:.2f} RUB.\n"
-                "Оплата добавляет только новый слот устройства.\n"
-                "Срок доступа не продлевается.\n"
-                "После оплаты устройство появится автоматически.\n"
-                "Название можно задать через «Переименовать устройство».",
-                reply_markup=device_methods_keyboard(settings),
-            )
-            return
-
-        if action == "replace":
-            devices = await list_replaceable_devices(tg_id)
-            await callback.answer()
-            if not devices:
-                await callback.message.answer("Активные устройства не найдены. Сначала получите конфиг.")
-                return
-            kb = _devices_replace_keyboard(devices)
-            await callback.message.answer(
-                "Выберите устройство для переиздания конфига.\n"
-                "Старый конфиг выбранного устройства будет отключен.",
-                reply_markup=kb,
-            )
-            return
-
-        if action == "rename":
-            devices = await repo.list_devices(tg_id)
-            await callback.answer()
-            if not devices:
-                await callback.message.answer("Устройства не найдены. Сначала получите конфиг.")
-                return
-            kb = _devices_rename_keyboard(devices)
-            await callback.message.answer("Выберите устройство для переименования:", reply_markup=kb)
-            return
-
-        if action == "ref":
-            username = await get_bot_username(callback.message.bot)
-            await callback.answer()
-            if not username:
-                await callback.message.answer("Не удалось получить username бота. Попробуйте позже.")
-                return
-            link = f"https://t.me/{username}?start=ref_{tg_id}"
-            stats = await repo.get_referral_stats(tg_id)
-            await callback.message.answer(
-                "🎁 Реферальная программа:\n"
-                f"- Бонус за оплаченного друга: +{max(0, settings.referral_bonus_days)} дн.\n"
-                f"- Приглашено: {stats['total']}\n"
-                f"- Бонус выдан: {stats['rewarded']}\n"
-                f"- Ожидают первую оплату: {stats['pending']}\n\n"
-                "Ваша ссылка:\n"
-                f"{link}"
-            )
-            return
-
-        if action == "faq":
-            await callback.answer()
-            await callback.message.answer(build_user_faq_text(), parse_mode="HTML")
-            return
-
-        if action == "channel":
-            await callback.answer()
-            link = normalize_channel_url(settings.channel_url)
-            if link:
-                await callback.message.answer(f"<b>📢 Наш канал</b>\n{link}", parse_mode="HTML")
-            else:
-                await callback.message.answer("Канал пока не настроен. Администратор скоро добавит ссылку.")
-            return
-
-        if action == "issue":
-            pending_issue.add(tg_id)
-            await callback.answer()
-            await callback.message.answer(
-                "Опишите проблему одним сообщением по шаблону:\n"
-                "1) Время (дата и время по МСК)\n"
-                "2) Устройство и приложение (iOS/Android/Windows + клиент)\n"
-                "3) Что именно не работает\n"
-                "4) Ошибка/скрин (если есть)\n"
-                "5) Пробовали переимпорт/перезапуск\n\n"
-                "Напишите «отмена» чтобы выйти."
-            )
-            return
-
-        await callback.answer("Неизвестное действие", show_alert=True)
-
-    @router.callback_query(F.data.startswith("devrename:"))
-    async def device_rename_callback(callback: CallbackQuery) -> None:
-        if not await guard_callback_rate_limit(callback):
-            return
-        if not callback.data or not callback.from_user or callback.message is None:
-            await callback.answer("Ошибка callback", show_alert=True)
-            return
-        _, value = callback.data.split(":", 1)
-        if value == "cancel":
-            pending_device_rename.pop(int(callback.from_user.id), None)
-            await callback.answer("Отменено")
-            return
-        try:
-            device_id = int(value)
-        except ValueError:
-            await callback.answer("Неверный формат", show_alert=True)
-            return
-        if device_id < 1:
-            await callback.answer("Неверный ID", show_alert=True)
-            return
-        if settings.device_limit > 0 and device_id > settings.device_limit:
-            await callback.answer("ID вне лимита", show_alert=True)
-            return
-        row = await repo.get_device(int(callback.from_user.id), device_id)
-        if not row:
-            await callback.answer("Устройство не найдено", show_alert=True)
-            return
-        pending_device_rename[int(callback.from_user.id)] = device_id
-        await callback.message.answer(
-            f"Введите новое имя для устройства {device_id} (пример: Мой ноутбук)."
-        )
-        await callback.answer()
-
-    @router.callback_query(F.data.startswith("devreplace:"))
-    async def device_replace_callback(callback: CallbackQuery) -> None:
-        if not await guard_callback_rate_limit(callback):
-            return
-        if not callback.data or not callback.from_user or callback.message is None:
-            await callback.answer("Ошибка callback", show_alert=True)
-            return
-        _, value = callback.data.split(":", 1)
-        if value == "cancel":
-            await callback.answer("Отменено")
-            return
-        try:
-            device_id = int(value)
-        except ValueError:
-            await callback.answer("Неверный формат", show_alert=True)
-            return
-        if device_id < 1:
-            await callback.answer("Неверный ID", show_alert=True)
-            return
-        if settings.device_limit > 0 and device_id > settings.device_limit:
-            await callback.answer("ID вне лимита", show_alert=True)
-            return
-        row = await repo.get_device(int(callback.from_user.id), device_id)
-        if not row:
-            await callback.answer("Устройство не найдено", show_alert=True)
-            return
-        username = str(row.get("marzban_username") or "").strip()
-        user = await marzban.get_user(username) if username else None
-        if not user or str(user.get("status", "unknown")) != "active":
-            await callback.answer("Устройство не активно", show_alert=True)
-            return
-        label = _device_label(device_id, row.get("device_name"))
-        await callback.message.answer(
-            f"Подтвердите замену конфига для устройства {device_id} ({label}).\n"
-            "Старый конфиг этого устройства будет отключен.",
-            reply_markup=_device_replace_confirm_keyboard(device_id),
-        )
-        await callback.answer()
-
-    @router.callback_query(F.data.startswith("devreplace_confirm:"))
-    async def device_replace_confirm_callback(callback: CallbackQuery) -> None:
-        if not await guard_callback_rate_limit(callback):
-            return
-        if not callback.data or not callback.from_user or callback.message is None:
-            await callback.answer("Ошибка callback", show_alert=True)
-            return
-        parts = callback.data.split(":")
-        if len(parts) != 3:
-            await callback.answer("Неверный callback", show_alert=True)
-            return
-        _, raw_device_id, decision = parts
-        try:
-            device_id = int(raw_device_id)
-        except ValueError:
-            await callback.answer("Неверный ID", show_alert=True)
-            return
-        if decision != "yes":
-            await callback.answer("Отменено")
-            return
-        if device_id < 1 or (settings.device_limit > 0 and device_id > settings.device_limit):
-            await callback.answer("ID вне лимита", show_alert=True)
-            return
-        tg_id = int(callback.from_user.id)
-        try:
-            old_username, new_username, new_user = await replace_device_slot(
-                telegram_id=tg_id,
-                slot=device_id,
-            )
-        except Exception as exc:
-            logging.exception("User device_replace failed for tg=%s slot=%s", tg_id, device_id)
-            await callback.answer("Не удалось заменить конфиг", show_alert=True)
-            await callback.message.answer(f"Ошибка замены конфига: {exc}")
-            return
-        await callback.answer("Готово")
-        await callback.message.answer(
-            f"🔁 Конфиг устройства {device_id} переиздан.\n"
-            "Старый конфиг этого устройства отключен.\n"
-            "Импортируйте новый конфиг из списка ниже.\n"
-            "Важно: один конфиг = одно устройство."
-        )
-        if device_id == 1:
-            await send_status(callback.message, new_user)
-        await send_device_links(
-            message=callback.message,
-            telegram_id=tg_id,
+    register_user_callback_handlers(
+        router=router,
+        deps=UserCallbackDeps(
+            settings=settings,
             repo=repo,
             marzban=marzban,
+            guard_callback_rate_limit=guard_callback_rate_limit,
+            list_replaceable_devices=list_replaceable_devices,
+            get_bot_username=get_bot_username,
+            build_user_faq_text=build_user_faq_text,
+            normalize_channel_url=normalize_channel_url,
+            pending_issue=pending_issue,
+            pending_device_rename=pending_device_rename,
+            replace_device_slot=replace_device_slot,
+            send_status=send_status,
+            send_device_links=send_device_links,
+            collect_device_links=collect_device_links,
+            send_configs_in_chat=send_configs_in_chat,
+            render_config_block=_render_config_block,
+            plans_list_text=plans_list_text,
+            buy_plan_keyboard=buy_plan_keyboard,
+            find_plan=find_plan,
+            plan_title=plan_title,
+            plan_gb_text=plan_gb_text,
+            payment_methods_keyboard=payment_methods_keyboard,
+            cryptobot_create_invoice=cryptobot_create_invoice,
+            yookassa_create_payment=yookassa_create_payment,
+            track_event=track_event,
+            pay_action_keyboard=pay_action_keyboard,
+            next_device_slot=next_device_slot,
+            check_and_apply_payment=check_and_apply_payment,
+            device_methods_keyboard=device_methods_keyboard,
+            devices_replace_keyboard=_devices_replace_keyboard,
+            devices_rename_keyboard=_devices_rename_keyboard,
+            device_replace_confirm_keyboard=_device_replace_confirm_keyboard,
+            device_label=_device_label,
+        ),
+    )
+
+    register_fallback_handler(
+        router=router,
+        deps=FallbackDeps(
             settings=settings,
-        )
-
-    @router.message()
-    async def fallback_menu(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        if not message.from_user:
-            return
-        tg_id = int(message.from_user.id)
-        if tg_id in pending_user_lookup:
-            if not message.text:
-                await message.answer("Введите числовой Telegram ID или «отмена».")
-                return
-            text = message.text.strip()
-            if text.lower() in {"отмена", "cancel", "/cancel"}:
-                pending_user_lookup.discard(tg_id)
-                await message.answer("Ок, отменено.")
-                return
-            if text.startswith("/"):
-                await message.answer("Введите Telegram ID числом или напишите «отмена».")
-                return
-            try:
-                target_id = int(text)
-            except ValueError:
-                await message.answer("ID должен быть числом. Пример: 386029735")
-                return
-            pending_user_lookup.discard(tg_id)
-            await send_user_lookup(message, target_id)
-            return
-        if tg_id in pending_device_add_prompt:
-            if not message.text:
-                await message.answer("Введите Telegram ID и слот (опционально) или «отмена».")
-                return
-            text = message.text.strip()
-            if text.lower() in {"отмена", "cancel", "/cancel"}:
-                pending_device_add_prompt.discard(tg_id)
-                await message.answer("Ок, отменено.")
-                return
-            if text.startswith("/"):
-                await message.answer("Введите Telegram ID и слот (опционально) или «отмена».")
-                return
-            parts = text.split()
-            if len(parts) not in {1, 2}:
-                await message.answer("Формат: <telegram_id> [slot]. Пример: 386029735 2")
-                return
-            try:
-                target = int(parts[0])
-                slot = int(parts[1]) if len(parts) == 2 else 2
-            except ValueError:
-                await message.answer("ID и слот должны быть числами. Пример: 386029735 2")
-                return
-            if slot < 1:
-                await message.answer("Слот должен быть >= 1")
-                return
-            if settings.device_limit > 0 and slot > settings.device_limit:
-                await message.answer(f"Слот должен быть 1..{settings.device_limit}")
-                return
-            pending_device_add_prompt.discard(tg_id)
-            _, user, created = await ensure_device(
-                telegram_id=target,
-                device_id=slot,
-                repo=repo,
-                marzban=marzban,
-                settings=settings,
-                create_if_missing=True,
-            )
-            if not user:
-                await message.answer("Не удалось создать устройство.")
-                return
-            msg = f"Устройство {slot} создано." if created else f"Устройство {slot} уже существует."
-            await message.answer(msg)
-            return
-        if tg_id in pending_broadcast_prompt:
-            if not message.text:
-                await message.answer("Введите текст рассылки или «отмена».")
-                return
-            text = message.text.strip()
-            if text.lower() in {"отмена", "cancel", "/cancel"}:
-                pending_broadcast_prompt.discard(tg_id)
-                pending_broadcast_text.pop(tg_id, None)
-                pending_broadcast_format.pop(tg_id, None)
-                pending_broadcast_buttons.pop(tg_id, None)
-                await message.answer("Рассылка отменена.")
-                return
-            if text.startswith("/"):
-                await message.answer("Введите текст рассылки или напишите «отмена».")
-                return
-            pending_broadcast_prompt.discard(tg_id)
-            pending_broadcast_text[tg_id] = text
-            pending_broadcast_format.setdefault(tg_id, "plain")
-            pending_broadcast_buttons.setdefault(tg_id, True)
-            await send_broadcast_preview(message, text)
-            return
-        if tg_id in pending_device_rename:
-            if not message.text:
-                await message.answer("Введите текстовое имя устройства.")
-                return
-            text = message.text.strip()
-            if text.lower() in {"отмена", "cancel", "/cancel"}:
-                pending_device_rename.pop(tg_id, None)
-                await message.answer("Переименование отменено.")
-                return
-            if text.startswith("/"):
-                await message.answer("Введите текстовое имя устройства или напишите «отмена».")
-                return
-            name = normalize_device_name(text)
-            if not name:
-                await message.answer("Имя устройства не может быть пустым.")
-                return
-            device_id = pending_device_rename.pop(tg_id)
-            await repo.set_device_name(tg_id, device_id, name)
-            await message.answer(f"✅ Устройство {device_id} теперь называется: {name}")
-            return
-        if tg_id in pending_issue:
-            if not message.text:
-                await message.answer("Отправьте текстовое описание проблемы или напишите «отмена».")
-                return
-            text = message.text.strip()
-            if text.lower() in {"отмена", "cancel", "/cancel"}:
-                pending_issue.discard(tg_id)
-                await message.answer("Ок, отменено.")
-                return
-            if text.startswith("/"):
-                await message.answer("Отправьте описание проблемы или напишите «отмена».")
-                return
-            pending_issue.discard(tg_id)
-            username = message.from_user.username or ""
-            header = f"🚨 Проблема с подключением\nTG: {tg_id}"
-            if username:
-                header += f" (@{username})"
-            report = f"{header}\n\n{text}"
-            await track_event(
-                "issue_reported",
-                telegram_id=tg_id,
-                event_meta={"text_len": len(text)},
-            )
-            for admin_id in settings.admin_ids:
-                try:
-                    await message.bot.send_message(int(admin_id), report)
-                except Exception:
-                    logging.exception("Failed to notify admin %s about issue", admin_id)
-            await message.answer("Спасибо, отправили админу. Если нужно, мы уточним детали.")
-            return
-        if message.text and message.text.startswith("/"):
-            # Let dedicated command handlers process slash-commands.
-            raise SkipHandler()
-        await message.answer(
-            "Открыл меню.",
-            reply_markup=keyboard_for_user(is_admin=is_admin(tg_id, settings)),
-        )
-
-    @router.callback_query(F.data.startswith("cfg:"))
-    async def cfg_callback(callback: CallbackQuery) -> None:
-        if not await guard_callback_rate_limit(callback):
-            return
-        if not callback.data or not callback.from_user or callback.message is None:
-            await callback.answer("Ошибка callback", show_alert=True)
-            return
-        items = await collect_device_links(
-            telegram_id=int(callback.from_user.id),
             repo=repo,
             marzban=marzban,
+            guard_message_rate_limit=guard_message_rate_limit,
+            pending_user_lookup=pending_user_lookup,
+            pending_device_add_prompt=pending_device_add_prompt,
+            pending_broadcast_prompt=pending_broadcast_prompt,
+            pending_broadcast_text=pending_broadcast_text,
+            pending_broadcast_format=pending_broadcast_format,
+            pending_broadcast_buttons=pending_broadcast_buttons,
+            pending_device_rename=pending_device_rename,
+            pending_issue=pending_issue,
+            send_user_lookup=send_user_lookup,
+            ensure_device=ensure_device,
+            send_broadcast_preview=send_broadcast_preview,
+            normalize_device_name=normalize_device_name,
+            track_event=track_event,
+            keyboard_for_user=keyboard_for_user,
+            is_admin_fn=is_admin,
+        ),
+    )
+
+    register_admin_callback_handlers(
+        router=router,
+        deps=AdminCallbackDeps(
             settings=settings,
-        )
-        parts = callback.data.split(":")
-        if len(parts) >= 2 and parts[1] == "showall":
-            await callback.message.answer("Все активные конфиги:")
-            await send_configs_in_chat(callback.message, items)
-            await callback.answer()
-            return
-        if len(parts) == 3 and parts[1] == "show":
-            try:
-                index = int(parts[2])
-            except ValueError:
-                await callback.answer("Неверный формат", show_alert=True)
-                return
-            selected: tuple[str, str] | None = None
-            counter = 1
-            for _, label, link in items:
-                if counter == index:
-                    selected = (label, link)
-                    break
-                counter += 1
-            if not selected:
-                await callback.answer("Конфиг не найден", show_alert=True)
-                return
-            await callback.message.answer(
-                _render_config_block(selected[0], selected[1]),
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-            )
-            await callback.answer()
-            return
-        await callback.answer("Неверный callback", show_alert=True)
-
-    @router.callback_query(F.data.startswith("buyselect:"))
-    async def buy_select_callback(callback: CallbackQuery) -> None:
-        if not await guard_callback_rate_limit(callback):
-            return
-        if not callback.data or not callback.from_user or callback.message is None:
-            await callback.answer("Ошибка callback", show_alert=True)
-            return
-        tg_id = int(callback.from_user.id)
-        devices = await repo.list_devices(tg_id)
-        parts = callback.data.split(":")
-        if len(parts) < 2:
-            await callback.answer("Неверный формат", show_alert=True)
-            return
-        if parts[1] == "all":
-            if not devices:
-                await callback.answer("Сначала получите конфиг.", show_alert=True)
-                return
-            await callback.message.answer(
-                f"🧩 Продление всех ключей ({len(devices)} шт).\n"
-                "Выберите тариф:\n"
-                + plans_list_text(settings, multiplier=len(devices)),
-                reply_markup=buy_plan_keyboard(
-                    settings,
-                    target="all",
-                    devices_count=len(devices),
-                ),
-            )
-            await callback.answer()
-            return
-        if parts[1] == "slot" and len(parts) >= 3:
-            try:
-                slot = int(parts[2])
-            except ValueError:
-                await callback.answer("Неверный слот", show_alert=True)
-                return
-            row = await repo.get_device(tg_id, slot)
-            if not row:
-                await callback.answer("Слот не найден", show_alert=True)
-                return
-            await callback.message.answer(
-                f"🔑 Продление устройства {slot}.\n"
-                "Выберите тариф:\n"
-                + plans_list_text(settings),
-                reply_markup=buy_plan_keyboard(settings, target="slot", device_id=slot),
-            )
-            await callback.answer()
-            return
-        await callback.answer("Неверный формат", show_alert=True)
-
-    @router.callback_query(F.data.startswith("buyplan:"))
-    async def buy_plan_callback(callback: CallbackQuery) -> None:
-        if not await guard_callback_rate_limit(callback):
-            return
-        if not callback.data or not callback.from_user or callback.message is None:
-            await callback.answer("Ошибка callback", show_alert=True)
-            return
-        parts = callback.data.split(":")
-        if len(parts) < 3:
-            await callback.answer("Неверный формат", show_alert=True)
-            return
-
-        tg_id = int(callback.from_user.id)
-        plan = find_plan(settings, parts[1])
-        if plan is None:
-            await callback.answer("Тариф не найден", show_alert=True)
-            return
-
-        target = parts[2]
-        if target == "all":
-            devices = await repo.list_devices(tg_id)
-            if not devices:
-                await callback.answer("Сначала получите конфиг.", show_alert=True)
-                return
-            amount = plan.rub * len(devices)
-            await callback.message.answer(
-                f"🧩 {plan_title(plan)} для всех устройств ({len(devices)} шт).\n"
-                f"Сумма: {amount:.2f} RUB\n"
-                f"Срок: +{plan.days} дней, трафик: {plan_gb_text(plan.gb)}.\n"
-                "Выберите способ оплаты:",
-                reply_markup=payment_methods_keyboard(
-                    settings,
-                    plan_key=plan.key,
-                    target="all",
-                ),
-            )
-            await callback.answer()
-            return
-
-        if target == "slot" and len(parts) >= 4:
-            try:
-                slot = int(parts[3])
-            except ValueError:
-                await callback.answer("Неверный слот", show_alert=True)
-                return
-            row = await repo.get_device(tg_id, slot)
-            if not row and slot > 1:
-                await callback.answer("Слот не найден", show_alert=True)
-                return
-            await callback.message.answer(
-                f"🔑 {plan_title(plan)} для устройства {slot}.\n"
-                f"Сумма: {plan.rub:.2f} RUB\n"
-                f"Срок: +{plan.days} дней, трафик: {plan_gb_text(plan.gb)}.\n"
-                "Выберите способ оплаты:",
-                reply_markup=payment_methods_keyboard(
-                    settings,
-                    plan_key=plan.key,
-                    target="slot",
-                    device_id=slot,
-                ),
-            )
-            await callback.answer()
-            return
-
-        await callback.answer("Неверный формат", show_alert=True)
-
-    @router.callback_query(F.data.startswith("buy:"))
-    async def buy_callback(callback: CallbackQuery) -> None:
-        if not await guard_callback_rate_limit(callback):
-            return
-        if not callback.data or not callback.from_user or callback.message is None:
-            await callback.answer("Ошибка callback", show_alert=True)
-            return
-        parts = callback.data.split(":")
-        provider = parts[1] if len(parts) >= 2 else ""
-        tg_id = int(callback.from_user.id)
-        try:
-            plan = settings.plans[0]
-            suffix_idx = 2
-            if len(parts) >= 5 and parts[2] == "plan":
-                custom_plan = find_plan(settings, parts[3])
-                if custom_plan is None:
-                    await callback.answer("Тариф не найден", show_alert=True)
-                    return
-                plan = custom_plan
-                suffix_idx = 4
-
-            target = "slot"
-            slot = 1
-            if len(parts) > suffix_idx:
-                suffix = parts[suffix_idx]
-                if suffix == "all":
-                    target = "all"
-                elif suffix == "slot" and len(parts) > suffix_idx + 1:
-                    try:
-                        slot = int(parts[suffix_idx + 1])
-                    except ValueError:
-                        await callback.answer("Неверный слот", show_alert=True)
-                        return
-
-            if target == "slot":
-                if slot < 1:
-                    await callback.answer("Неверный слот", show_alert=True)
-                    return
-                if slot > 1:
-                    slot_row = await repo.get_device(tg_id, slot)
-                    if not slot_row:
-                        await callback.answer("Слот не найден", show_alert=True)
-                        return
-                amount_rub = plan.rub
-                purpose = "plan_device"
-                device_slot = slot
-                pay_desc = f"VPN {plan_title(plan)}: продление устройства {slot}, +{plan.days}d"
-                pay_title = f"{plan_title(plan)} / устройство {slot}"
-            else:
-                devices = await repo.list_devices(tg_id)
-                if not devices:
-                    await callback.answer("Сначала получите конфиг.", show_alert=True)
-                    return
-                amount_rub = plan.rub * len(devices)
-                purpose = "plan_all"
-                device_slot = 0
-                pay_desc = f"VPN {plan_title(plan)}: продление всех устройств ({len(devices)} шт), +{plan.days}d"
-                pay_title = f"{plan_title(plan)} / все устройства ({len(devices)} шт)"
-
-            if provider == "crypto":
-                if not settings.cryptobot_enabled():
-                    await callback.answer("CryptoBot не настроен", show_alert=True)
-                    return
-                external_id, pay_url = await cryptobot_create_invoice(
-                    settings,
-                    tg_id,
-                    amount_rub=amount_rub,
-                    description=pay_desc,
-                )
-            elif provider == "card":
-                if not settings.yookassa_enabled():
-                    await callback.answer("YooKassa не настроена", show_alert=True)
-                    return
-                external_id, pay_url = await yookassa_create_payment(
-                    settings,
-                    tg_id,
-                    amount_rub=amount_rub,
-                    description=pay_desc,
-                )
-            else:
-                await callback.answer("Неизвестный метод", show_alert=True)
-                return
-
-            await repo.upsert_payment(
-                provider=provider,
-                external_id=external_id,
-                telegram_id=tg_id,
-                days=plan.days,
-                gb=plan.gb,
-                amount_rub=amount_rub,
-                pay_url=pay_url,
-                status="pending",
-                purpose=purpose,
-                device_slot=device_slot,
-            )
-            await track_event(
-                "payment_created_plan",
-                telegram_id=tg_id,
-                event_value=provider,
-                event_meta={
-                    "external_id": external_id,
-                    "amount_rub": amount_rub,
-                    "purpose": purpose,
-                    "device_slot": device_slot,
-                    "plan_key": plan.key,
-                },
-            )
-            await callback.message.answer(
-                f"✅ Платеж создан ({provider}).\n"
-                f"Тип: {pay_title}\n"
-                f"Сумма: {amount_rub:.2f} RUB\n"
-                f"Период: +{plan.days} дней, трафик: {plan_gb_text(plan.gb)}\n"
-                f"ID: {external_id}",
-                reply_markup=pay_action_keyboard(provider, external_id, pay_url),
-            )
-            await callback.answer()
-        except Exception as exc:
-            logging.exception("Create payment failed")
-            await callback.answer(f"Ошибка: {exc}", show_alert=True)
-
-    @router.callback_query(F.data.startswith("device:"))
-    async def device_callback(callback: CallbackQuery) -> None:
-        if not await guard_callback_rate_limit(callback):
-            return
-        if not callback.data or not callback.from_user or callback.message is None:
-            await callback.answer("Ошибка callback", show_alert=True)
-            return
-        provider = callback.data.split(":", 1)[1]
-        tg_id = int(callback.from_user.id)
-        try:
-            devices = await repo.list_devices(tg_id)
-            if settings.device_limit > 0 and len(devices) >= settings.device_limit:
-                await callback.answer("Лимит устройств исчерпан", show_alert=True)
-                return
-            if not await repo.has_paid_plan_payment(tg_id):
-                await callback.answer(
-                    "Сначала оплатите основной тариф, затем добавляйте устройства.",
-                    show_alert=True,
-                )
-                return
-            used_slots = {int(d["device_id"]) for d in devices}
-            slot = next_device_slot(used_slots, settings.device_limit)
-            if slot is None:
-                await callback.answer("Нет свободных слотов", show_alert=True)
-                return
-
-            if provider == "crypto":
-                if not settings.cryptobot_enabled():
-                    await callback.answer("CryptoBot не настроен", show_alert=True)
-                    return
-                external_id, pay_url = await cryptobot_create_invoice(
-                    settings,
-                    tg_id,
-                    amount_rub=settings.device_add_rub,
-                    description=f"VPN добавление устройства {slot}",
-                )
-            elif provider == "card":
-                if not settings.yookassa_enabled():
-                    await callback.answer("YooKassa не настроена", show_alert=True)
-                    return
-                external_id, pay_url = await yookassa_create_payment(
-                    settings,
-                    tg_id,
-                    amount_rub=settings.device_add_rub,
-                    description=f"VPN добавление устройства {slot}",
-                )
-            else:
-                await callback.answer("Неизвестный метод", show_alert=True)
-                return
-
-            await repo.upsert_payment(
-                provider=provider,
-                external_id=external_id,
-                telegram_id=tg_id,
-                days=0,
-                gb=0,
-                amount_rub=settings.device_add_rub,
-                pay_url=pay_url,
-                status="pending",
-                purpose="device_add",
-                device_slot=slot,
-            )
-            await track_event(
-                "payment_created_device",
-                telegram_id=tg_id,
-                event_value=provider,
-                event_meta={
-                    "external_id": external_id,
-                    "slot": slot,
-                    "amount_rub": settings.device_add_rub,
-                },
-            )
-            await callback.message.answer(
-                f"✅ Платеж за устройство создан ({provider}).\n"
-                f"ID: {external_id}\n"
-                f"Слот: {slot}\n"
-                "Срок доступа не продлевается.\n"
-                "Важно: один конфиг = одно устройство.",
-                reply_markup=pay_action_keyboard(provider, external_id, pay_url),
-            )
-            await callback.answer()
-        except Exception as exc:
-            logging.exception("Device payment create failed")
-            await callback.answer(f"Ошибка: {exc}", show_alert=True)
-
-    @router.callback_query(F.data.startswith("check:"))
-    async def check_callback(callback: CallbackQuery) -> None:
-        if not await guard_callback_rate_limit(callback):
-            return
-        if not callback.data or not callback.from_user or callback.message is None:
-            await callback.answer("Ошибка callback", show_alert=True)
-            return
-        parts = callback.data.split(":")
-        if len(parts) != 3:
-            await callback.answer("Неверный callback", show_alert=True)
-            return
-        _, provider, external_id = parts
-        try:
-            result, updated = await check_and_apply_payment(
-                provider=provider,
-                external_id=external_id,
-                telegram_id=int(callback.from_user.id),
-                repo=repo,
-                marzban=marzban,
-                settings=settings,
-                bot=callback.bot,
-            )
-            await callback.message.answer(result)
-            if updated:
-                await send_status(callback.message, updated)
-                await send_device_links(
-                    message=callback.message,
-                    telegram_id=int(callback.from_user.id),
-                    repo=repo,
-                    marzban=marzban,
-                    settings=settings,
-                )
-            await callback.answer("Готово")
-        except Exception as exc:
-            logging.exception("Check payment failed")
-            await callback.answer(f"Ошибка: {exc}", show_alert=True)
-
-    @router.callback_query(F.data.startswith("admin:"))
-    async def admin_callback(callback: CallbackQuery) -> None:
-        if not await guard_callback_rate_limit(callback):
-            return
-        if not callback.data or not callback.from_user or callback.message is None:
-            await callback.answer("Ошибка callback", show_alert=True)
-            return
-        if not is_admin(int(callback.from_user.id), settings):
-            await callback.answer("Недостаточно прав.", show_alert=True)
-            return
-        action = callback.data.split(":", 1)[1]
-        if action == "home":
-            await callback.answer("Готово")
-            await callback.message.answer(
-                "Админ-кабинет:\n"
-                "- Статистика по пользователям и платежам\n"
-                "- Быстрые действия без ручного ввода команд",
-                reply_markup=admin_panel_keyboard(),
-            )
-            return
-        if action == "plans":
-            await callback.answer("Готово")
-            await callback.message.answer(
-                "💼 Управление тарифами\n\n"
-                + admin_plans_text(settings)
-                + "\n\n"
-                "Выберите готовый пресет или покажите команду для ручной настройки.",
-                reply_markup=admin_plans_keyboard(),
-            )
-            return
-        if action == "plans:manual":
-            await callback.answer("Готово")
-            await callback.message.answer(
-                "Ручная настройка тарифов:\n"
-                "<code>/setenv PLANS_JSON [{\"key\":\"m1\",\"title\":\"1 месяц\",\"days\":30,\"gb\":0,\"rub\":99},"
-                "{\"key\":\"m3\",\"title\":\"3 месяца\",\"days\":90,\"gb\":0,\"rub\":259},"
-                "{\"key\":\"y1\",\"title\":\"12 месяцев\",\"days\":365,\"gb\":0,\"rub\":949}]</code>\n\n"
-                "После применения бот перезапустится автоматически.",
-                parse_mode="HTML",
-                reply_markup=admin_plans_keyboard(),
-            )
-            return
-        if action.startswith("plans:set:"):
-            preset_key = action.split(":", 2)[2].strip()
-            plans = _preset_plans(preset_key)
-            if not plans:
-                await callback.answer("Неизвестный пресет", show_alert=True)
-                return
-            env_path = Path("/opt/vpn-bot/.env")
-            json_value = _plans_to_json(plans)
-            try:
-                update_env_file(env_path, "PLANS_JSON", json_value)
-            except Exception as exc:
-                logging.exception("Failed to apply plans preset: %s", preset_key)
-                await callback.answer("Ошибка применения", show_alert=True)
-                await callback.message.answer(f"Не удалось обновить PLANS_JSON: {exc}")
-                return
-            await callback.answer("Тарифы обновлены")
-            lines = ["Текущие тарифы:"]
-            for plan in plans:
-                lines.append(
-                    f"- {plan.key}: {plan_title(plan)} • {plan.rub:.2f} RUB • {plan.days} дн • {plan_gb_text(plan.gb)}"
-                )
-            await callback.message.answer(
-                "✅ Пресет тарифов применен.\n"
-                f"Профиль: {preset_key}\n"
-                + "\n".join(lines)
-                + "\n\nПерезапускаю vpn-bot...",
-                reply_markup=admin_plans_keyboard(),
-            )
-            try:
-                subprocess.Popen(["systemctl", "restart", "vpn-bot"])
-            except Exception:
-                logging.exception("Failed to restart vpn-bot after plans preset")
-            return
-        if action == "stats":
-            await callback.answer("Считаю статистику...")
-            try:
-                text = await asyncio.wait_for(build_admin_stats_text(repo, marzban), timeout=25)
-                await callback.message.answer(text)
-            except asyncio.TimeoutError:
-                await callback.message.answer("Слишком долго считаю статистику. Попробуйте /admin_stats.")
-            except Exception as exc:
-                logging.exception("Admin stats callback failed")
-                await callback.message.answer(f"Ошибка статистики: {exc}")
-            return
-        if action == "ops":
-            await callback.answer("Собираю отчет...")
-            try:
-                text = await asyncio.wait_for(
-                    build_ops_report_text(settings, marzban, sar_seconds=10),
-                    timeout=20,
-                )
-                await callback.message.answer(text)
-            except asyncio.TimeoutError:
-                await callback.message.answer("Ops-отчет собирается слишком долго. Попробуйте /ops.")
-            except Exception as exc:
-                logging.exception("Ops callback failed")
-                await callback.message.answer(f"Ошибка ops-отчета: {exc}")
-            return
-        if action == "deploy":
-            await callback.answer("Запускаю deploy...")
-            script = Path("/usr/local/sbin/vpn-ops-deploy")
-            if not script.exists():
-                await callback.message.answer("Скрипт /usr/local/sbin/vpn-ops-deploy не найден.")
-                return
-            if start_deploy(script):
-                await callback.message.answer(
-                    "🚀 Deploy запущен. Результат пришлю после перезапуска."
-                )
-                asyncio.create_task(schedule_deploy_report(callback.message.bot))
-            else:
-                await callback.message.answer("Не удалось запустить deploy.")
-            return
-        if action == "find_user":
-            await callback.answer("Ок")
-            pending_user_lookup.add(int(callback.from_user.id))
-            await callback.message.answer(
-                "Введите Telegram ID пользователя (пример: 386029735) или «отмена»."
-            )
-            return
-        if action == "device_add":
-            await callback.answer("Ок")
-            pending_device_add_prompt.add(int(callback.from_user.id))
-            await callback.message.answer(
-                "Введите Telegram ID и слот (опционально), пример: 386029735 2. Или «отмена»."
-            )
-            return
-        if action == "broadcast":
-            await callback.answer("Ок")
-            pending_broadcast_prompt.add(int(callback.from_user.id))
-            pending_broadcast_format.setdefault(int(callback.from_user.id), "plain")
-            pending_broadcast_buttons.setdefault(int(callback.from_user.id), True)
-            await callback.message.answer("Введите текст рассылки или «отмена».")
-            return
-        if action == "broadcast_fmt":
-            admin_id = int(callback.from_user.id)
-            current = pending_broadcast_format.get(admin_id, "plain")
-            pending_broadcast_format[admin_id] = broadcast_next_format(current)
-            body = pending_broadcast_text.get(admin_id, "").strip()
-            if not body:
-                await callback.answer("Сначала введите текст рассылки.")
-                return
-            await callback.answer("Формат обновлен")
-            await send_broadcast_preview(callback.message, body, admin_id=admin_id)
-            return
-        if action == "broadcast_btn":
-            admin_id = int(callback.from_user.id)
-            current = pending_broadcast_buttons.get(admin_id, True)
-            pending_broadcast_buttons[admin_id] = not current
-            body = pending_broadcast_text.get(admin_id, "").strip()
-            if not body:
-                await callback.answer("Сначала введите текст рассылки.")
-                return
-            await callback.answer("Кнопки обновлены")
-            await send_broadcast_preview(callback.message, body, admin_id=admin_id)
-            return
-        if action == "broadcast_cancel":
-            await callback.answer("Отменено")
-            pending_broadcast_prompt.discard(int(callback.from_user.id))
-            pending_broadcast_text.pop(int(callback.from_user.id), None)
-            pending_broadcast_format.pop(int(callback.from_user.id), None)
-            pending_broadcast_buttons.pop(int(callback.from_user.id), None)
-            await callback.message.answer("Рассылка отменена.")
-            return
-        if action == "broadcast_send":
-            await callback.answer("Отправляю...")
-            admin_id = int(callback.from_user.id)
-            body = pending_broadcast_text.pop(admin_id, "").strip()
-            fmt_key = pending_broadcast_format.pop(admin_id, "plain")
-            with_buttons = pending_broadcast_buttons.pop(admin_id, True)
-            if not body:
-                await callback.message.answer("Нет текста рассылки. Сначала введите текст.")
-                return
-            targets = {int(tg_id) for tg_id in await repo.list_known_telegram_ids()}
-            targets.discard(admin_id)
-            if not targets:
-                await callback.message.answer("Нет пользователей для рассылки.")
-                return
-            parse_mode = broadcast_parse_mode(fmt_key)
-            ok = 0
-            fail = 0
-            for tg_id in targets:
-                try:
-                    kwargs: dict[str, Any] = {}
-                    if parse_mode:
-                        kwargs["parse_mode"] = parse_mode
-                    if with_buttons:
-                        kwargs["reply_markup"] = keyboard_for_user(
-                            is_admin=is_admin(int(tg_id), settings)
-                        )
-                    await callback.message.bot.send_message(int(tg_id), body, **kwargs)
-                    ok += 1
-                except Exception:
-                    fail += 1
-                await asyncio.sleep(0.05)
-            await callback.message.answer(f"Готово. Успешно: {ok}, ошибок: {fail}.")
-            return
-        if action == "ref_top":
-            await callback.answer("Собираю реф-статистику...")
-            try:
-                text = await asyncio.wait_for(build_ref_top_text(repo, limit=10), timeout=10)
-                await callback.message.answer(text)
-            except asyncio.TimeoutError:
-                await callback.message.answer("Реф-статистика собирается слишком долго. Попробуйте /ref_stats.")
-            except Exception as exc:
-                logging.exception("Ref top callback failed")
-                await callback.message.answer(f"Ошибка реф-статистики: {exc}")
-            return
-        if action == "help":
-            await callback.answer("Готово")
-            providers = enabled_payment_providers(settings)
-            check_hint = (
-                "/check <" + "|".join(providers) + "> <payment_id>"
-                if providers
-                else "/check <payment_id> (оплата не настроена)"
-            )
-            await callback.message.answer(
-                "Шпаргалка админа:\n"
-                "/grant <telegram_id> <days> <gb>\n"
-                "/ref_grant <telegram_id> [days]\n"
-                "/grant_perm <telegram_id> [gb]\n"
-                "/grant_device <telegram_id> <slot> <days> <gb>\n"
-                "/sync_expire <telegram_id> [max|min|slot:<id>]\n"
-                "/device_replace <telegram_id> <slot>\n"
-                "/disable <telegram_id>\n"
-                "/link <telegram_id> <marzban_username>\n"
-                "/user <telegram_id>\n"
-                "/broadcast <текст>\n"
-                "/broadcast_menu\n"
-                "/setenv <KEY> <VALUE>\n"
-                "/deploy\n"
-                "/ref_stats [telegram_id]\n"
-                "/ops\n"
-                f"{check_hint}\n\n"
-                "Примеры:\n"
-                "/grant 386029735 30 0\n"
-                "/ref_grant 386029735 3\n"
-                "/grant_perm 386029735 0\n"
-                "/grant_device 386029735 2 30 0\n"
-                "/sync_expire 386029735\n"
-                "/sync_expire 386029735 min\n"
-                "/sync_expire 386029735 slot:2\n"
-                "/device_replace 386029735 2\n"
-                "/setenv DEVICE_LIMIT 0\n"
-                "/setenv PAY_RUB 149\n"
-                "/setenv PLANS_JSON [{...}]\n"
-                "/setenv DEPLOY_BROADCAST_USERS 1\n"
-                "/setenv CHANNEL_URL https://t.me/rootvpn_news\n"
-                "/broadcast_menu\n"
-                "/deploy\n"
-                "/ref_stats\n"
-                "/disable 386029735\n"
-                "/user 386029735\n"
-                "/broadcast Текст рассылки"
-            )
-            return
-        if action == "support_templates":
-            await callback.answer("Готово")
-            await callback.message.answer(build_support_templates_text(), parse_mode="HTML")
-            return
-        await callback.answer("Неизвестное действие", show_alert=True)
-
-    @router.message(Command("grant"))
-    async def grant(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        if not message.from_user or not is_admin(int(message.from_user.id), settings):
-            await message.answer("Недостаточно прав.")
-            return
-        parts = (message.text or "").split()
-        if len(parts) != 4:
-            await message.answer("Использование: /grant <telegram_id> <days> <gb>")
-            return
-        try:
-            target = int(parts[1])
-            days = int(parts[2])
-            gb = int(parts[3])
-        except ValueError:
-            await message.answer("Ошибка формата. Пример: /grant 386029735 365 0")
-            return
-        if days < 0:
-            await message.answer("Количество дней должно быть >= 0.")
-            return
-        if days == 0:
-            updated = await extend_access_all_devices(
-                telegram_id=target,
-                days=0,
-                gb=gb,
-                repo=repo,
-                marzban=marzban,
-                settings=settings,
-            )
-            expire_val = None
-            try:
-                primary_row = await repo.get_user(target)
-                primary_username = (
-                    str(primary_row["marzban_username"])
-                    if primary_row
-                    else build_username(target)
-                )
-                primary_user = await marzban.get_user(primary_username)
-                expire_val = primary_user.get("expire") if primary_user else None
-            except Exception:
-                logging.exception("grant: failed to read expire after perm grant for %s", target)
-            logging.info("grant: perm access for %s, expire=%s", target, expire_val)
-            await message.answer("Готово. Бессрочный доступ выдан.")
-            await notify_access_updated(
-                message.bot,
-                target,
-                updated,
-                "Вам выдан бессрочный доступ администратором.",
-                repo=repo,
-                marzban=marzban,
-                settings=settings,
-            )
-            return
-        updated = await extend_access(
-            telegram_id=target,
-            days=days,
-            gb=gb,
             repo=repo,
             marzban=marzban,
+            guard_callback_rate_limit=guard_callback_rate_limit,
+            is_admin_fn=is_admin,
+            admin_panel_keyboard=admin_panel_keyboard,
+            admin_plans_text=admin_plans_text,
+            admin_plans_keyboard=admin_plans_keyboard,
+            preset_plans=_preset_plans,
+            plans_to_json=_plans_to_json,
+            update_env_file=update_env_file,
+            plan_title=plan_title,
+            plan_gb_text=plan_gb_text,
+            build_admin_stats_text=build_admin_stats_text,
+            build_ops_report_text=build_ops_report_text,
+            start_deploy=start_deploy,
+            schedule_deploy_report=schedule_deploy_report,
+            pending_user_lookup=pending_user_lookup,
+            pending_device_add_prompt=pending_device_add_prompt,
+            pending_broadcast_prompt=pending_broadcast_prompt,
+            pending_broadcast_format=pending_broadcast_format,
+            pending_broadcast_buttons=pending_broadcast_buttons,
+            pending_broadcast_text=pending_broadcast_text,
+            broadcast_next_format=broadcast_next_format,
+            send_broadcast_preview=send_broadcast_preview,
+            broadcast_parse_mode=broadcast_parse_mode,
+            keyboard_for_user=keyboard_for_user,
+            build_ref_top_text=build_ref_top_text,
+            enabled_payment_providers=enabled_payment_providers,
+            build_support_templates_text=build_support_templates_text,
+        ),
+    )
+
+    register_admin_message_handlers(
+        router=router,
+        deps=AdminMessageDeps(
             settings=settings,
-        )
-        await message.answer("Готово.")
-        await notify_access_updated(
-            message.bot,
-            target,
-            updated,
-            "Ваш доступ продлен администратором.",
             repo=repo,
             marzban=marzban,
-            settings=settings,
-        )
-
-    @router.message(Command("device_add"))
-    async def device_add(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        if not message.from_user or not is_admin(int(message.from_user.id), settings):
-            await message.answer("Недостаточно прав.")
-            return
-        parts = (message.text or "").split()
-        if len(parts) not in {2, 3}:
-            await message.answer("Использование: /device_add <telegram_id> [slot]")
-            return
-        try:
-            target = int(parts[1])
-            slot = int(parts[2]) if len(parts) == 3 else 2
-        except ValueError:
-            await message.answer("Ошибка формата. Пример: /device_add 386029735 2")
-            return
-        if slot < 1:
-            await message.answer("Слот должен быть >= 1")
-            return
-        if settings.device_limit > 0 and slot > settings.device_limit:
-            await message.answer(f"Слот должен быть 1..{settings.device_limit}")
-            return
-        _, user, created = await ensure_device(
-            telegram_id=target,
-            device_id=slot,
-            repo=repo,
-            marzban=marzban,
-            settings=settings,
-            create_if_missing=True,
-        )
-        if not user:
-            await message.answer("Не удалось создать устройство.")
-            return
-        msg = f"Устройство {slot} создано." if created else f"Устройство {slot} уже существует."
-        await message.answer(msg)
-
-    @router.message(Command("grant_device"))
-    async def grant_device(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        if not message.from_user or not is_admin(int(message.from_user.id), settings):
-            await message.answer("Недостаточно прав.")
-            return
-        parts = (message.text or "").split()
-        if len(parts) != 5:
-            await message.answer("Использование: /grant_device <telegram_id> <slot> <days> <gb>")
-            return
-        try:
-            target = int(parts[1])
-            slot = int(parts[2])
-            days = int(parts[3])
-            gb = int(parts[4])
-        except ValueError:
-            await message.answer("Ошибка формата. Пример: /grant_device 386029735 2 30 0")
-            return
-        if slot < 1:
-            await message.answer("Слот должен быть >= 1")
-            return
-        if settings.device_limit > 0 and slot > settings.device_limit:
-            await message.answer(f"Слот должен быть 1..{settings.device_limit}")
-            return
-        if days < 0:
-            await message.answer("Количество дней должно быть >= 0.")
-            return
-        if gb < 0:
-            await message.answer("GB должно быть >= 0.")
-            return
-
-        try:
-            updated = await extend_access_device(
-                telegram_id=target,
-                device_id=slot,
-                days=days,
-                gb=gb,
-                repo=repo,
-                marzban=marzban,
-                settings=settings,
-            )
-        except Exception as exc:
-            logging.exception("grant_device failed for tg=%s slot=%s", target, slot)
-            await message.answer(f"Не удалось выдать доступ на устройство: {exc}")
-            return
-
-        if days == 0:
-            await message.answer(f"Готово. Устройству {slot} выдан бессрочный доступ.")
-            user_text = (
-                f"✅ Администратор выдал бессрочный доступ для устройства {slot}."
-            )
-        else:
-            await message.answer(f"Готово. Устройство {slot} продлено на {days} дн.")
-            user_text = (
-                f"✅ Администратор продлил доступ для устройства {slot} на {days} дн."
-            )
-
-        try:
-            await message.bot.send_message(target, user_text)
-            if slot == 1:
-                await send_status_to_bot(message.bot, target, updated)
-            await send_device_links_to_bot(
-                bot=message.bot,
-                telegram_id=target,
-                repo=repo,
-                marzban=marzban,
-                settings=settings,
-            )
-        except Exception:
-            logging.exception("grant_device: failed to notify user %s", target)
-            await message.answer("Доступ выдан, но не удалось отправить уведомление пользователю.")
-
-    @router.message(Command("sync_expire"))
-    async def sync_expire_cmd(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        if not message.from_user or not is_admin(int(message.from_user.id), settings):
-            await message.answer("Недостаточно прав.")
-            return
-        parts = (message.text or "").split()
-        if len(parts) not in {2, 3}:
-            await message.answer("Использование: /sync_expire <telegram_id> [max|min|slot:<id>]")
-            return
-        try:
-            target = int(parts[1])
-        except ValueError:
-            await message.answer("Ошибка формата. Пример: /sync_expire 386029735")
-            return
-
-        mode = "max"
-        source_slot: int | None = None
-        mode_label = "максимальному сроку"
-        if len(parts) == 3:
-            raw_mode = parts[2].strip().lower()
-            if raw_mode == "max":
-                mode = "max"
-                mode_label = "максимальному сроку"
-            elif raw_mode == "min":
-                mode = "min"
-                mode_label = "минимальному сроку"
-            elif raw_mode.startswith("slot:"):
-                try:
-                    source_slot = int(raw_mode.split(":", 1)[1])
-                except ValueError:
-                    await message.answer("Неверный формат слота. Пример: slot:2")
-                    return
-                if source_slot < 1:
-                    await message.answer("Слот должен быть >= 1")
-                    return
-                mode = "slot"
-                mode_label = f"сроку слота {source_slot}"
-            else:
-                await message.answer("Режим: max, min или slot:<id>")
-                return
-
-        try:
-            target_expire, changed, found_count, missing_count = await sync_expire_across_devices(
-                telegram_id=target,
-                repo=repo,
-                marzban=marzban,
-                mode=mode,
-                source_slot=source_slot,
-            )
-        except ValueError as exc:
-            await message.answer(str(exc))
-            return
-        except Exception as exc:
-            logging.exception("sync_expire failed for tg=%s", target)
-            await message.answer(f"Не удалось синхронизировать сроки: {exc}")
-            return
-
-        if found_count == 0:
-            await message.answer("Не найдено активных профилей пользователя в Marzban.")
-            return
-
-        await message.answer(
-            "Готово.\n"
-            f"Режим: по {mode_label}\n"
-            f"Целевой срок: {format_expire(target_expire)}\n"
-            f"Изменено профилей: {changed}/{found_count}\n"
-            f"Не найдено в Marzban: {missing_count}"
-        )
-
-        try:
-            await message.bot.send_message(
-                target,
-                "✅ Администратор синхронизировал срок всех ваших устройств.\n"
-                f"Новый общий срок: {format_expire(target_expire)}",
-            )
-            primary_row = await repo.get_user(target)
-            if primary_row:
-                primary = await marzban.get_user(str(primary_row["marzban_username"]))
-                if primary:
-                    await send_status_to_bot(message.bot, target, primary)
-            await send_device_links_to_bot(
-                bot=message.bot,
-                telegram_id=target,
-                repo=repo,
-                marzban=marzban,
-                settings=settings,
-            )
-        except Exception:
-            logging.exception("sync_expire: failed to notify user %s", target)
-            await message.answer("Сроки синхронизированы, но не удалось отправить уведомление пользователю.")
-
-    @router.message(Command("device_replace"))
-    async def device_replace_cmd(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        if not message.from_user or not is_admin(int(message.from_user.id), settings):
-            await message.answer("Недостаточно прав.")
-            return
-        parts = (message.text or "").split()
-        if len(parts) != 3:
-            await message.answer("Использование: /device_replace <telegram_id> <slot>")
-            return
-        try:
-            target = int(parts[1])
-            slot = int(parts[2])
-        except ValueError:
-            await message.answer("Ошибка формата. Пример: /device_replace 386029735 2")
-            return
-        if slot < 1:
-            await message.answer("Слот должен быть >= 1")
-            return
-        if settings.device_limit > 0 and slot > settings.device_limit:
-            await message.answer(f"Слот должен быть 1..{settings.device_limit}")
-            return
-        try:
-            old_username, new_username, new_user = await replace_device_slot(
-                telegram_id=target,
-                slot=slot,
-            )
-        except Exception as exc:
-            logging.exception("device_replace failed for tg=%s slot=%s", target, slot)
-            await message.answer(f"Не удалось заменить устройство: {exc}")
-            return
-
-        await message.answer(
-            "Готово.\n"
-            f"Слот: {slot}\n"
-            f"Старый: {old_username}\n"
-            f"Новый: {new_username}\n"
-            "Старый профиль отключен."
-        )
-        try:
-            await message.bot.send_message(
-                target,
-                f"🔁 Мы переиздали конфиг для устройства {slot}.\n"
-                "Старый конфиг для этого устройства отключен.\n"
-                "Важно: один конфиг = одно устройство.",
-            )
-            if slot == 1:
-                await send_status_to_bot(message.bot, target, new_user)
-            await send_device_links_to_bot(
-                bot=message.bot,
-                telegram_id=target,
-                repo=repo,
-                marzban=marzban,
-                settings=settings,
-            )
-        except Exception:
-            logging.exception("device_replace: failed to notify user %s", target)
-            await message.answer("Профиль заменен, но не удалось отправить уведомление пользователю.")
-
-    @router.message(Command("setenv"))
-    async def setenv_cmd(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        if not message.from_user or not is_admin(int(message.from_user.id), settings):
-            await message.answer("Недостаточно прав.")
-            return
-        parts = (message.text or "").split(maxsplit=2)
-        if len(parts) < 3:
-            await message.answer("Использование: /setenv <KEY> <VALUE>")
-            return
-        key = parts[1].strip().upper()
-        if key not in ENV_EDITABLE_KEYS:
-            await message.answer(
-                "Недоступный ключ. Разрешены:\n" + ", ".join(sorted(ENV_EDITABLE_KEYS.keys()))
-            )
-            return
-        kind = ENV_EDITABLE_KEYS[key]
-        value = coerce_env_value(parts[2], kind)
-        if value is None:
-            await message.answer(f"Неверный формат для {key} ({kind}).")
-            return
-        env_path = Path("/opt/vpn-bot/.env")
-        try:
-            update_env_file(env_path, key, value)
-        except Exception as exc:
-            logging.exception("setenv failed for %s", key)
-            await message.answer(f"Не удалось обновить .env: {exc}")
-            return
-        await message.answer(f"✅ {key} обновлён на {value}. Перезапускаю vpn-bot.")
-        try:
-            subprocess.Popen(["systemctl", "restart", "vpn-bot"])
-        except Exception:
-            logging.exception("Failed to restart vpn-bot after setenv")
-
-    @router.message(Command("deploy"))
-    async def deploy_cmd(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        if not message.from_user or not is_admin(int(message.from_user.id), settings):
-            await message.answer("Недостаточно прав.")
-            return
-        script = Path("/usr/local/sbin/vpn-ops-deploy")
-        if not script.exists():
-            await message.answer("Скрипт /usr/local/sbin/vpn-ops-deploy не найден.")
-            return
-        await message.answer("🚀 Запускаю deploy...")
-        if start_deploy(script):
-            await message.answer("Deploy запущен. Результат пришлю после перезапуска.")
-            asyncio.create_task(schedule_deploy_report(message.bot))
-        else:
-            await message.answer("Не удалось запустить deploy.")
-
-    @router.message(Command("broadcast_menu"))
-    async def broadcast_menu_cmd(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        if not message.from_user or not is_admin(int(message.from_user.id), settings):
-            await message.answer("Недостаточно прав.")
-            return
-        await message.answer("Запускаю принудительное обновление кнопок...")
-        try:
-            sent, total, failed, fail_samples = await broadcast_menu_update(
-                bot=message.bot,
-                settings=settings,
-                repo=repo,
-                force=True,
-            )
-        except Exception as exc:
-            logging.exception("broadcast_menu command failed")
-            await message.answer(f"Не удалось обновить кнопки: {exc}")
-            return
-        lines = [f"Готово. Доставлено {sent}/{total}, ошибок {failed}."]
-        if fail_samples:
-            lines.append("Примеры ID с ошибкой: " + ", ".join(fail_samples))
-        await message.answer("\n".join(lines))
-
-    @router.message(Command("admin_stats"))
-    async def admin_stats(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        if not message.from_user or not is_admin(int(message.from_user.id), settings):
-            await message.answer("Недостаточно прав.")
-            return
-        try:
-            await message.answer(await asyncio.wait_for(build_admin_stats_text(repo, marzban), timeout=30))
-        except asyncio.TimeoutError:
-            await message.answer("Слишком долго считаю статистику. Повторите через минуту.")
-        except Exception as exc:
-            logging.exception("Admin stats command failed")
-            await message.answer(f"Ошибка статистики: {exc}")
-
-    @router.message(Command("ref_stats"))
-    async def ref_stats_cmd(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        if not message.from_user or not is_admin(int(message.from_user.id), settings):
-            await message.answer("Недостаточно прав.")
-            return
-        parts = (message.text or "").split()
-        try:
-            if len(parts) == 2:
-                target_id = int(parts[1])
-                stats = await repo.get_referral_stats(target_id)
-                top_text = (
-                    f"Рефералка для tg:{target_id}:\n"
-                    f"- Приглашено: {stats['total']}\n"
-                    f"- Бонус выдан: {stats['rewarded']}\n"
-                    f"- Ожидают первую оплату: {stats['pending']}"
-                )
-                await message.answer(top_text)
-                return
-            text = await asyncio.wait_for(build_ref_top_text(repo, limit=10), timeout=10)
-            await message.answer(text)
-        except ValueError:
-            await message.answer("Использование: /ref_stats [telegram_id]")
-        except asyncio.TimeoutError:
-            await message.answer("Реф-статистика собирается слишком долго. Повторите через минуту.")
-        except Exception as exc:
-            logging.exception("Ref stats command failed")
-            await message.answer(f"Ошибка реф-статистики: {exc}")
-
-    @router.message(Command("ops"))
-    async def ops_cmd(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        if not message.from_user or not is_admin(int(message.from_user.id), settings):
-            await message.answer("Недостаточно прав.")
-            return
-        try:
-            await message.answer(
-                await asyncio.wait_for(
-                    build_ops_report_text(settings, marzban, sar_seconds=10),
-                    timeout=25,
-                )
-            )
-        except asyncio.TimeoutError:
-            await message.answer("Ops-отчет собирается слишком долго. Повторите через минуту.")
-        except Exception as exc:
-            logging.exception("Ops command failed")
-            await message.answer(f"Ошибка ops-отчета: {exc}")
-
-    @router.message(Command("ref_grant"))
-    async def ref_grant_cmd(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        if not message.from_user or not is_admin(int(message.from_user.id), settings):
-            await message.answer("Недостаточно прав.")
-            return
-        parts = (message.text or "").split()
-        if len(parts) not in {2, 3}:
-            await message.answer("Использование: /ref_grant <telegram_id> [days]")
-            return
-        try:
-            target = int(parts[1])
-            days = int(parts[2]) if len(parts) == 3 else max(1, settings.referral_bonus_days)
-        except ValueError:
-            await message.answer("Использование: /ref_grant <telegram_id> [days]")
-            return
-        if days <= 0:
-            await message.answer("Количество дней должно быть больше 0.")
-            return
-        updated = await extend_access_days_only(
-            telegram_id=target,
-            days=days,
-            repo=repo,
-            marzban=marzban,
-            settings=settings,
-        )
-        await message.answer(f"Ручной реф-бонус выдан: tg:{target}, +{days} дн.")
-        await notify_access_updated(
-            message.bot,
-            target,
-            updated,
-            f"🎁 Вам выдан реферальный бонус вручную: +{days} дн.",
-            repo=repo,
-            marzban=marzban,
-            settings=settings,
-        )
-
-    @router.message(Command("disable"))
-    async def disable(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        if not message.from_user or not is_admin(int(message.from_user.id), settings):
-            await message.answer("Недостаточно прав.")
-            return
-        parts = (message.text or "").split()
-        if len(parts) != 2:
-            await message.answer("Использование: /disable <telegram_id>")
-            return
-        row = await repo.get_user(int(parts[1]))
-        if not row:
-            await message.answer("Пользователь не найден.")
-            return
-        await marzban.modify_user(row["marzban_username"], {"status": "disabled"})
-        await message.answer("Отключено.")
-
-    @router.message(Command("link"))
-    async def link(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        if not message.from_user or not is_admin(int(message.from_user.id), settings):
-            await message.answer("Недостаточно прав.")
-            return
-        parts = (message.text or "").split()
-        if len(parts) != 3:
-            await message.answer("Использование: /link <telegram_id> <marzban_username>")
-            return
-        tg_id = int(parts[1])
-        username = parts[2]
-        user = await marzban.get_user(username)
-        if not user:
-            await message.answer("Пользователь Marzban не найден.")
-            return
-        await repo.upsert_user(tg_id, username)
-        await message.answer("Привязка сохранена.")
+            guard_message_rate_limit=guard_message_rate_limit,
+            is_admin_fn=is_admin,
+            extend_access_all_devices=extend_access_all_devices,
+            build_username=build_username,
+            notify_access_updated=notify_access_updated,
+            extend_access=extend_access,
+            ensure_device=ensure_device,
+            extend_access_device=extend_access_device,
+            send_status_to_bot=send_status_to_bot,
+            send_device_links_to_bot=send_device_links_to_bot,
+            sync_expire_across_devices=sync_expire_across_devices,
+            format_expire=format_expire,
+            replace_device_slot=replace_device_slot,
+            env_editable_keys=ENV_EDITABLE_KEYS,
+            coerce_env_value=coerce_env_value,
+            update_env_file=update_env_file,
+            start_deploy=start_deploy,
+            schedule_deploy_report=schedule_deploy_report,
+            broadcast_menu_update=broadcast_menu_update,
+            build_admin_stats_text=build_admin_stats_text,
+            build_ref_top_text=build_ref_top_text,
+            build_ops_report_text=build_ops_report_text,
+            extend_access_days_only=extend_access_days_only,
+        ),
+    )
 
     return router
 
@@ -4225,6 +2574,9 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+
 
 
 

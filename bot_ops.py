@@ -8,16 +8,27 @@ import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from bot_network import measure_iface_mbps, measure_iface_mbps_sar
+
+if TYPE_CHECKING:
+    from bot_marzban import MarzbanClient
+    from bot_repo import Repo
+
+
+class SettingsLike(Protocol):
+    net_iface: str
+    port_speed_mbps: float
+    port_utilization: float
+    concurrency_ratio: float
 
 def _event_users(summary: dict[str, dict[str, int]], key: str) -> int:
     item = summary.get(key) or {}
     return int(item.get("users", 0) or 0)
 
 
-async def build_funnel_24h_text(repo: Repo) -> str:
+async def build_funnel_24h_text(repo: "Repo") -> str:
     since_ts = int(time.time()) - 86400
     summary = await repo.event_counts_since(since_ts)
     start_users = _event_users(summary, "user_start")
@@ -44,7 +55,7 @@ async def build_funnel_24h_text(repo: Repo) -> str:
     )
 
 
-async def build_admin_stats_text(repo: Repo, marzban: MarzbanClient) -> str:
+async def build_admin_stats_text(repo: "Repo", marzban: "MarzbanClient") -> str:
     rows = await repo.list_users()
     total_local = len(rows)
     active = 0
@@ -106,7 +117,7 @@ async def build_admin_stats_text(repo: Repo, marzban: MarzbanClient) -> str:
     )
 
 
-async def build_ref_top_text(repo: Repo, limit: int = 10) -> str:
+async def build_ref_top_text(repo: "Repo", limit: int = 10) -> str:
     ref_counts = await repo.get_referral_global_stats()
     top_rows = await repo.list_top_referrers(limit=limit)
     lines = [
@@ -186,7 +197,7 @@ def _latest_backup_path() -> str | None:
 
 
 async def build_ops_report_text(
-    settings: Settings, marzban: MarzbanClient, *, sar_seconds: int = 10
+    settings: SettingsLike, marzban: "MarzbanClient", *, sar_seconds: int = 10
 ) -> str:
     def collect() -> str:
         now_utc = datetime.now(timezone.utc).strftime("%d.%m.%Y %H:%M UTC")
@@ -284,7 +295,7 @@ async def build_ops_report_text(
     return base + "\n" + "\n".join(capacity_lines)
 
 
-async def build_payments_summary(repo: Repo) -> str:
+async def build_payments_summary(repo: "Repo") -> str:
     counts = await repo.payment_status_counts()
     if not counts:
         return "Платежи: данных нет"
