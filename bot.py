@@ -235,6 +235,42 @@ def _parse_plans_json(raw: str, *, default_days: int, default_gb: int, default_r
     return tuple(plans)
 
 
+def _plans_to_json(plans: tuple[Plan, ...]) -> str:
+    payload = [
+        {
+            "key": plan.key,
+            "title": plan_title(plan),
+            "days": plan.days,
+            "gb": plan.gb,
+            "rub": float(plan.rub),
+        }
+        for plan in plans
+    ]
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def _preset_plans(preset_key: str) -> tuple[Plan, ...] | None:
+    if preset_key == "balance":
+        return (
+            Plan(key="m1", title="1 месяц", days=30, gb=0, rub=99.0),
+            Plan(key="m3", title="3 месяца", days=90, gb=0, rub=259.0),
+            Plan(key="y1", title="12 месяцев", days=365, gb=0, rub=949.0),
+        )
+    if preset_key == "margin":
+        return (
+            Plan(key="m1", title="1 месяц", days=30, gb=0, rub=99.0),
+            Plan(key="m3", title="3 месяца", days=90, gb=0, rub=279.0),
+            Plan(key="y1", title="12 месяцев", days=365, gb=0, rub=1099.0),
+        )
+    if preset_key == "convert":
+        return (
+            Plan(key="m1", title="1 месяц", days=30, gb=0, rub=99.0),
+            Plan(key="m3", title="3 месяца", days=90, gb=0, rub=239.0),
+            Plan(key="y1", title="12 месяцев", days=365, gb=0, rub=849.0),
+        )
+    return None
+
+
 @dataclass(frozen=True)
 class Settings:
     bot_token: str
@@ -1365,6 +1401,7 @@ def admin_panel_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📈 Статистика", callback_data="admin:stats")],
+            [InlineKeyboardButton(text="💼 Тарифы", callback_data="admin:plans")],
             [InlineKeyboardButton(text="🏆 Топ рефералов", callback_data="admin:ref_top")],
             [InlineKeyboardButton(text="🧰 Ops отчет", callback_data="admin:ops")],
             [InlineKeyboardButton(text="🚀 Обновить и проверить", callback_data="admin:deploy")],
@@ -1409,6 +1446,18 @@ def admin_panel_keyboard() -> InlineKeyboardMarkup:
             ],
             [InlineKeyboardButton(text="📨 Шаблоны поддержки", callback_data="admin:support_templates")],
             [InlineKeyboardButton(text="📘 Шпаргалка", callback_data="admin:help")],
+        ]
+    )
+
+
+def admin_plans_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="⚖️ Баланс: 99 / 259 / 949", callback_data="admin:plans:set:balance")],
+            [InlineKeyboardButton(text="📈 Маржа: 99 / 279 / 1099", callback_data="admin:plans:set:margin")],
+            [InlineKeyboardButton(text="🚀 Конверсия: 99 / 239 / 849", callback_data="admin:plans:set:convert")],
+            [InlineKeyboardButton(text="✍️ Показать ручную команду", callback_data="admin:plans:manual")],
+            [InlineKeyboardButton(text="⬅️ Назад в админку", callback_data="admin:home")],
         ]
     )
 
@@ -1595,6 +1644,15 @@ def plans_list_text(settings: Settings, *, multiplier: int = 1) -> str:
     lines = []
     for plan in settings.plans:
         lines.append(f"- {plan_offer_text(plan, multiplier=multiplier)}")
+    return "\n".join(lines)
+
+
+def admin_plans_text(settings: Settings) -> str:
+    lines = ["Текущие тарифы:"]
+    for plan in settings.plans:
+        lines.append(
+            f"- {plan.key}: {plan_title(plan)} • {plan.rub:.2f} RUB • {plan.days} дн • {plan_gb_text(plan.gb)}"
+        )
     return "\n".join(lines)
 
 
@@ -5166,6 +5224,70 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             await callback.answer("Недостаточно прав.", show_alert=True)
             return
         action = callback.data.split(":", 1)[1]
+        if action == "home":
+            await callback.answer("Готово")
+            await callback.message.answer(
+                "Админ-кабинет:\n"
+                "- Статистика по пользователям и платежам\n"
+                "- Быстрые действия без ручного ввода команд",
+                reply_markup=admin_panel_keyboard(),
+            )
+            return
+        if action == "plans":
+            await callback.answer("Готово")
+            await callback.message.answer(
+                "💼 Управление тарифами\n\n"
+                + admin_plans_text(settings)
+                + "\n\n"
+                "Выберите готовый пресет или покажите команду для ручной настройки.",
+                reply_markup=admin_plans_keyboard(),
+            )
+            return
+        if action == "plans:manual":
+            await callback.answer("Готово")
+            await callback.message.answer(
+                "Ручная настройка тарифов:\n"
+                "<code>/setenv PLANS_JSON [{\"key\":\"m1\",\"title\":\"1 месяц\",\"days\":30,\"gb\":0,\"rub\":99},"
+                "{\"key\":\"m3\",\"title\":\"3 месяца\",\"days\":90,\"gb\":0,\"rub\":259},"
+                "{\"key\":\"y1\",\"title\":\"12 месяцев\",\"days\":365,\"gb\":0,\"rub\":949}]</code>\n\n"
+                "После применения бот перезапустится автоматически.",
+                parse_mode="HTML",
+                reply_markup=admin_plans_keyboard(),
+            )
+            return
+        if action.startswith("plans:set:"):
+            preset_key = action.split(":", 2)[2].strip()
+            plans = _preset_plans(preset_key)
+            if not plans:
+                await callback.answer("Неизвестный пресет", show_alert=True)
+                return
+            env_path = Path("/opt/vpn-bot/.env")
+            json_value = _plans_to_json(plans)
+            try:
+                update_env_file(env_path, "PLANS_JSON", json_value)
+            except Exception as exc:
+                logging.exception("Failed to apply plans preset: %s", preset_key)
+                await callback.answer("Ошибка применения", show_alert=True)
+                await callback.message.answer(f"Не удалось обновить PLANS_JSON: {exc}")
+                return
+            await callback.answer("Тарифы обновлены")
+            lines = ["Текущие тарифы:"]
+            for plan in plans:
+                lines.append(
+                    f"- {plan.key}: {plan_title(plan)} • {plan.rub:.2f} RUB • {plan.days} дн • {plan_gb_text(plan.gb)}"
+                )
+            await callback.message.answer(
+                "✅ Пресет тарифов применен.\n"
+                f"Профиль: {preset_key}\n"
+                + "\n".join(lines)
+                + "\n\nПерезапускаю vpn-bot...",
+                reply_markup=admin_plans_keyboard(),
+            )
+            try:
+                subprocess.Popen(["systemctl", "restart", "vpn-bot"])
+            except Exception:
+                logging.exception("Failed to restart vpn-bot after plans preset")
+            return
         if action == "stats":
             await callback.answer("Считаю статистику...")
             try:
@@ -5336,6 +5458,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                 "/device_replace 386029735 2\n"
                 "/setenv DEVICE_LIMIT 0\n"
                 "/setenv PAY_RUB 149\n"
+                "/setenv PLANS_JSON [{...}]\n"
                 "/setenv DEPLOY_BROADCAST_USERS 1\n"
                 "/setenv CHANNEL_URL https://t.me/rootvpn_news\n"
                 "/broadcast_menu\n"
