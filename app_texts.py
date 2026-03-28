@@ -29,11 +29,13 @@ def build_quick_connect_guide_text() -> str:
         "1) Нажмите «🔑 Получить конфиг»\n"
         "2) Нажмите на нужный конфиг в чате и скопируйте ссылку\n"
         "3) Импортируйте ссылку в VPN-клиент (VLESS)\n\n"
-        "<b>Рекомендуемые клиенты:</b>\n"
-        "• iOS: Happ / FoXray / v2rayTun\n"
-        "• Android: v2rayNG / Hiddify\n"
-        "• Windows: v2rayN / Hiddify / Nekoray\n"
-        "• macOS: Hiddify / Nekoray\n\n"
+        "<b>Актуальные клиенты и ссылки:</b>\n"
+        "• iOS/iPadOS/macOS (RU): <a href=\"https://apps.apple.com/ru/app/happ-proxy-utility-plus/id6746188973\">Happ Plus</a>, "
+        "<a href=\"https://apps.apple.com/ru/app/onexray/id6745748773\">OneXray</a>\n"
+        "• Android: <a href=\"https://github.com/2dust/v2rayNG/releases\">v2rayNG (GitHub Releases)</a>, "
+        "<a href=\"https://github.com/MatsuriDayo/NekoBoxForAndroid/releases\">NekoBox (GitHub Releases)</a>\n"
+        "• Windows/macOS/Linux: <a href=\"https://www.happ.su/main\">Happ (официальные сборки)</a>, "
+        "<a href=\"https://github.com/2dust/v2rayN/releases\">v2rayN (GitHub Releases)</a>\n\n"
         "<b>Важно:</b>\n"
         "• Один конфиг = одно устройство\n"
         "• Для нового устройства: «📂 Еще» → «📱 Добавить устройство»\n"
@@ -42,7 +44,8 @@ def build_quick_connect_guide_text() -> str:
         "1) Обновите конфиг и импортируйте заново\n"
         "2) Проверьте дату/время на устройстве (авто)\n"
         "3) Перезапустите VPN-клиент\n"
-        "4) Если не помогло — «🆘 Поддержка»"
+        "4) Если не помогло — «🆘 Поддержка»\n\n"
+        "<i>Если конкретный клиент недоступен в вашем регионе App Store, используйте альтернативу из списка выше.</i>"
     )
 
 
