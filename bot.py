@@ -3656,19 +3656,20 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                 parse_mode="HTML",
             )
 
-    async def send_broadcast_preview(message: Message, body: str) -> None:
-        if not message.from_user:
-            return
-        admin_id = int(message.from_user.id)
-        users = await repo.list_users()
-        targets = {int(row["telegram_id"]) for row in users if row.get("telegram_id") is not None}
-        count = len(targets)
+    async def send_broadcast_preview(message: Message, body: str, *, admin_id: int | None = None) -> None:
+        if admin_id is None:
+            if not message.from_user:
+                return
+            admin_id = int(message.from_user.id)
+        targets = {int(tg_id) for tg_id in await repo.list_known_telegram_ids()}
+        count_total = len(targets)
+        count_without_admin = len({tg for tg in targets if tg != admin_id})
         fmt_key = pending_broadcast_format.get(admin_id, "plain")
         with_buttons = pending_broadcast_buttons.get(admin_id, True)
         fmt_label = broadcast_format_label(fmt_key)
         buttons_label = "вкл" if with_buttons else "выкл"
         preview = (
-            f"📣 Рассылка (получателей: {count})\n"
+            f"📣 Рассылка (получателей: {count_without_admin}, всего: {count_total})\n"
             f"Формат: {fmt_label}\n"
             f"Кнопки: {buttons_label}\n\n"
             f"{body}"
@@ -5357,7 +5358,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                 await callback.answer("Сначала введите текст рассылки.")
                 return
             await callback.answer("Формат обновлен")
-            await send_broadcast_preview(callback.message, body)
+            await send_broadcast_preview(callback.message, body, admin_id=admin_id)
             return
         if action == "broadcast_btn":
             admin_id = int(callback.from_user.id)
@@ -5368,7 +5369,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                 await callback.answer("Сначала введите текст рассылки.")
                 return
             await callback.answer("Кнопки обновлены")
-            await send_broadcast_preview(callback.message, body)
+            await send_broadcast_preview(callback.message, body, admin_id=admin_id)
             return
         if action == "broadcast_cancel":
             await callback.answer("Отменено")
@@ -5387,7 +5388,8 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             if not body:
                 await callback.message.answer("Нет текста рассылки. Сначала введите текст.")
                 return
-            targets = set(await repo.list_known_telegram_ids())
+            targets = {int(tg_id) for tg_id in await repo.list_known_telegram_ids()}
+            targets.discard(admin_id)
             if not targets:
                 await callback.message.answer("Нет пользователей для рассылки.")
                 return
