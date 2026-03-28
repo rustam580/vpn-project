@@ -163,6 +163,79 @@ def _resolve_port_speed_mbps(raw: str, iface: str) -> float:
 
 
 @dataclass(frozen=True)
+class Plan:
+    key: str
+    title: str
+    days: int
+    gb: int
+    rub: float
+
+
+def _default_plan_title(days: int) -> str:
+    if days == 30:
+        return "1 месяц"
+    if days == 90:
+        return "3 месяца"
+    if days == 365:
+        return "12 месяцев"
+    return f"{days} дней"
+
+
+def _normalize_plan_key(raw: str, fallback_days: int) -> str:
+    key = re.sub(r"[^a-zA-Z0-9_-]+", "", raw.strip().lower())
+    if key:
+        return key[:20]
+    return f"{fallback_days}d"
+
+
+def _default_plan(*, days: int, gb: int, rub: float) -> tuple[Plan, ...]:
+    return (
+        Plan(
+            key=f"{max(days, 1)}d",
+            title=_default_plan_title(max(days, 1)),
+            days=max(days, 1),
+            gb=max(gb, 0),
+            rub=max(rub, 0.01),
+        ),
+    )
+
+
+def _parse_plans_json(raw: str, *, default_days: int, default_gb: int, default_rub: float) -> tuple[Plan, ...]:
+    if not raw.strip():
+        return _default_plan(days=default_days, gb=default_gb, rub=default_rub)
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError("PLANS_JSON must be a valid JSON array") from exc
+    if not isinstance(payload, list) or not payload:
+        raise ValueError("PLANS_JSON must be a non-empty JSON array")
+
+    plans: list[Plan] = []
+    seen_keys: set[str] = set()
+    for item in payload:
+        if not isinstance(item, dict):
+            raise ValueError("Each plan in PLANS_JSON must be an object")
+        days = int(item.get("days", 0))
+        gb = int(item.get("gb", default_gb))
+        rub_raw = item.get("rub", item.get("price_rub"))
+        if rub_raw is None:
+            raise ValueError(f"Plan {item!r} must define 'rub' (or 'price_rub')")
+        rub = float(rub_raw)
+        if days <= 0:
+            raise ValueError(f"Invalid plan days in {item!r}")
+        if rub <= 0:
+            raise ValueError(f"Invalid plan price in {item!r}")
+        key = _normalize_plan_key(str(item.get("key", "")), days)
+        if key in seen_keys:
+            raise ValueError(f"Duplicate plan key: {key}")
+        seen_keys.add(key)
+        title = str(item.get("title", "")).strip() or _default_plan_title(days)
+        plans.append(Plan(key=key, title=title, days=days, gb=max(gb, 0), rub=rub))
+
+    return tuple(plans)
+
+
+@dataclass(frozen=True)
 class Settings:
     bot_token: str
     admin_ids: set[int]
@@ -173,6 +246,7 @@ class Settings:
     marzban_proxy_protocol: str
     trial_days: int
     trial_gb: int
+    plans: tuple[Plan, ...]
     pay_days: int
     pay_gb: int
     pay_rub: float
@@ -229,6 +303,21 @@ class Settings:
             raise ValueError("MARZBAN_BASE_URL is required")
         if not marzban_username or not marzban_password:
             raise ValueError("MARZBAN_USERNAME and MARZBAN_PASSWORD are required")
+        default_pay_days = int(os.getenv("PAY_DAYS", "30"))
+        default_pay_gb = int(os.getenv("PAY_GB", "0"))
+        default_pay_rub = float(os.getenv("PAY_RUB", "99"))
+        plans_raw = os.getenv("PLANS_JSON", "")
+        try:
+            plans = _parse_plans_json(
+                plans_raw,
+                default_days=default_pay_days,
+                default_gb=default_pay_gb,
+                default_rub=default_pay_rub,
+            )
+        except ValueError as exc:
+            logging.warning("Invalid PLANS_JSON, fallback to PAY_* defaults: %s", exc)
+            plans = _default_plan(days=default_pay_days, gb=default_pay_gb, rub=default_pay_rub)
+        base_plan = plans[0]
 
         return Settings(
             bot_token=bot_token,
@@ -240,9 +329,10 @@ class Settings:
             marzban_proxy_protocol=os.getenv("MARZBAN_PROXY_PROTOCOL", "vless").strip().lower(),
             trial_days=int(os.getenv("TRIAL_DAYS", "1")),
             trial_gb=int(os.getenv("TRIAL_GB", "0")),
-            pay_days=int(os.getenv("PAY_DAYS", "30")),
-            pay_gb=int(os.getenv("PAY_GB", "0")),
-            pay_rub=float(os.getenv("PAY_RUB", "99")),
+            plans=plans,
+            pay_days=base_plan.days,
+            pay_gb=base_plan.gb,
+            pay_rub=base_plan.rub,
             cryptobot_token=os.getenv("CRYPTOBOT_TOKEN", "").strip(),
             cryptobot_testnet=env_bool("CRYPTOBOT_TESTNET", False),
             cryptobot_fiat=os.getenv("CRYPTOBOT_FIAT", "RUB").strip().upper(),
@@ -1326,10 +1416,11 @@ def admin_panel_keyboard() -> InlineKeyboardMarkup:
 def payment_methods_keyboard(
     settings: Settings,
     *,
+    plan_key: str,
     target: str,
     device_id: int = 1,
 ) -> InlineKeyboardMarkup:
-    suffix = "all" if target == "all" else f"slot:{device_id}"
+    suffix = f"plan:{plan_key}:all" if target == "all" else f"plan:{plan_key}:slot:{device_id}"
     rows: list[list[InlineKeyboardButton]] = []
     rows.append(
         [
@@ -1363,6 +1454,29 @@ def buy_target_keyboard(devices: list[dict[str, Any]]) -> InlineKeyboardMarkup:
             ]
         )
     rows.append([InlineKeyboardButton(text="🧩 Продлить все ключи", callback_data="buyselect:all")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def buy_plan_keyboard(
+    settings: Settings,
+    *,
+    target: str,
+    device_id: int = 1,
+    devices_count: int = 1,
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    multiplier = max(1, devices_count) if target == "all" else 1
+    suffix = "all" if target == "all" else f"slot:{device_id}"
+    for plan in settings.plans:
+        amount = plan.rub * multiplier
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{plan_title(plan)} • {amount:.2f} RUB",
+                    callback_data=f"buyplan:{plan.key}:{suffix}",
+                )
+            ]
+        )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -1454,6 +1568,34 @@ def plan_gb_text(gb: int) -> str:
 
 def plan_gb_for_desc(gb: int) -> str:
     return "UNLIM" if gb <= 0 else f"{gb}GB"
+
+
+def plan_title(plan: Plan) -> str:
+    title = plan.title.strip()
+    return title if title else _default_plan_title(plan.days)
+
+
+def find_plan(settings: Settings, key: str) -> Plan | None:
+    normalized = _normalize_plan_key(key, settings.pay_days)
+    for plan in settings.plans:
+        if plan.key == normalized:
+            return plan
+    return None
+
+
+def plan_offer_text(plan: Plan, *, multiplier: int = 1) -> str:
+    amount = max(1, multiplier) * plan.rub
+    return (
+        f"{plan_title(plan)} — {amount:.2f} RUB\n"
+        f"Срок: +{plan.days} дней, трафик: {plan_gb_text(plan.gb)}"
+    )
+
+
+def plans_list_text(settings: Settings, *, multiplier: int = 1) -> str:
+    lines = []
+    for plan in settings.plans:
+        lines.append(f"- {plan_offer_text(plan, multiplier=multiplier)}")
+    return "\n".join(lines)
 
 
 def format_expire(v: int) -> str:
@@ -1647,6 +1789,7 @@ ENV_EDITABLE_KEYS: dict[str, str] = {
     "PAY_DAYS": "int",
     "PAY_GB": "int",
     "PAY_RUB": "float",
+    "PLANS_JSON": "str",
     "DEVICE_LIMIT": "int",
     "DEVICE_ADD_RUB": "float",
     "REFERRAL_BONUS_DAYS": "int",
@@ -3949,35 +4092,30 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             return
         if not message.from_user:
             await message.answer(
-                f"💳 Продление одного устройства: {settings.pay_rub:.2f} RUB за {settings.pay_days} дней.\n"
-                "Выберите способ оплаты:",
-                reply_markup=payment_methods_keyboard(settings, target="slot", device_id=1),
+                "💳 Выберите тариф для продления устройства 1:\n"
+                + plans_list_text(settings),
+                reply_markup=buy_plan_keyboard(settings, target="slot", device_id=1),
             )
             return
         tg_id = int(message.from_user.id)
         devices = await repo.list_devices(tg_id)
         if not devices:
             await message.answer(
-                f"💳 Продление одного устройства: {settings.pay_rub:.2f} RUB за {settings.pay_days} дней.\n"
-                "Сначала будет продлен основной ключ (устройство 1).\n"
-                "Выберите способ оплаты:",
-                reply_markup=payment_methods_keyboard(settings, target="slot", device_id=1),
+                "💳 Выберите тариф для продления основного ключа (устройство 1):\n"
+                + plans_list_text(settings),
+                reply_markup=buy_plan_keyboard(settings, target="slot", device_id=1),
             )
             return
         if len(devices) == 1:
             only_slot = int(devices[0]["device_id"])
             await message.answer(
-                f"💳 Продление одного устройства: {settings.pay_rub:.2f} RUB за {settings.pay_days} дней.\n"
-                f"Будет продлен слот {only_slot}.\n"
-                "Выберите способ оплаты:",
-                reply_markup=payment_methods_keyboard(settings, target="slot", device_id=only_slot),
+                f"💳 Выберите тариф для продления устройства {only_slot}:\n"
+                + plans_list_text(settings),
+                reply_markup=buy_plan_keyboard(settings, target="slot", device_id=only_slot),
             )
             return
-        total = settings.pay_rub * len(devices)
         await message.answer(
-            f"💳 Продление одного устройства: {settings.pay_rub:.2f} RUB за {settings.pay_days} дней.\n"
-            f"💳 Продление всех ключей ({len(devices)} шт): {total:.2f} RUB.\n"
-            "Выберите, что продлить:",
+            "💳 Выберите, что продлить:",
             reply_markup=buy_target_keyboard(devices),
         )
 
@@ -4677,12 +4815,15 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             if not devices:
                 await callback.answer("Сначала получите конфиг.", show_alert=True)
                 return
-            total = settings.pay_rub * len(devices)
             await callback.message.answer(
-                f"🧩 Продление всех ключей ({len(devices)} шт): {total:.2f} RUB.\n"
-                f"Срок: +{settings.pay_days} дней, трафик: {plan_gb_text(settings.pay_gb)}.\n"
-                "Выберите способ оплаты:",
-                reply_markup=payment_methods_keyboard(settings, target="all"),
+                f"🧩 Продление всех ключей ({len(devices)} шт).\n"
+                "Выберите тариф:\n"
+                + plans_list_text(settings, multiplier=len(devices)),
+                reply_markup=buy_plan_keyboard(
+                    settings,
+                    target="all",
+                    devices_count=len(devices),
+                ),
             )
             await callback.answer()
             return
@@ -4697,13 +4838,79 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                 await callback.answer("Слот не найден", show_alert=True)
                 return
             await callback.message.answer(
-                f"🔑 Продление устройства {slot}: {settings.pay_rub:.2f} RUB.\n"
-                f"Срок: +{settings.pay_days} дней, трафик: {plan_gb_text(settings.pay_gb)}.\n"
-                "Выберите способ оплаты:",
-                reply_markup=payment_methods_keyboard(settings, target="slot", device_id=slot),
+                f"🔑 Продление устройства {slot}.\n"
+                "Выберите тариф:\n"
+                + plans_list_text(settings),
+                reply_markup=buy_plan_keyboard(settings, target="slot", device_id=slot),
             )
             await callback.answer()
             return
+        await callback.answer("Неверный формат", show_alert=True)
+
+    @router.callback_query(F.data.startswith("buyplan:"))
+    async def buy_plan_callback(callback: CallbackQuery) -> None:
+        if not await guard_callback_rate_limit(callback):
+            return
+        if not callback.data or not callback.from_user or callback.message is None:
+            await callback.answer("Ошибка callback", show_alert=True)
+            return
+        parts = callback.data.split(":")
+        if len(parts) < 3:
+            await callback.answer("Неверный формат", show_alert=True)
+            return
+
+        tg_id = int(callback.from_user.id)
+        plan = find_plan(settings, parts[1])
+        if plan is None:
+            await callback.answer("Тариф не найден", show_alert=True)
+            return
+
+        target = parts[2]
+        if target == "all":
+            devices = await repo.list_devices(tg_id)
+            if not devices:
+                await callback.answer("Сначала получите конфиг.", show_alert=True)
+                return
+            amount = plan.rub * len(devices)
+            await callback.message.answer(
+                f"🧩 {plan_title(plan)} для всех устройств ({len(devices)} шт).\n"
+                f"Сумма: {amount:.2f} RUB\n"
+                f"Срок: +{plan.days} дней, трафик: {plan_gb_text(plan.gb)}.\n"
+                "Выберите способ оплаты:",
+                reply_markup=payment_methods_keyboard(
+                    settings,
+                    plan_key=plan.key,
+                    target="all",
+                ),
+            )
+            await callback.answer()
+            return
+
+        if target == "slot" and len(parts) >= 4:
+            try:
+                slot = int(parts[3])
+            except ValueError:
+                await callback.answer("Неверный слот", show_alert=True)
+                return
+            row = await repo.get_device(tg_id, slot)
+            if not row and slot > 1:
+                await callback.answer("Слот не найден", show_alert=True)
+                return
+            await callback.message.answer(
+                f"🔑 {plan_title(plan)} для устройства {slot}.\n"
+                f"Сумма: {plan.rub:.2f} RUB\n"
+                f"Срок: +{plan.days} дней, трафик: {plan_gb_text(plan.gb)}.\n"
+                "Выберите способ оплаты:",
+                reply_markup=payment_methods_keyboard(
+                    settings,
+                    plan_key=plan.key,
+                    target="slot",
+                    device_id=slot,
+                ),
+            )
+            await callback.answer()
+            return
+
         await callback.answer("Неверный формат", show_alert=True)
 
     @router.callback_query(F.data.startswith("buy:"))
@@ -4717,14 +4924,25 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
         provider = parts[1] if len(parts) >= 2 else ""
         tg_id = int(callback.from_user.id)
         try:
+            plan = settings.plans[0]
+            suffix_idx = 2
+            if len(parts) >= 5 and parts[2] == "plan":
+                custom_plan = find_plan(settings, parts[3])
+                if custom_plan is None:
+                    await callback.answer("Тариф не найден", show_alert=True)
+                    return
+                plan = custom_plan
+                suffix_idx = 4
+
             target = "slot"
             slot = 1
-            if len(parts) >= 3:
-                if parts[2] == "all":
+            if len(parts) > suffix_idx:
+                suffix = parts[suffix_idx]
+                if suffix == "all":
                     target = "all"
-                elif parts[2] == "slot" and len(parts) >= 4:
+                elif suffix == "slot" and len(parts) > suffix_idx + 1:
                     try:
-                        slot = int(parts[3])
+                        slot = int(parts[suffix_idx + 1])
                     except ValueError:
                         await callback.answer("Неверный слот", show_alert=True)
                         return
@@ -4738,21 +4956,21 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                     if not slot_row:
                         await callback.answer("Слот не найден", show_alert=True)
                         return
-                amount_rub = settings.pay_rub
+                amount_rub = plan.rub
                 purpose = "plan_device"
                 device_slot = slot
-                pay_desc = f"VPN продление устройства {slot}: +{settings.pay_days}d"
-                pay_title = f"Продление устройства {slot}"
+                pay_desc = f"VPN {plan_title(plan)}: продление устройства {slot}, +{plan.days}d"
+                pay_title = f"{plan_title(plan)} / устройство {slot}"
             else:
                 devices = await repo.list_devices(tg_id)
                 if not devices:
                     await callback.answer("Сначала получите конфиг.", show_alert=True)
                     return
-                amount_rub = settings.pay_rub * len(devices)
+                amount_rub = plan.rub * len(devices)
                 purpose = "plan_all"
                 device_slot = 0
-                pay_desc = f"VPN продление всех устройств ({len(devices)} шт): +{settings.pay_days}d"
-                pay_title = f"Продление всех устройств ({len(devices)} шт)"
+                pay_desc = f"VPN {plan_title(plan)}: продление всех устройств ({len(devices)} шт), +{plan.days}d"
+                pay_title = f"{plan_title(plan)} / все устройства ({len(devices)} шт)"
 
             if provider == "crypto":
                 if not settings.cryptobot_enabled():
@@ -4782,8 +5000,8 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                 provider=provider,
                 external_id=external_id,
                 telegram_id=tg_id,
-                days=settings.pay_days,
-                gb=settings.pay_gb,
+                days=plan.days,
+                gb=plan.gb,
                 amount_rub=amount_rub,
                 pay_url=pay_url,
                 status="pending",
@@ -4799,12 +5017,14 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
                     "amount_rub": amount_rub,
                     "purpose": purpose,
                     "device_slot": device_slot,
+                    "plan_key": plan.key,
                 },
             )
             await callback.message.answer(
                 f"✅ Платеж создан ({provider}).\n"
                 f"Тип: {pay_title}\n"
                 f"Сумма: {amount_rub:.2f} RUB\n"
+                f"Период: +{plan.days} дней, трафик: {plan_gb_text(plan.gb)}\n"
                 f"ID: {external_id}",
                 reply_markup=pay_action_keyboard(provider, external_id, pay_url),
             )
