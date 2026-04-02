@@ -115,6 +115,9 @@ from bot_workers import (
 BYTES_IN_GB = 1024**3
 DEPLOY_REPORT_PATH = Path("/opt/vpn-bot/deploy/last-deploy.log")
 DEPLOY_REPORT_TTL_SEC = 3600
+WORKER_ALERT_PREVIEW_LIMIT = 800
+_worker_alert_last_sent: dict[str, float] = {}
+_worker_alert_lock = asyncio.Lock()
 
 
 def env_bool(name: str, default: bool) -> bool:
@@ -402,6 +405,8 @@ class Settings:
     renewal_alert_interval_sec: int
     renewal_reminder_hours: tuple[int, ...]
     renewal_expired_alert_enabled: bool
+    admin_alerts_enabled: bool
+    admin_alert_cooldown_sec: int
     auto_renew_invoice_enabled: bool
     auto_renew_invoice_hours_before: int
     auto_renew_invoice_provider: str
@@ -506,6 +511,8 @@ class Settings:
             renewal_alert_interval_sec=max(60, int(os.getenv("RENEWAL_ALERT_INTERVAL_SEC", "300"))),
             renewal_reminder_hours=reminder_hours,
             renewal_expired_alert_enabled=env_bool("RENEWAL_EXPIRED_ALERT_ENABLED", True),
+            admin_alerts_enabled=env_bool("ADMIN_ALERTS_ENABLED", True),
+            admin_alert_cooldown_sec=max(0, int(os.getenv("ADMIN_ALERT_COOLDOWN_SEC", "900"))),
             auto_renew_invoice_enabled=env_bool("AUTO_RENEW_INVOICE_ENABLED", False),
             auto_renew_invoice_hours_before=max(
                 1, int(os.getenv("AUTO_RENEW_INVOICE_HOURS_BEFORE", "12"))
@@ -880,6 +887,8 @@ ENV_EDITABLE_KEYS: dict[str, str] = {
     "RENEWAL_ALERT_INTERVAL_SEC": "int",
     "RENEWAL_REMINDER_HOURS": "str",
     "RENEWAL_EXPIRED_ALERT_ENABLED": "bool",
+    "ADMIN_ALERTS_ENABLED": "bool",
+    "ADMIN_ALERT_COOLDOWN_SEC": "int",
     "AUTO_RENEW_INVOICE_ENABLED": "bool",
     "AUTO_RENEW_INVOICE_HOURS_BEFORE": "int",
     "AUTO_RENEW_INVOICE_PROVIDER": "str",
@@ -1418,6 +1427,46 @@ async def notify_admin_requeued_processing(
             logging.exception("Requeue notify: failed to send to admin %s", admin_id)
 
 
+async def notify_admin_worker_alert(
+    *,
+    bot: Bot,
+    settings: Settings,
+    key: str,
+    title: str,
+    details: str = "",
+) -> None:
+    if not settings.admin_alerts_enabled:
+        return
+
+    now = time.time()
+    cooldown = max(0, settings.admin_alert_cooldown_sec)
+    if cooldown > 0:
+        async with _worker_alert_lock:
+            last_sent = _worker_alert_last_sent.get(key, 0.0)
+            if now - last_sent < cooldown:
+                return
+            _worker_alert_last_sent[key] = now
+
+    details_text = details.strip()
+    if len(details_text) > WORKER_ALERT_PREVIEW_LIMIT:
+        details_text = details_text[:WORKER_ALERT_PREVIEW_LIMIT].rstrip() + "..."
+
+    lines = [
+        f"🚨 {title}",
+        f"Ключ: {key}",
+        f"Время: {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M:%S')} UTC",
+    ]
+    if details_text:
+        lines.append(f"Детали: {details_text}")
+    text = "\n".join(lines)
+
+    for admin_id in settings.admin_ids:
+        try:
+            await bot.send_message(int(admin_id), text)
+        except Exception:
+            logging.exception("Worker alert: failed to send to admin %s", admin_id)
+
+
 async def send_daily_report(
     *,
     settings: Settings,
@@ -1523,6 +1572,7 @@ async def cryptobot_auto_worker(
         bot=bot,
         stop_event=stop_event,
         notify_admin_requeued_processing_fn=notify_admin_requeued_processing,
+        notify_admin_worker_alert_fn=notify_admin_worker_alert,
         cryptobot_check_invoice_fn=cryptobot_check_invoice,
         apply_paid_payment_fn=apply_paid_payment,
         notify_access_updated_fn=notify_access_updated,
@@ -1552,6 +1602,7 @@ async def yookassa_auto_worker(
         bot=bot,
         stop_event=stop_event,
         notify_admin_requeued_processing_fn=notify_admin_requeued_processing,
+        notify_admin_worker_alert_fn=notify_admin_worker_alert,
         yookassa_check_payment_fn=yookassa_check_payment,
         apply_paid_payment_fn=apply_paid_payment,
         notify_access_updated_fn=notify_access_updated,
@@ -1582,6 +1633,7 @@ async def subscription_renewal_worker(
         yookassa_create_payment_fn=yookassa_create_payment,
         cryptobot_create_invoice_fn=cryptobot_create_invoice,
         pay_action_keyboard_fn=pay_action_keyboard,
+        notify_admin_worker_alert_fn=notify_admin_worker_alert,
     )
 
 def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Router:

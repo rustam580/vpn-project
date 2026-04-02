@@ -35,6 +35,7 @@ async def cryptobot_auto_worker(
     bot: Any,
     stop_event: asyncio.Event,
     notify_admin_requeued_processing_fn: Any,
+    notify_admin_worker_alert_fn: Any,
     cryptobot_check_invoice_fn: Any,
     apply_paid_payment_fn: Any,
     notify_access_updated_fn: Any,
@@ -68,8 +69,16 @@ async def cryptobot_auto_worker(
                     external_id = str(payment["external_id"])
                     try:
                         status = await cryptobot_check_invoice_fn(settings, external_id)
-                    except Exception:
+                    except Exception as exc:
                         logging.exception("Auto check failed for crypto payment %s", external_id)
+                        try:
+                            await notify_admin_worker_alert_fn(
+                                key="worker.crypto.check_failed",
+                                title="Crypto check failed",
+                                details=f"external_id={external_id}; error={exc}",
+                            )
+                        except Exception:
+                            logging.exception("Auto crypto: worker alert notify failed")
                         continue
 
                     if status == "paid":
@@ -84,8 +93,16 @@ async def cryptobot_auto_worker(
                                 bot=bot,
                                 strict_device_slot=False,
                             )
-                        except Exception:
+                        except Exception as exc:
                             logging.exception("Auto check: failed to apply payment %s", external_id)
+                            try:
+                                await notify_admin_worker_alert_fn(
+                                    key="worker.crypto.apply_failed",
+                                    title="Crypto apply failed",
+                                    details=f"external_id={external_id}; error={exc}",
+                                )
+                            except Exception:
+                                logging.exception("Auto crypto: worker alert notify failed")
                             await repo.set_payment_status("crypto", external_id, status)
                             continue
                         try:
@@ -119,8 +136,16 @@ async def cryptobot_auto_worker(
                             )
                     else:
                         await repo.set_payment_status("crypto", external_id, status)
-        except Exception:
+        except Exception as exc:
             logging.exception("Auto crypto worker iteration failed")
+            try:
+                await notify_admin_worker_alert_fn(
+                    key="worker.crypto.iteration_failed",
+                    title="Crypto worker iteration failed",
+                    details=str(exc),
+                )
+            except Exception:
+                logging.exception("Auto crypto: worker alert notify failed")
 
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=interval)
@@ -136,6 +161,7 @@ async def yookassa_auto_worker(
     bot: Any,
     stop_event: asyncio.Event,
     notify_admin_requeued_processing_fn: Any,
+    notify_admin_worker_alert_fn: Any,
     yookassa_check_payment_fn: Any,
     apply_paid_payment_fn: Any,
     notify_access_updated_fn: Any,
@@ -208,13 +234,29 @@ async def yookassa_auto_worker(
                                 marzban=marzban,
                                 settings=settings,
                             )
-                        except Exception:
+                        except Exception as exc:
                             logging.exception("Auto yookassa: failed to apply payment %s", external_id)
+                            try:
+                                await notify_admin_worker_alert_fn(
+                                    key="worker.card.apply_failed",
+                                    title="Card apply failed",
+                                    details=f"external_id={external_id}; error={exc}",
+                                )
+                            except Exception:
+                                logging.exception("Auto yookassa: worker alert notify failed")
                             await repo.set_payment_status("card", external_id, status)
                     else:
                         await repo.set_payment_status("card", external_id, status)
-        except Exception:
+        except Exception as exc:
             logging.exception("Auto yookassa worker iteration failed")
+            try:
+                await notify_admin_worker_alert_fn(
+                    key="worker.card.iteration_failed",
+                    title="Card worker iteration failed",
+                    details=str(exc),
+                )
+            except Exception:
+                logging.exception("Auto yookassa: worker alert notify failed")
 
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=interval)
@@ -239,6 +281,7 @@ async def subscription_renewal_worker(
     yookassa_create_payment_fn: Any,
     cryptobot_create_invoice_fn: Any,
     pay_action_keyboard_fn: Any,
+    notify_admin_worker_alert_fn: Any,
 ) -> None:
     if (
         not settings.renewal_alerts_enabled
@@ -471,10 +514,26 @@ async def subscription_renewal_worker(
                         ),
                         reply_markup=pay_action_keyboard_fn(provider, external_id, pay_url),
                     )
-                except Exception:
+                except Exception as exc:
                     logging.exception("Renewal worker: auto invoice failed for tg=%s", tg_id)
-        except Exception:
+                    try:
+                        await notify_admin_worker_alert_fn(
+                            key="worker.renewal.auto_invoice_failed",
+                            title="Renewal auto-invoice failed",
+                            details=f"tg_id={tg_id}; error={exc}",
+                        )
+                    except Exception:
+                        logging.exception("Renewal worker: worker alert notify failed")
+        except Exception as exc:
             logging.exception("Renewal worker iteration failed")
+            try:
+                await notify_admin_worker_alert_fn(
+                    key="worker.renewal.iteration_failed",
+                    title="Renewal worker iteration failed",
+                    details=str(exc),
+                )
+            except Exception:
+                logging.exception("Renewal worker: worker alert notify failed")
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=interval)
         except asyncio.TimeoutError:
