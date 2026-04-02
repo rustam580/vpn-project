@@ -1,11 +1,20 @@
 ﻿from __future__ import annotations
 
 import json
+import sqlite3
 import time
 from pathlib import Path
 from typing import Any
 
 import aiosqlite
+
+MIGRATIONS_DIR = Path(__file__).resolve().parent / "db" / "migrations"
+SCHEMA_VERSION_LATEST = 2
+MIGRATIONS: tuple[tuple[int, str], ...] = (
+    (1, "001_init.sql"),
+    (2, "002_legacy_columns.sql"),
+)
+
 
 class Repo:
     def __init__(self, db_path: str):
@@ -20,128 +29,85 @@ class Repo:
         await self.conn.execute("PRAGMA journal_mode=WAL")
         await self.conn.execute("PRAGMA synchronous=NORMAL")
         await self.conn.execute("PRAGMA busy_timeout=5000")
-        await self.conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                telegram_id INTEGER PRIMARY KEY,
-                marzban_username TEXT NOT NULL UNIQUE,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL
-            )
-            """
-        )
-        await self.conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS payments (
-                provider TEXT NOT NULL,
-                external_id TEXT NOT NULL,
-                telegram_id INTEGER NOT NULL,
-                days INTEGER NOT NULL,
-                gb INTEGER NOT NULL,
-                amount_rub REAL NOT NULL,
-                pay_url TEXT NOT NULL,
-                status TEXT NOT NULL,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL,
-                PRIMARY KEY(provider, external_id)
-            )
-            """
-        )
-        await self._ensure_payments_columns()
-        await self.conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS devices (
-                telegram_id INTEGER NOT NULL,
-                device_id INTEGER NOT NULL,
-                marzban_username TEXT NOT NULL UNIQUE,
-                device_name TEXT,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL,
-                PRIMARY KEY(telegram_id, device_id)
-            )
-            """
-        )
-        await self._ensure_devices_columns()
-        await self.conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS referrals (
-                invited_telegram_id INTEGER PRIMARY KEY,
-                referrer_telegram_id INTEGER NOT NULL,
-                created_at INTEGER NOT NULL,
-                bonus_applied INTEGER NOT NULL DEFAULT 0,
-                bonus_paid_at INTEGER
-            )
-            """
-        )
-        await self.conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS known_chats (
-                telegram_id INTEGER PRIMARY KEY,
-                first_seen_at INTEGER NOT NULL,
-                last_seen_at INTEGER NOT NULL
-            )
-            """
-        )
-        await self.conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                telegram_id INTEGER,
-                event_type TEXT NOT NULL,
-                event_value TEXT,
-                event_meta TEXT,
-                created_at INTEGER NOT NULL
-            )
-            """
-        )
-        await self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at)"
-        )
-        await self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_events_type_created ON events(event_type, created_at)"
-        )
-        await self.conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS notification_marks (
-                telegram_id INTEGER NOT NULL,
-                device_id INTEGER NOT NULL,
-                mark_type TEXT NOT NULL,
-                expire_ts INTEGER NOT NULL,
-                created_at INTEGER NOT NULL,
-                PRIMARY KEY(telegram_id, device_id, mark_type, expire_ts)
-            )
-            """
-        )
-        await self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_notification_marks_created ON notification_marks(created_at)"
-        )
+        await self._ensure_schema_version_table()
+        await self._run_migrations()
         await self.conn.commit()
 
-    async def _ensure_payments_columns(self) -> None:
+    async def _ensure_schema_version_table(self) -> None:
         assert self.conn is not None
-        c = await self.conn.execute("PRAGMA table_info(payments)")
-        rows = await c.fetchall()
+        await self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS schema_version (
+                version INTEGER NOT NULL
+            )
+            """
+        )
+        c = await self.conn.execute("SELECT COUNT(*) AS cnt FROM schema_version")
+        row = await c.fetchone()
         await c.close()
-        columns = {str(row["name"]) for row in rows}
-        if "purpose" not in columns:
-            await self.conn.execute(
-                "ALTER TABLE payments ADD COLUMN purpose TEXT NOT NULL DEFAULT 'plan'"
-            )
-        if "device_slot" not in columns:
-            await self.conn.execute(
-                "ALTER TABLE payments ADD COLUMN device_slot INTEGER"
-            )
-        await self.conn.commit()
+        count = int(row["cnt"] if row is not None else 0)
+        if count == 0:
+            await self.conn.execute("INSERT INTO schema_version(version) VALUES (0)")
 
-    async def _ensure_devices_columns(self) -> None:
+    async def _get_schema_version(self) -> int:
         assert self.conn is not None
-        c = await self.conn.execute("PRAGMA table_info(devices)")
-        rows = await c.fetchall()
+        c = await self.conn.execute("SELECT version FROM schema_version LIMIT 1")
+        row = await c.fetchone()
         await c.close()
-        columns = {str(row["name"]) for row in rows}
-        if "device_name" not in columns:
-            await self.conn.execute("ALTER TABLE devices ADD COLUMN device_name TEXT")
-        await self.conn.commit()
+        return int(row["version"] if row and row["version"] is not None else 0)
+
+    async def _set_schema_version(self, version: int) -> None:
+        assert self.conn is not None
+        await self.conn.execute("UPDATE schema_version SET version = ?", (int(version),))
+
+    @staticmethod
+    def _split_sql_statements(sql: str) -> list[str]:
+        statements: list[str] = []
+        chunks = sql.split(";")
+        for chunk in chunks:
+            statement = chunk.strip()
+            if statement:
+                statements.append(statement + ";")
+        return statements
+
+    async def _apply_sql_file(self, path: Path, *, ignore_duplicate_column: bool = False) -> None:
+        assert self.conn is not None
+        sql = path.read_text(encoding="utf-8")
+        if not ignore_duplicate_column:
+            await self.conn.executescript(sql)
+            return
+        for statement in self._split_sql_statements(sql):
+            try:
+                await self.conn.execute(statement)
+            except (aiosqlite.Error, sqlite3.Error) as exc:
+                if "duplicate column name" in str(exc).lower():
+                    continue
+                raise
+
+    async def _run_migrations(self) -> None:
+        assert self.conn is not None
+        current = await self._get_schema_version()
+        for version, filename in MIGRATIONS:
+            if version <= current:
+                continue
+            path = MIGRATIONS_DIR / filename
+            if not path.exists():
+                raise RuntimeError(f"Missing migration file: {path}")
+            try:
+                await self._apply_sql_file(
+                    path,
+                    ignore_duplicate_column=(version == 2),
+                )
+                await self._set_schema_version(version)
+                await self.conn.commit()
+            except Exception:
+                await self.conn.rollback()
+                raise
+        final_version = await self._get_schema_version()
+        if final_version < SCHEMA_VERSION_LATEST:
+            raise RuntimeError(
+                f"Schema migration incomplete: current={final_version}, expected={SCHEMA_VERSION_LATEST}"
+            )
 
     async def close(self) -> None:
         if self.conn:

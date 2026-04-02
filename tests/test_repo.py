@@ -1,8 +1,10 @@
+import sqlite3
 import time
 
 import pytest_asyncio
 
 import bot
+import bot_repo
 
 
 @pytest_asyncio.fixture
@@ -231,3 +233,75 @@ async def test_has_open_plan_payment_detects_pending(repo) -> None:
             device_slot=0,
         )
     ) is True
+
+
+async def test_schema_version_is_latest_after_open(repo, repo_conn) -> None:
+    cur = await repo_conn.execute("SELECT version FROM schema_version LIMIT 1")
+    row = await cur.fetchone()
+    await cur.close()
+    assert row is not None
+    assert int(row["version"]) == bot_repo.SCHEMA_VERSION_LATEST
+
+
+async def test_repo_migrates_legacy_db(local_tmp_path) -> None:
+    db_path = local_tmp_path / "legacy.sqlite3"
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE users (
+                telegram_id INTEGER PRIMARY KEY,
+                marzban_username TEXT NOT NULL UNIQUE,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE TABLE payments (
+                provider TEXT NOT NULL,
+                external_id TEXT NOT NULL,
+                telegram_id INTEGER NOT NULL,
+                days INTEGER NOT NULL,
+                gb INTEGER NOT NULL,
+                amount_rub REAL NOT NULL,
+                pay_url TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY(provider, external_id)
+            );
+            CREATE TABLE devices (
+                telegram_id INTEGER NOT NULL,
+                device_id INTEGER NOT NULL,
+                marzban_username TEXT NOT NULL UNIQUE,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY(telegram_id, device_id)
+            );
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    migrated_repo = bot.Repo(str(db_path))
+    await migrated_repo.open()
+    try:
+        assert migrated_repo.conn is not None
+        cur = await migrated_repo.conn.execute("SELECT version FROM schema_version LIMIT 1")
+        row = await cur.fetchone()
+        await cur.close()
+        assert row is not None
+        assert int(row["version"]) == bot_repo.SCHEMA_VERSION_LATEST
+
+        cur = await migrated_repo.conn.execute("PRAGMA table_info(payments)")
+        payment_cols = await cur.fetchall()
+        await cur.close()
+        payment_col_names = {str(col["name"]) for col in payment_cols}
+        assert {"purpose", "device_slot"}.issubset(payment_col_names)
+
+        cur = await migrated_repo.conn.execute("PRAGMA table_info(devices)")
+        device_cols = await cur.fetchall()
+        await cur.close()
+        device_col_names = {str(col["name"]) for col in device_cols}
+        assert "device_name" in device_col_names
+    finally:
+        await migrated_repo.close()

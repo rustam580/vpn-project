@@ -38,6 +38,7 @@ Last updated: 2026-04-02
 - Deploy script: `/usr/local/sbin/vpn-ops-deploy`
 - Deploy report file: `/opt/vpn-bot/deploy/last-deploy.log`
 - DB: `/opt/vpn-bot/data/bot.sqlite3`
+- DB migrations: `schema_version` + `db/migrations/*.sql` (auto-applied on start)
 - Backups: `/opt/backups/vpn-bot`
 
 ## Context Handoff Protocol (Do Not Skip)
