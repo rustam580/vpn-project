@@ -48,6 +48,20 @@ Windows PowerShell:
 powershell -ExecutionPolicy Bypass -File scripts/check.ps1
 ```
 
+Cleanup generated caches/tmp:
+
+Linux/macOS:
+
+```bash
+bash scripts/clean.sh
+```
+
+Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/clean.ps1
+```
+
 ## 3) Done Criteria
 
 Before deploy, every change should pass:
