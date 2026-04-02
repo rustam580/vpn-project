@@ -51,6 +51,7 @@ def more_actions_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="❓ FAQ", callback_data="quick:faq"),
                 InlineKeyboardButton(text="📢 Наш канал", callback_data="quick:channel"),
             ],
+            [InlineKeyboardButton(text="📄 Правила и политика", callback_data="quick:legal")],
             [InlineKeyboardButton(text="🚨 Проблема с подключением", callback_data="quick:issue")],
         ]
     )

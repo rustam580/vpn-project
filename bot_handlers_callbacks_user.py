@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import html
 import logging
 from dataclasses import dataclass
 from typing import Any
 
 from aiogram import F, Router
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 
 
 @dataclass
@@ -79,6 +80,62 @@ def register_user_callback_handlers(*, router: Router, deps: UserCallbackDeps) -
     devices_rename_keyboard = deps.devices_rename_keyboard
     device_replace_confirm_keyboard = deps.device_replace_confirm_keyboard
     device_label = deps.device_label
+
+    def _support_url() -> str | None:
+        username = str(settings.support_username or "").strip().lstrip("@")
+        if not username:
+            return None
+        return f"https://t.me/{username}"
+
+    def _legal_menu_keyboard() -> InlineKeyboardMarkup:
+        rows: list[list[InlineKeyboardButton]] = [
+            [InlineKeyboardButton(text="📜 Условия использования", callback_data="quick:legal_terms")],
+            [InlineKeyboardButton(text="🔒 Конфиденциальность", callback_data="quick:legal_privacy")],
+            [InlineKeyboardButton(text="💳 Оплата и возвраты", callback_data="quick:legal_refund")],
+            [InlineKeyboardButton(text="🔁 Автопродление", callback_data="quick:legal_autorenew")],
+        ]
+        support_link = _support_url()
+        if support_link:
+            rows.append([InlineKeyboardButton(text="🆘 Поддержка", url=support_link)])
+        return InlineKeyboardMarkup(inline_keyboard=rows)
+
+    def _legal_terms_text() -> str:
+        return (
+            "<b>📜 Условия использования RootVPN</b>\n"
+            "1) Сервис предоставляет цифровой доступ к VPN-конфигам через Telegram-бота.\n"
+            "2) Оплата означает согласие с условиями сервиса.\n"
+            "3) Доступ выдается после подтверждения платежа.\n"
+            "4) Один конфиг предназначен для одного устройства.\n"
+            "5) Сервис используется только в законных целях.\n"
+            "6) Сервис предоставляется «как есть»."
+        )
+
+    def _legal_privacy_text() -> str:
+        return (
+            "<b>🔒 Конфиденциальность RootVPN</b>\n"
+            "Мы храним только минимум данных для работы сервиса:\n"
+            "• Telegram ID/username\n"
+            "• служебные данные доступов и устройств\n"
+            "• статусы и идентификаторы платежей\n\n"
+            "Данные используются только для выдачи доступа, поддержки и стабильной работы."
+        )
+
+    def _legal_refund_text() -> str:
+        return (
+            "<b>💳 Оплата и возвраты</b>\n"
+            "1) Услуга цифровая и считается оказанной после выдачи доступа.\n"
+            "2) Возвраты обычно не предусмотрены.\n"
+            "3) Исключение: подтвержденная техническая ошибка сервиса, "
+            "когда оплаченный доступ не был выдан."
+        )
+
+    def _legal_autorenew_text() -> str:
+        return (
+            "<b>🔁 Автопродление</b>\n"
+            "Автопродление в RootVPN — это автоматическое создание счета до окончания срока.\n"
+            "Автоматических списаний без оплаты пользователем не происходит.\n"
+            "Если счет не оплачен — доступ не продлевается."
+        )
 
     @router.callback_query(F.data.startswith("quick:"))
     async def quick_action_callback(callback: CallbackQuery) -> None:
@@ -165,6 +222,58 @@ def register_user_callback_handlers(*, router: Router, deps: UserCallbackDeps) -
         if action == "faq":
             await callback.answer()
             await callback.message.answer(build_user_faq_text(), parse_mode="HTML")
+            return
+
+        if action == "legal":
+            await callback.answer()
+            support_link = _support_url()
+            text = (
+                "<b>📄 Правила и политика</b>\n"
+                "Выберите нужный раздел ниже."
+            )
+            if support_link:
+                text += f"\n\nПоддержка: {html.escape(support_link)}"
+            await callback.message.answer(
+                text,
+                parse_mode="HTML",
+                reply_markup=_legal_menu_keyboard(),
+            )
+            return
+
+        if action == "legal_terms":
+            await callback.answer()
+            await callback.message.answer(
+                _legal_terms_text(),
+                parse_mode="HTML",
+                reply_markup=_legal_menu_keyboard(),
+            )
+            return
+
+        if action == "legal_privacy":
+            await callback.answer()
+            await callback.message.answer(
+                _legal_privacy_text(),
+                parse_mode="HTML",
+                reply_markup=_legal_menu_keyboard(),
+            )
+            return
+
+        if action == "legal_refund":
+            await callback.answer()
+            await callback.message.answer(
+                _legal_refund_text(),
+                parse_mode="HTML",
+                reply_markup=_legal_menu_keyboard(),
+            )
+            return
+
+        if action == "legal_autorenew":
+            await callback.answer()
+            await callback.message.answer(
+                _legal_autorenew_text(),
+                parse_mode="HTML",
+                reply_markup=_legal_menu_keyboard(),
+            )
             return
 
         if action == "channel":
