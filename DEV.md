@@ -25,7 +25,7 @@ pip install -r requirements.txt -r requirements-dev.txt
 Lint only:
 
 ```bash
-python -m ruff check --no-cache bot.py tests
+python -m ruff check --no-cache .
 ```
 
 Tests only:
@@ -52,8 +52,8 @@ powershell -ExecutionPolicy Bypass -File scripts/check.ps1
 
 Before deploy, every change should pass:
 
-1. `python -B -m py_compile bot.py`
-2. `python -m ruff check --no-cache bot.py tests`
+1. `python scripts/compile_all.py`
+2. `python -m ruff check --no-cache .`
 3. `python -m pytest -q -p no:cacheprovider`
 
 ## 4) CI
@@ -61,3 +61,14 @@ Before deploy, every change should pass:
 GitHub Actions workflow: `.github/workflows/ci.yml`
 
 The workflow runs the same checks as local `check`.
+
+## 5) Context Handoff Discipline
+
+To avoid context loss between sessions:
+
+1. Always read `docs/STATE.md` first.
+2. Then read `docs/open-issues.md`.
+3. After any meaningful change, update both files:
+   - update date
+   - move completed items to closed
+   - add new blockers with priority.

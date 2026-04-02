@@ -31,7 +31,7 @@ else
 fi
 
 echo "==> Syntax check"
-python3 -B -m py_compile bot.py
+python3 scripts/compile_all.py
 
 echo "==> Restart vpn-bot"
 systemctl restart vpn-bot

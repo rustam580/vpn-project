@@ -1,53 +1,52 @@
-# Open Issues
+﻿# Open Issues
 
-Last updated: 2026-03-08
+Last updated: 2026-04-02
 
 ## Priority Legend
-- P0: blocks sales or access
+- P0: blocks sales or legal-safe launch
 - P1: important reliability/ops
 - P2: optimization/quality
 
 ## Active Items
 
-1. P0 - Decide card payment target (YooKassa vs Robokassa)
-- Status: in progress
-- Current: YooKassa works in bot, Robokassa requested
-- Next action: either keep YooKassa, or implement Robokassa adapter and migration checklist
+1. P0 - Public legal pages before ad scaling
+- Status: pending
+- Problem: there is no explicit public package for offer/terms/privacy/refund/auto-renew policy.
+- Next action: publish pages and link them in bot and payment flows.
 - Owner: product/admin
 
-2. P1 - Add payment provider abstraction layer
+2. P1 - Database migration framework
 - Status: pending
-- Problem: payment logic is growing inside one file
-- Next action: split provider clients into modules and add shared interface
+- Problem: schema changes are still done via runtime `ALTER TABLE` checks.
+- Next action: add `schema_version` + ordered SQL migrations + migration runner.
 - Owner: dev
 
-3. P1 - Add alerting for critical failures
+3. P1 - Critical alerting to admin chat
 - Status: pending
-- Problem: failures visible only in logs
-- Next action: send admin Telegram alert on:
-- bot restart loops
-- payment provider errors above threshold
-- backup/restore-check failures
+- Problem: failures are mostly visible only in logs.
+- Next action: push alerts for repeated payment worker failures, backup/restore failures, restart loops.
 - Owner: dev
 
-4. P1 - Add smoke test checklist for every deploy
+4. P1 - Deploy smoke checks
 - Status: pending
-- Next action: define minimum test flow:
-- `/start`
-- `/ref`
-- create payment
-- `/check ...`
-- Owner: ops
+- Problem: deploy verifies syntax/restart, but no functional smoke path.
+- Next action: add post-deploy smoke checklist and lightweight automated probe.
+- Owner: ops/dev
 
-5. P2 - Split `bot.py` into modules
+5. P1 - Marketing analytics funnel
 - Status: pending
-- Problem: single file is hard to maintain
-- Next action: extract `repo`, `payments`, `handlers`, `ops`
+- Problem: no end-to-end attribution from source -> trial -> payment.
+- Next action: add source tags + conversion events + weekly funnel summary.
+- Owner: product/dev
+
+6. P2 - Renewal worker scaling
+- Status: pending
+- Problem: periodic full scan of users/devices can become expensive under growth.
+- Next action: batch processing or next-check schedule index.
 - Owner: dev
 
 ## Recently Closed
-- Backup restore-check parsing false failure fixed (sqlite integrity output handling).
-- SSH hardening completed (key-only auth, root login disabled).
-- Admin panel stats/ops fixed and stabilized.
-- Referral system added (link, auto bonus, admin controls).
-- Device slots and strict device limit support added in bot.
+- CI now compiles/lints/tests the full Python project scope.
+- Local checks (`Makefile`, `scripts/check.sh`, `scripts/check.ps1`) aligned with CI scope.
+- Deploy syntax check switched from `bot.py` only to full project compile pass.
+- `bot.py` decomposition started and key domains extracted to modules.

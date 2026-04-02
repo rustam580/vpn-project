@@ -23,6 +23,6 @@ jobs:
 
       - name: Run checks
         run: |
-          python -B -m py_compile bot.py
-          ruff check bot.py tests
+          python scripts/compile_all.py
+          ruff check .
           pytest -q

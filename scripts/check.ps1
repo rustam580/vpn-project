@@ -5,8 +5,8 @@ Push-Location $ProjectRoot
 try {
     $Python = if (Test-Path ".venv\Scripts\python.exe") { ".venv\Scripts\python.exe" } else { "python" }
 
-    & $Python -B -m py_compile bot.py app_texts.py payments_service.py payment_flow.py
-    & $Python -m ruff check --no-cache bot.py app_texts.py payments_service.py payment_flow.py tests
+    & $Python scripts/compile_all.py
+    & $Python -m ruff check --no-cache .
     & $Python -m pytest -q -p no:cacheprovider
 }
 finally {

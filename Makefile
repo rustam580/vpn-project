@@ -2,12 +2,12 @@
 PYTHON ?= python
 
 lint:
-	$(PYTHON) -m ruff check --no-cache bot.py app_texts.py payments_service.py payment_flow.py tests
+	$(PYTHON) -m ruff check --no-cache .
 
 test:
 	$(PYTHON) -m pytest -q -p no:cacheprovider
 
 check:
-	$(PYTHON) -B -m py_compile bot.py app_texts.py payments_service.py payment_flow.py
-	$(PYTHON) -m ruff check --no-cache bot.py app_texts.py payments_service.py payment_flow.py tests
+	$(PYTHON) scripts/compile_all.py
+	$(PYTHON) -m ruff check --no-cache .
 	$(PYTHON) -m pytest -q -p no:cacheprovider
