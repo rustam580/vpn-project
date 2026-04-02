@@ -31,6 +31,8 @@ Last updated: 2026-04-02
 - `DEPLOY_BROADCAST_USERS`: user broadcast after deploy
 - `RENEWAL_ALERTS_ENABLED`: renewal reminders
 - `RENEWAL_EXPIRED_ALERT_ENABLED`: expired notifications
+- `ADMIN_ALERTS_ENABLED`: admin alerts for worker failures
+- `ADMIN_ALERT_COOLDOWN_SEC`: anti-spam cooldown for repeated worker alerts
 - `AUTO_RENEW_INVOICE_ENABLED`: auto-created invoice before expiry
 - `PLANS_JSON`: multi-tariff config
 
