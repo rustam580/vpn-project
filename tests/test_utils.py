@@ -53,16 +53,20 @@ def test_extract_links_deduplicates_and_ignores_invalid_values() -> None:
 
 def test_extract_subscription_links_supports_common_shapes() -> None:
     user = {
-        "subscription_url": " https://sub.example/u1 ",
+        "subscription_url": " /sub/u1 ",
         "subscription_links": [
-            "https://sub.example/u1",
+            "https://sub.example/u2",
             "sub://encoded",
             "",
             123,
         ],
     }
-    assert bot.extract_subscription_links(user) == [
-        "https://sub.example/u1",
+    assert bot.extract_subscription_links(
+        user,
+        public_base_url="https://sub.example",
+    ) == [
+        "https://sub.example/sub/u1",
+        "https://sub.example/u2",
         "sub://encoded",
     ]
 
@@ -70,11 +74,27 @@ def test_extract_subscription_links_supports_common_shapes() -> None:
 def test_select_delivery_links_respects_mode() -> None:
     user = {
         "links": ["vless://direct1"],
-        "subscription_url": "https://sub.example/u1",
+        "subscription_url": "/sub/u1",
     }
     assert bot.select_delivery_links(user, mode="direct") == ["vless://direct1"]
-    assert bot.select_delivery_links(user, mode="subscription_first") == ["https://sub.example/u1"]
-    assert bot.select_delivery_links(user, mode="subscription_only") == ["https://sub.example/u1"]
+    assert bot.select_delivery_links(
+        user,
+        mode="subscription_first",
+        public_base_url="https://sub.example",
+    ) == ["https://sub.example/sub/u1"]
+    assert bot.select_delivery_links(
+        user,
+        mode="subscription_only",
+        public_base_url="https://sub.example",
+    ) == ["https://sub.example/sub/u1"]
+
+
+def test_subscription_first_falls_back_to_direct_without_public_base_url() -> None:
+    user = {
+        "links": ["vless://direct1"],
+        "subscription_url": "/sub/u1",
+    }
+    assert bot.select_delivery_links(user, mode="subscription_first") == ["vless://direct1"]
 
 
 def test_normalize_config_delivery_mode_fallback() -> None:

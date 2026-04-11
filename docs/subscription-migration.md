@@ -46,6 +46,8 @@ curl -I https://sub.yourdomain.tld
 In bot `.env`:
 ```env
 CONFIG_DELIVERY_MODE=subscription_first
+# Required if Marzban returns relative links like /sub/...
+SUBSCRIPTION_PUBLIC_BASE_URL=https://sub.yourdomain.tld
 ```
 
 Then restart bot:

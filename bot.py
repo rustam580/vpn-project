@@ -151,6 +151,29 @@ def normalize_config_delivery_mode(raw: str | None) -> str:
     return "direct"
 
 
+def normalize_public_base_url(raw: str | None) -> str:
+    value = str(raw or "").strip()
+    if not value:
+        return ""
+    if not value.startswith(("http://", "https://")):
+        return ""
+    return value.rstrip("/")
+
+
+def _absolutize_subscription_link(link: str, public_base_url: str) -> str:
+    item = link.strip()
+    if not item:
+        return ""
+    if item.startswith(("http://", "https://", "sub://")):
+        return item
+    base = normalize_public_base_url(public_base_url)
+    if not base:
+        return ""
+    if item.startswith("/"):
+        return f"{base}{item}"
+    return f"{base}/{item}"
+
+
 
 
 def parse_admin_ids(raw: str) -> set[int]:
@@ -373,6 +396,7 @@ class Settings:
     marzban_verify_ssl: bool
     marzban_proxy_protocol: str
     config_delivery_mode: str
+    subscription_public_base_url: str
     trial_days: int
     trial_gb: int
     plans: tuple[Plan, ...]
@@ -479,6 +503,9 @@ class Settings:
             marzban_proxy_protocol=os.getenv("MARZBAN_PROXY_PROTOCOL", "vless").strip().lower(),
             config_delivery_mode=normalize_config_delivery_mode(
                 os.getenv("CONFIG_DELIVERY_MODE", "direct")
+            ),
+            subscription_public_base_url=normalize_public_base_url(
+                os.getenv("SUBSCRIPTION_PUBLIC_BASE_URL", "")
             ),
             trial_days=int(os.getenv("TRIAL_DAYS", "1")),
             trial_gb=int(os.getenv("TRIAL_GB", "0")),
@@ -774,17 +801,19 @@ def extract_links(user: dict[str, Any]) -> list[str]:
     return result
 
 
-def extract_subscription_links(user: dict[str, Any]) -> list[str]:
+def extract_subscription_links(
+    user: dict[str, Any], *, public_base_url: str = ""
+) -> list[str]:
     result: list[str] = []
     seen: set[str] = set()
 
     def _push(value: Any) -> None:
         if not isinstance(value, str):
             return
-        item = value.strip()
+        item = _absolutize_subscription_link(value, public_base_url)
         if not item:
             return
-        if item.startswith(("http://", "https://", "sub://")) and item not in seen:
+        if item not in seen:
             seen.add(item)
             result.append(item)
 
@@ -806,9 +835,11 @@ def extract_subscription_links(user: dict[str, Any]) -> list[str]:
     return result
 
 
-def select_delivery_links(user: dict[str, Any], *, mode: str) -> list[str]:
+def select_delivery_links(
+    user: dict[str, Any], *, mode: str, public_base_url: str = ""
+) -> list[str]:
     direct = extract_links(user)
-    subs = extract_subscription_links(user)
+    subs = extract_subscription_links(user, public_base_url=public_base_url)
     normalized_mode = normalize_config_delivery_mode(mode)
     if normalized_mode == "subscription_only":
         return subs
@@ -929,6 +960,7 @@ ENV_EDITABLE_KEYS: dict[str, str] = {
     "SUPPORT_TEXT": "str",
     "CHANNEL_URL": "str",
     "CONFIG_DELIVERY_MODE": "str",
+    "SUBSCRIPTION_PUBLIC_BASE_URL": "str",
     "DEPLOY_BROADCAST_USERS": "bool",
     "OPS_REPORT_ENABLED": "bool",
     "OPS_REPORT_HOUR": "int",
@@ -1131,7 +1163,11 @@ async def collect_device_links(
         )
         if not user:
             return []
-        links = select_delivery_links(user, mode=settings.config_delivery_mode)
+        links = select_delivery_links(
+            user,
+            mode=settings.config_delivery_mode,
+            public_base_url=settings.subscription_public_base_url,
+        )
         label = _device_label(1, None)
         return [(1, label, link) for link in links]
 
@@ -1146,7 +1182,11 @@ async def collect_device_links(
         status = str(user.get("status", "unknown"))
         if status != "active":
             continue
-        links = select_delivery_links(user, mode=settings.config_delivery_mode)
+        links = select_delivery_links(
+            user,
+            mode=settings.config_delivery_mode,
+            public_base_url=settings.subscription_public_base_url,
+        )
         for link in links:
             result.append((device_id, label, link))
     return sorted(result, key=lambda item: (item[0], item[2]))
