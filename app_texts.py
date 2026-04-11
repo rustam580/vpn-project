@@ -27,8 +27,8 @@ def build_quick_connect_guide_text() -> str:
         "<b>📘 Как подключить VPN</b>\n\n"
         "<b>Шаги:</b>\n"
         "1) Нажмите «🔑 Получить конфиг»\n"
-        "2) Нажмите на нужный конфиг в чате и скопируйте ссылку\n"
-        "3) Импортируйте ссылку в VPN-клиент (VLESS)\n\n"
+        "2) Нажмите на нужную ссылку в чате и скопируйте\n"
+        "3) Импортируйте в VPN-клиент (подписку или VLESS-ссылку)\n\n"
         "<b>Актуальные клиенты и ссылки:</b>\n"
         "• iOS/iPadOS/macOS (RU): <a href=\"https://apps.apple.com/ru/app/happ-proxy-utility-plus/id6746188973\">Happ Plus</a>, "
         "<a href=\"https://apps.apple.com/ru/app/onexray/id6745748773\">OneXray</a>\n"
@@ -52,9 +52,9 @@ def build_quick_connect_guide_text() -> str:
 def build_config_import_hint_text() -> str:
     return (
         "<b>🧭 Быстрый импорт</b>\n"
-        "1) Нажмите на нужный конфиг в чате\n"
+        "1) Нажмите на нужную ссылку в чате\n"
         "2) Скопируйте ссылку устройства\n"
-        "3) Импортируйте в VPN-клиент (VLESS)\n"
+        "3) Импортируйте в VPN-клиент (подписка или VLESS)\n"
         "4) Включите профиль\n\n"
         "Подробная инструкция: /guide"
     )

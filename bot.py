@@ -144,6 +144,13 @@ def parse_int_csv(raw: str, *, default: tuple[int, ...]) -> tuple[int, ...]:
     return tuple(sorted(values))
 
 
+def normalize_config_delivery_mode(raw: str | None) -> str:
+    value = str(raw or "").strip().lower()
+    if value in {"direct", "subscription_first", "subscription_only"}:
+        return value
+    return "direct"
+
+
 
 
 def parse_admin_ids(raw: str) -> set[int]:
@@ -365,6 +372,7 @@ class Settings:
     marzban_password: str
     marzban_verify_ssl: bool
     marzban_proxy_protocol: str
+    config_delivery_mode: str
     trial_days: int
     trial_gb: int
     plans: tuple[Plan, ...]
@@ -469,6 +477,9 @@ class Settings:
             marzban_password=marzban_password,
             marzban_verify_ssl=env_bool("MARZBAN_VERIFY_SSL", True),
             marzban_proxy_protocol=os.getenv("MARZBAN_PROXY_PROTOCOL", "vless").strip().lower(),
+            config_delivery_mode=normalize_config_delivery_mode(
+                os.getenv("CONFIG_DELIVERY_MODE", "direct")
+            ),
             trial_days=int(os.getenv("TRIAL_DAYS", "1")),
             trial_gb=int(os.getenv("TRIAL_GB", "0")),
             plans=plans,
@@ -763,6 +774,49 @@ def extract_links(user: dict[str, Any]) -> list[str]:
     return result
 
 
+def extract_subscription_links(user: dict[str, Any]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+
+    def _push(value: Any) -> None:
+        if not isinstance(value, str):
+            return
+        item = value.strip()
+        if not item:
+            return
+        if item.startswith(("http://", "https://", "sub://")) and item not in seen:
+            seen.add(item)
+            result.append(item)
+
+    for candidate in (
+        user.get("subscription_url"),
+        user.get("subscription_link"),
+        user.get("subscription"),
+        user.get("sub_link"),
+    ):
+        _push(candidate)
+
+    extra = user.get("subscription_links")
+    if isinstance(extra, list):
+        for item in extra:
+            _push(item)
+    elif isinstance(extra, dict):
+        for value in extra.values():
+            _push(value)
+    return result
+
+
+def select_delivery_links(user: dict[str, Any], *, mode: str) -> list[str]:
+    direct = extract_links(user)
+    subs = extract_subscription_links(user)
+    normalized_mode = normalize_config_delivery_mode(mode)
+    if normalized_mode == "subscription_only":
+        return subs
+    if normalized_mode == "subscription_first":
+        return subs if subs else direct
+    return direct
+
+
 def status_text(user: dict[str, Any]) -> str:
     links = extract_links(user)
     expire_ts = int(user.get("expire", 0) or 0)
@@ -874,6 +928,7 @@ ENV_EDITABLE_KEYS: dict[str, str] = {
     "SUPPORT_USERNAME": "str",
     "SUPPORT_TEXT": "str",
     "CHANNEL_URL": "str",
+    "CONFIG_DELIVERY_MODE": "str",
     "DEPLOY_BROADCAST_USERS": "bool",
     "OPS_REPORT_ENABLED": "bool",
     "OPS_REPORT_HOUR": "int",
@@ -1076,7 +1131,7 @@ async def collect_device_links(
         )
         if not user:
             return []
-        links = extract_links(user)
+        links = select_delivery_links(user, mode=settings.config_delivery_mode)
         label = _device_label(1, None)
         return [(1, label, link) for link in links]
 
@@ -1091,7 +1146,7 @@ async def collect_device_links(
         status = str(user.get("status", "unknown"))
         if status != "active":
             continue
-        links = extract_links(user)
+        links = select_delivery_links(user, mode=settings.config_delivery_mode)
         for link in links:
             result.append((device_id, label, link))
     return sorted(result, key=lambda item: (item[0], item[2]))
@@ -1116,7 +1171,7 @@ async def send_device_links(
         return
 
     await message.answer(
-        f"🔑 Ниже ваши активные конфиги ({len(items)}).\n"
+        f"🔑 Ниже ваши активные ссылки для подключения ({len(items)}).\n"
         "Нажмите на код конфига, чтобы скопировать."
     )
     await send_configs_in_chat(message, items)
@@ -1192,7 +1247,7 @@ async def send_device_links_to_bot(
         return
     await bot.send_message(
         telegram_id,
-        f"🔑 Ниже ваши активные конфиги ({len(items)}).\n"
+        f"🔑 Ниже ваши активные ссылки для подключения ({len(items)}).\n"
         "Нажмите на код конфига, чтобы скопировать.",
     )
     await send_configs_in_chat_to_bot(bot=bot, telegram_id=telegram_id, items=items)

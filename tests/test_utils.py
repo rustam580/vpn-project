@@ -51,6 +51,38 @@ def test_extract_links_deduplicates_and_ignores_invalid_values() -> None:
     assert bot.extract_links(user) == ["vless://a", "vless://b"]
 
 
+def test_extract_subscription_links_supports_common_shapes() -> None:
+    user = {
+        "subscription_url": " https://sub.example/u1 ",
+        "subscription_links": [
+            "https://sub.example/u1",
+            "sub://encoded",
+            "",
+            123,
+        ],
+    }
+    assert bot.extract_subscription_links(user) == [
+        "https://sub.example/u1",
+        "sub://encoded",
+    ]
+
+
+def test_select_delivery_links_respects_mode() -> None:
+    user = {
+        "links": ["vless://direct1"],
+        "subscription_url": "https://sub.example/u1",
+    }
+    assert bot.select_delivery_links(user, mode="direct") == ["vless://direct1"]
+    assert bot.select_delivery_links(user, mode="subscription_first") == ["https://sub.example/u1"]
+    assert bot.select_delivery_links(user, mode="subscription_only") == ["https://sub.example/u1"]
+
+
+def test_normalize_config_delivery_mode_fallback() -> None:
+    assert bot.normalize_config_delivery_mode("DIRECT") == "direct"
+    assert bot.normalize_config_delivery_mode("subscription_first") == "subscription_first"
+    assert bot.normalize_config_delivery_mode("invalid") == "direct"
+
+
 def test_split_message_respects_limit() -> None:
     text = "\n".join(["line"] * 80)
     parts = bot.split_message(text, limit=60)
