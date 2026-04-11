@@ -116,7 +116,7 @@ async def cryptobot_auto_worker(
                                 slot = int(payment.get("device_slot") or 0)
                                 text = f"✅ Оплата подтверждена автоматически. Устройство {slot} продлено."
                             elif purpose == "plan_all":
-                                text = "✅ Оплата подтверждена автоматически. Все ключи продлены."
+                                text = "✅ Оплата подтверждена автоматически. Все устройства продлены."
                             else:
                                 text = "Оплата подтверждена автоматически. Доступ продлен."
                             await notify_access_updated_fn(
@@ -222,7 +222,7 @@ async def yookassa_auto_worker(
                                 slot = int(payment.get("device_slot") or 0)
                                 text = f"✅ Оплата подтверждена автоматически. Устройство {slot} продлено."
                             elif purpose == "plan_all":
-                                text = "✅ Оплата подтверждена автоматически. Все ключи продлены."
+                                text = "✅ Оплата подтверждена автоматически. Все устройства продлены."
                             else:
                                 text = "Оплата подтверждена автоматически. Доступ продлен."
                             await notify_access_updated_fn(

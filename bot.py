@@ -883,7 +883,7 @@ async def send_links(message: Message, user: dict[str, Any]) -> None:
     if not links:
         await message.answer("⚠️ Конфиг не найден в ответе Marzban. Попробуйте позже.")
         return
-    await message.answer("🔑 Ваш конфиг (1 устройство):")
+    await message.answer("🔑 Ваша ссылка подключения (1 устройство):")
     link = links[0]
     safe_link = html.escape(link)
     text = f"<code>{safe_link}</code>"
@@ -1207,12 +1207,12 @@ async def send_device_links(
         settings=settings,
     )
     if not items:
-        await message.answer("⚠️ Активные конфиги не найдены.")
+        await message.answer("⚠️ Активные ссылки подключения не найдены.")
         return
 
     await message.answer(
         f"🔑 Ниже ваши активные ссылки для подключения ({len(items)}).\n"
-        "Нажмите на код конфига, чтобы скопировать."
+        "Нажмите на ссылку, чтобы скопировать."
     )
     await send_configs_in_chat(message, items)
 
@@ -1225,7 +1225,7 @@ def _render_config_block(label: str, link: str) -> str:
 
 async def send_configs_in_chat(message: Message, items: list[tuple[int, str, str]]) -> None:
     if not items:
-        await message.answer("⚠️ Активные конфиги не найдены.")
+        await message.answer("⚠️ Активные ссылки подключения не найдены.")
         return
     chunks: list[str] = []
     current = ""
@@ -1250,7 +1250,7 @@ async def send_configs_in_chat_to_bot(
     items: list[tuple[int, str, str]],
 ) -> None:
     if not items:
-        await bot.send_message(telegram_id, "⚠️ Активные конфиги не найдены.")
+        await bot.send_message(telegram_id, "⚠️ Активные ссылки подключения не найдены.")
         return
     chunks: list[str] = []
     current = ""
@@ -1283,12 +1283,12 @@ async def send_device_links_to_bot(
         settings=settings,
     )
     if not items:
-        await bot.send_message(telegram_id, "⚠️ Активные конфиги не найдены.")
+        await bot.send_message(telegram_id, "⚠️ Активные ссылки подключения не найдены.")
         return
     await bot.send_message(
         telegram_id,
         f"🔑 Ниже ваши активные ссылки для подключения ({len(items)}).\n"
-        "Нажмите на код конфига, чтобы скопировать.",
+        "Нажмите на ссылку, чтобы скопировать.",
     )
     await send_configs_in_chat_to_bot(bot=bot, telegram_id=telegram_id, items=items)
 
@@ -2090,7 +2090,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             create_if_missing=False,
         )
         if not user:
-            await message.answer("❗ Профиль не найден. Нажмите «Получить конфиг».")
+            await message.answer("❗ Профиль не найден. Нажмите «🔑 Получить подписку».")
             return
         await send_status(message, user)
         await send_device_links(
@@ -2112,7 +2112,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
 
         devices = await repo.list_devices(tg_id)
         if not devices:
-            lines.append("Профиль не найден. Нажмите «🔑 Получить конфиг».")
+            lines.append("Профиль не найден. Нажмите «🔑 Получить подписку».")
             await message.answer("\n".join(lines))
             return
 
@@ -2198,7 +2198,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
         tg_id = int(message.from_user.id)
         row = await repo.get_user(tg_id)
         if not row:
-            await message.answer("❗ Сначала получите основной конфиг.")
+            await message.answer("❗ Сначала получите ссылку подписки.")
             return
         devices = await repo.list_devices(tg_id)
         if settings.device_limit > 0 and len(devices) >= settings.device_limit:
@@ -2228,12 +2228,12 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
         tg_id = int(message.from_user.id)
         devices = await list_replaceable_devices(tg_id)
         if not devices:
-            await message.answer("Активные устройства не найдены. Сначала получите конфиг.")
+            await message.answer("Активные устройства не найдены. Сначала получите подписку.")
             return
         kb = _devices_replace_keyboard(devices)
         await message.answer(
-            "Выберите устройство для переиздания конфига.\n"
-            "Старый конфиг выбранного устройства будет отключен.",
+            "Выберите устройство для перевыпуска ссылки.\n"
+            "Старая ссылка выбранного устройства будет отключена.",
             reply_markup=kb,
         )
 
@@ -2245,7 +2245,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             return
         devices = await repo.list_devices(int(message.from_user.id))
         if not devices:
-            await message.answer("Устройства не найдены. Сначала получите конфиг.")
+            await message.answer("Устройства не найдены. Сначала получите подписку.")
             return
         lines: list[str] = []
         for row in devices:
@@ -2284,7 +2284,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             return
         row = await repo.get_device(int(message.from_user.id), device_id)
         if not row:
-            await message.answer("Устройство не найдено. Сначала получите конфиг.")
+            await message.answer("Устройство не найдено. Сначала получите подписку.")
             return
         await repo.set_device_name(int(message.from_user.id), device_id, name)
         await message.answer(f"✅ Устройство {device_id} теперь называется: {name}")
@@ -2397,7 +2397,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             return
         devices = await repo.list_devices(int(message.from_user.id))
         if not devices:
-            await message.answer("Устройства не найдены. Сначала получите конфиг.")
+            await message.answer("Устройства не найдены. Сначала получите подписку.")
             return
         kb = _devices_rename_keyboard(devices)
         await message.answer("Выберите устройство для переименования:", reply_markup=kb)

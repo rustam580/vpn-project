@@ -47,7 +47,7 @@ async def build_funnel_24h_text(repo: "Repo") -> str:
     return (
         "Воронка 24ч:\n"
         f"- Стартов: {start_users}\n"
-        f"- Получили конфиг: {config_users} ({config_conv:.1f}% от стартов)\n"
+        f"- Получили подписку: {config_users} ({config_conv:.1f}% от стартов)\n"
         f"- Выдано триалов: {trial_users}\n"
         f"- Создали платеж (тариф): {pay_create_users}\n"
         f"- Оплатили тариф: {pay_apply_users} ({pay_conv:.1f}% от стартов, {checkout_conv:.1f}% от checkout)\n"

@@ -27,7 +27,7 @@ def _short_label(label: str, limit: int = 18) -> str:
 
 def keyboard_for_user(*, is_admin: bool) -> ReplyKeyboardMarkup:
     rows: list[list[KeyboardButton]] = [
-        [KeyboardButton(text="🔑 Получить конфиг"), KeyboardButton(text="💳 Купить доступ")],
+        [KeyboardButton(text="🔑 Получить подписку"), KeyboardButton(text="💳 Купить доступ")],
         [KeyboardButton(text="📊 Мой статус"), KeyboardButton(text="📂 Еще")],
         [KeyboardButton(text="🆘 Поддержка")],
     ]
@@ -162,7 +162,7 @@ def buy_target_keyboard(devices: list[dict[str, Any]]) -> InlineKeyboardMarkup:
                 )
             ]
         )
-    rows.append([InlineKeyboardButton(text="🧩 Продлить все ключи", callback_data="buyselect:all")])
+    rows.append([InlineKeyboardButton(text="🧩 Продлить все устройства", callback_data="buyselect:all")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -224,7 +224,7 @@ def renewal_actions_keyboard(*, device_id: int) -> InlineKeyboardMarkup:
                     callback_data=f"buyselect:slot:{device_id}",
                 )
             ],
-            [InlineKeyboardButton(text="🧩 Продлить все ключи", callback_data="buyselect:all")],
+            [InlineKeyboardButton(text="🧩 Продлить все устройства", callback_data="buyselect:all")],
         ]
     )
 

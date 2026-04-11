@@ -102,10 +102,10 @@ def register_user_callback_handlers(*, router: Router, deps: UserCallbackDeps) -
     def _legal_terms_text() -> str:
         return (
             "<b>📜 Условия использования RootVPN</b>\n"
-            "1) Сервис предоставляет цифровой доступ к VPN-конфигам через Telegram-бота.\n"
+            "1) Сервис предоставляет цифровой доступ к VPN-подпискам и ссылкам через Telegram-бота.\n"
             "2) Оплата означает согласие с условиями сервиса.\n"
             "3) Доступ выдается после подтверждения платежа.\n"
-            "4) Один конфиг предназначен для одного устройства.\n"
+            "4) Одна ссылка устройства предназначена для одного устройства.\n"
             "5) Сервис используется только в законных целях.\n"
             "6) Сервис предоставляется «как есть»."
         )
@@ -151,7 +151,7 @@ def register_user_callback_handlers(*, router: Router, deps: UserCallbackDeps) -
             row = await repo.get_user(tg_id)
             if not row:
                 await callback.answer()
-                await callback.message.answer("❗ Сначала получите основной конфиг.")
+                await callback.message.answer("❗ Сначала получите подписку.")
                 return
             devices = await repo.list_devices(tg_id)
             if settings.device_limit > 0 and len(devices) >= settings.device_limit:
@@ -180,12 +180,12 @@ def register_user_callback_handlers(*, router: Router, deps: UserCallbackDeps) -
             devices = await list_replaceable_devices(tg_id)
             await callback.answer()
             if not devices:
-                await callback.message.answer("Активные устройства не найдены. Сначала получите конфиг.")
+                await callback.message.answer("Активные устройства не найдены. Сначала получите подписку.")
                 return
             kb = devices_replace_keyboard(devices)
             await callback.message.answer(
-                "Выберите устройство для переиздания конфига.\n"
-                "Старый конфиг выбранного устройства будет отключен.",
+                "Выберите устройство для перевыпуска ссылки.\n"
+                "Старая ссылка выбранного устройства будет отключена.",
                 reply_markup=kb,
             )
             return
@@ -194,7 +194,7 @@ def register_user_callback_handlers(*, router: Router, deps: UserCallbackDeps) -
             devices = await repo.list_devices(tg_id)
             await callback.answer()
             if not devices:
-                await callback.message.answer("Устройства не найдены. Сначала получите конфиг.")
+                await callback.message.answer("Устройства не найдены. Сначала получите подписку.")
                 return
             kb = devices_rename_keyboard(devices)
             await callback.message.answer("Выберите устройство для переименования:", reply_markup=kb)
@@ -367,8 +367,8 @@ def register_user_callback_handlers(*, router: Router, deps: UserCallbackDeps) -
             return
         label = device_label(device_id, row.get("device_name"))
         await callback.message.answer(
-            f"Подтвердите замену конфига для устройства {device_id} ({label}).\n"
-            "Старый конфиг этого устройства будет отключен.",
+            f"Подтвердите перевыпуск ссылки для устройства {device_id} ({label}).\n"
+            "Старая ссылка этого устройства будет отключена.",
             reply_markup=device_replace_confirm_keyboard(device_id),
         )
         await callback.answer()
@@ -404,15 +404,15 @@ def register_user_callback_handlers(*, router: Router, deps: UserCallbackDeps) -
             )
         except Exception as exc:
             logging.exception("User device_replace failed for tg=%s slot=%s", tg_id, device_id)
-            await callback.answer("Не удалось заменить конфиг", show_alert=True)
-            await callback.message.answer(f"Ошибка замены конфига: {exc}")
+            await callback.answer("Не удалось перевыпустить ссылку", show_alert=True)
+            await callback.message.answer(f"Ошибка перевыпуска ссылки: {exc}")
             return
         await callback.answer("Готово")
         await callback.message.answer(
-            f"🔁 Конфиг устройства {device_id} переиздан.\n"
-            "Старый конфиг этого устройства отключен.\n"
-            "Импортируйте новый конфиг из списка ниже.\n"
-            "Важно: один конфиг = одно устройство."
+            f"🔁 Ссылка устройства {device_id} перевыпущена.\n"
+            "Старая ссылка этого устройства отключена.\n"
+            "Импортируйте новую ссылку из списка ниже.\n"
+            "Важно: одна ссылка = одно устройство."
         )
         if device_id == 1:
             await send_status(callback.message, new_user)
@@ -439,7 +439,7 @@ def register_user_callback_handlers(*, router: Router, deps: UserCallbackDeps) -
         )
         parts = callback.data.split(":")
         if len(parts) >= 2 and parts[1] == "showall":
-            await callback.message.answer("Все активные конфиги:")
+            await callback.message.answer("Все активные ссылки:")
             await send_configs_in_chat(callback.message, items)
             await callback.answer()
             return
@@ -483,7 +483,7 @@ def register_user_callback_handlers(*, router: Router, deps: UserCallbackDeps) -
             return
         if parts[1] == "all":
             if not devices:
-                await callback.answer("Сначала получите конфиг.", show_alert=True)
+                await callback.answer("Сначала получите подписку.", show_alert=True)
                 return
             await callback.message.answer(
                 f"🧩 Продление всех ключей ({len(devices)} шт).\n"
@@ -539,7 +539,7 @@ def register_user_callback_handlers(*, router: Router, deps: UserCallbackDeps) -
         if target == "all":
             devices = await repo.list_devices(tg_id)
             if not devices:
-                await callback.answer("Сначала получите конфиг.", show_alert=True)
+                await callback.answer("Сначала получите подписку.", show_alert=True)
                 return
             amount = plan.rub * len(devices)
             await callback.message.answer(
@@ -634,7 +634,7 @@ def register_user_callback_handlers(*, router: Router, deps: UserCallbackDeps) -
             else:
                 devices = await repo.list_devices(tg_id)
                 if not devices:
-                    await callback.answer("Сначала получите конфиг.", show_alert=True)
+                    await callback.answer("Сначала получите подписку.", show_alert=True)
                     return
                 amount_rub = plan.rub * len(devices)
                 purpose = "plan_all"
@@ -780,7 +780,7 @@ def register_user_callback_handlers(*, router: Router, deps: UserCallbackDeps) -
                 f"ID: {external_id}\n"
                 f"Слот: {slot}\n"
                 "Срок доступа не продлевается.\n"
-                "Важно: один конфиг = одно устройство.",
+                "Важно: одна ссылка = одно устройство.",
                 reply_markup=pay_action_keyboard(provider, external_id, pay_url),
             )
             await callback.answer()

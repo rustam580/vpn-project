@@ -388,9 +388,9 @@ def register_admin_message_handlers(*, router: Router, deps: AdminMessageDeps) -
         try:
             await message.bot.send_message(
                 target,
-                f"🔁 Мы переиздали конфиг для устройства {slot}.\n"
-                "Старый конфиг для этого устройства отключен.\n"
-                "Важно: один конфиг = одно устройство.",
+                f"🔁 Мы перевыпустили ссылку для устройства {slot}.\n"
+                "Старая ссылка для этого устройства отключена.\n"
+                "Важно: одна ссылка = одно устройство.",
             )
             if slot == 1:
                 await send_status_to_bot(message.bot, target, new_user)
