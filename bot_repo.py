@@ -9,10 +9,11 @@ from typing import Any
 import aiosqlite
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "db" / "migrations"
-SCHEMA_VERSION_LATEST = 2
+SCHEMA_VERSION_LATEST = 3
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (1, "001_init.sql"),
     (2, "002_legacy_columns.sql"),
+    (3, "003_subscription_hits.sql"),
 )
 
 
@@ -705,6 +706,100 @@ class Repo:
                 }
             )
         return result
+
+    async def subscription_adoption_stats(self, *, days: int = 7) -> dict[str, int | float]:
+        assert self.conn is not None
+        lookback_days = max(1, int(days))
+        since_ts = int(time.time()) - lookback_days * 86400
+        c = await self.conn.execute(
+            """
+            WITH known_users AS (
+                SELECT DISTINCT telegram_id
+                FROM users
+                UNION
+                SELECT DISTINCT telegram_id
+                FROM devices
+            ),
+            adopted_users AS (
+                SELECT DISTINCT telegram_id
+                FROM subscription_hits
+                WHERE telegram_id IS NOT NULL
+                  AND created_at >= ?
+                UNION
+                SELECT DISTINCT u.telegram_id
+                FROM subscription_hits h
+                JOIN users u ON u.marzban_username = h.marzban_username
+                WHERE h.created_at >= ?
+                UNION
+                SELECT DISTINCT d.telegram_id
+                FROM subscription_hits h
+                JOIN devices d ON d.marzban_username = h.marzban_username
+                WHERE h.created_at >= ?
+            )
+            SELECT
+                (SELECT COUNT(*) FROM known_users) AS total_users,
+                (SELECT COUNT(*) FROM adopted_users) AS adopted_users
+            """
+            ,
+            (since_ts, since_ts, since_ts),
+        )
+        row = await c.fetchone()
+        await c.close()
+        total_users = int((row["total_users"] if row and row["total_users"] is not None else 0) or 0)
+        adopted_users = int((row["adopted_users"] if row and row["adopted_users"] is not None else 0) or 0)
+        pending_users = max(total_users - adopted_users, 0)
+        adoption_pct = (adopted_users / total_users * 100.0) if total_users > 0 else 0.0
+        return {
+            "days": lookback_days,
+            "total_users": total_users,
+            "adopted_users": adopted_users,
+            "pending_users": pending_users,
+            "adoption_pct": adoption_pct,
+        }
+
+    async def list_subscription_non_adopters(
+        self,
+        *,
+        days: int = 7,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        assert self.conn is not None
+        lookback_days = max(1, int(days))
+        row_limit = max(1, int(limit))
+        since_ts = int(time.time()) - lookback_days * 86400
+        c = await self.conn.execute(
+            """
+            WITH adopted_users AS (
+                SELECT DISTINCT telegram_id
+                FROM subscription_hits
+                WHERE telegram_id IS NOT NULL
+                  AND created_at >= ?
+                UNION
+                SELECT DISTINCT u.telegram_id
+                FROM subscription_hits h
+                JOIN users u ON u.marzban_username = h.marzban_username
+                WHERE h.created_at >= ?
+                UNION
+                SELECT DISTINCT d.telegram_id
+                FROM subscription_hits h
+                JOIN devices d ON d.marzban_username = h.marzban_username
+                WHERE h.created_at >= ?
+            )
+            SELECT
+                u.telegram_id,
+                u.marzban_username,
+                u.updated_at
+            FROM users u
+            LEFT JOIN adopted_users a ON a.telegram_id = u.telegram_id
+            WHERE a.telegram_id IS NULL
+            ORDER BY u.updated_at DESC, u.telegram_id DESC
+            LIMIT ?
+            """,
+            (since_ts, since_ts, since_ts, row_limit),
+        )
+        rows = await c.fetchall()
+        await c.close()
+        return [dict(row) for row in rows]
 
     async def claim_referral_bonus(self, invited_telegram_id: int) -> int | None:
         assert self.conn is not None

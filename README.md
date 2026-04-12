@@ -72,3 +72,8 @@ docker compose exec marzban marzban cli admin create --sudo
 systemctl restart vpn-bot
 journalctl -u vpn-bot -n 50 --no-pager
 ```
+
+## Опционально: Gateway для подписок
+Если Marzban отдает дубли в подписке, включите локальный gateway:
+- сервис: `deploy/vpn-sub-gateway.service.example`
+- описание и команды: `docs/subscription-gateway.md`

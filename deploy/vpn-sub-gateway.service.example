@@ -1,0 +1,16 @@
+[Unit]
+Description=RootVPN Subscription Gateway (dedupe + hits)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/vpn-bot
+EnvironmentFile=/opt/vpn-bot/.env
+ExecStart=/opt/vpn-bot/.venv/bin/python /opt/vpn-bot/subscription_gateway.py
+Restart=always
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target

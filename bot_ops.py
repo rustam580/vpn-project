@@ -90,6 +90,11 @@ async def build_admin_stats_text(repo: "Repo", marzban: "MarzbanClient") -> str:
     pending = pay_counts.get("pending", 0)
     paid_applied = pay_counts.get("paid_applied", 0)
     ref_counts = await repo.get_referral_global_stats()
+    sub_adoption = await repo.subscription_adoption_stats(days=7)
+    sub_pending_rows = await repo.list_subscription_non_adopters(days=7, limit=5)
+    sub_pending_preview = ", ".join(
+        f"tg:{int(row['telegram_id'])}" for row in sub_pending_rows
+    ) or "нет"
 
     funnel_text = await build_funnel_24h_text(repo)
     db_tip = ""
@@ -112,6 +117,10 @@ async def build_admin_stats_text(repo: "Repo", marzban: "MarzbanClient") -> str:
         f"- Всего приглашений: {ref_counts['total']}\n"
         f"- Бонус выдан: {ref_counts['rewarded']}\n"
         f"- Ожидают первую оплату: {ref_counts['pending']}\n\n"
+        "Подписки (за 7 дней):\n"
+        f"- Перешли на подписку: {sub_adoption['adopted_users']}/{sub_adoption['total_users']} ({sub_adoption['adoption_pct']:.1f}%)\n"
+        f"- Еще не перешли: {sub_adoption['pending_users']}\n"
+        f"- Примеры без перехода: {sub_pending_preview}\n\n"
         f"{funnel_text}"
         f"{db_tip}"
     )

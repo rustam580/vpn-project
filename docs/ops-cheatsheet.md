@@ -5,6 +5,12 @@
 - Restart: `sudo systemctl restart vpn-bot`
 - Logs: `sudo journalctl -u vpn-bot -n 200 --no-pager`
 
+## Subscription Gateway
+- Status: `sudo systemctl status vpn-sub-gateway --no-pager`
+- Restart: `sudo systemctl restart vpn-sub-gateway`
+- Logs: `sudo journalctl -u vpn-sub-gateway -n 200 --no-pager`
+- Health: `curl -I https://sub.rootvpn.tech:8443/health`
+
 ## Marzban
 - Compose: `cd /opt/marzban`
 - Up: `sudo docker-compose up -d`
