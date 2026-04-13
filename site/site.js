@@ -42,6 +42,17 @@ function setOrderMessage(text, isError = false) {
   els.orderMessage.textContent = text || "";
 }
 
+function setBusy(button, busyText) {
+  if (!button) return () => {};
+  const original = button.textContent;
+  button.disabled = true;
+  if (busyText) button.textContent = busyText;
+  return () => {
+    button.disabled = false;
+    button.textContent = original;
+  };
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     headers: {
@@ -147,6 +158,7 @@ async function createCheckoutOrder(event) {
     return;
   }
 
+  const release = setBusy(event.submitter || els.form?.querySelector("button[type='submit']"), "Создаем заказ...");
   try {
     const payload = await api("/api/checkout", {
       method: "POST",
@@ -168,7 +180,14 @@ async function createCheckoutOrder(event) {
     url.searchParams.set("order", payload.order_id);
     window.history.replaceState({}, "", url.toString());
   } catch (err) {
-    setError(err.message || "Не удалось создать заказ");
+    const message = String(err?.message || "");
+    if (message.includes("404")) {
+      setError("Ошибка API (404). Проверьте Caddy: /api/* должен проксироваться на 127.0.0.1:8011.");
+    } else {
+      setError(message || "Не удалось создать заказ");
+    }
+  } finally {
+    release();
   }
 }
 

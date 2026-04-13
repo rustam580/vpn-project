@@ -53,7 +53,7 @@ nano /etc/caddy/Caddyfile
 rootvpn.tech, www.rootvpn.tech {
     root * /opt/vpn-bot/site
 
-    handle_path /api/* {
+    handle /api/* {
         reverse_proxy 127.0.0.1:8011
     }
 

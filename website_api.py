@@ -376,11 +376,18 @@ async def create_app() -> web.Application:
             }
         )
 
-    app.router.add_get("/api/health", health)
-    app.router.add_get("/api/plans", plans)
-    app.router.add_get("/api/instructions", instructions)
-    app.router.add_post("/api/checkout", checkout)
-    app.router.add_get("/api/order/{order_id}", order_status)
+    def _route(prefix: str, suffix: str) -> str:
+        return f"{prefix}{suffix}" if prefix else suffix
+
+    # Support both Caddy patterns:
+    # 1) handle /api/*  -> backend path keeps /api/*
+    # 2) handle_path /api/* -> backend path becomes /*
+    for prefix in ("", "/api"):
+        app.router.add_get(_route(prefix, "/health"), health)
+        app.router.add_get(_route(prefix, "/plans"), plans)
+        app.router.add_get(_route(prefix, "/instructions"), instructions)
+        app.router.add_post(_route(prefix, "/checkout"), checkout)
+        app.router.add_get(_route(prefix, "/order/{order_id}"), order_status)
     return app
 
 
