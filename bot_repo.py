@@ -317,6 +317,36 @@ class Repo:
         await c.close()
         return [dict(row) for row in rows]
 
+    async def get_device_by_username(self, marzban_username: str) -> dict[str, Any] | None:
+        assert self.conn is not None
+        c = await self.conn.execute(
+            """
+            SELECT telegram_id, device_id, marzban_username, device_name
+            FROM devices
+            WHERE marzban_username = ?
+            LIMIT 1
+            """,
+            (marzban_username,),
+        )
+        row = await c.fetchone()
+        await c.close()
+        return dict(row) if row else None
+
+    async def get_user_by_username(self, marzban_username: str) -> dict[str, Any] | None:
+        assert self.conn is not None
+        c = await self.conn.execute(
+            """
+            SELECT telegram_id, marzban_username
+            FROM users
+            WHERE marzban_username = ?
+            LIMIT 1
+            """,
+            (marzban_username,),
+        )
+        row = await c.fetchone()
+        await c.close()
+        return dict(row) if row else None
+
     async def upsert_device(
         self,
         telegram_id: int,

@@ -1,6 +1,8 @@
 ﻿
 import asyncio
+import hashlib
 import html
+import hmac
 import json
 import logging
 import os
@@ -808,6 +810,40 @@ def parse_referrer_from_payload(payload: str) -> int | None:
     if not raw.isdigit():
         return None
     return int(raw)
+
+
+def _web_bind_signature(order_id: str, *, bot_token: str) -> str:
+    digest = hmac.new(
+        bot_token.encode("utf-8"),
+        order_id.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return digest[:12]
+
+
+def build_web_bind_payload(order_id: str, *, bot_token: str) -> str:
+    normalized = str(order_id or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{32}", normalized):
+        return ""
+    sig = _web_bind_signature(normalized, bot_token=bot_token)
+    return f"webbind_{normalized}_{sig}"
+
+
+def parse_web_order_from_payload(payload: str, *, bot_token: str) -> str | None:
+    raw = str(payload or "").strip()
+    if not raw.startswith("webbind_"):
+        return None
+    body = raw[len("webbind_") :]
+    parts = body.split("_", 1)
+    if len(parts) != 2:
+        return None
+    order_id, sig = parts[0].strip().lower(), parts[1].strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{32}", order_id):
+        return None
+    expected = _web_bind_signature(order_id, bot_token=bot_token)
+    if not hmac.compare_digest(sig, expected):
+        return None
+    return order_id
 
 
 def extract_links(user: dict[str, Any]) -> list[str]:
@@ -2036,6 +2072,73 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
         )
         return True
 
+    async def bind_web_order_to_user(*, telegram_id: int, order_id: str) -> tuple[bool, str]:
+        order = await repo.get_web_order(order_id)
+        if not order:
+            return False, "Заказ не найден. Проверьте ссылку привязки."
+
+        status = str(order.get("status") or "").strip().lower()
+        if status != "paid_applied":
+            return False, (
+                "Оплата еще не подтверждена на сайте.\n"
+                "Вернитесь на сайт, нажмите «Проверить оплату», затем повторите привязку."
+            )
+
+        username = str(order.get("marzban_username") or "").strip()
+        if not username:
+            return False, "Доступ еще не подготовлен. Попробуйте повторить через 10-20 секунд."
+
+        user_in_mz = await marzban.get_user(username)
+        if not user_in_mz:
+            return False, "Профиль в VPN-панели не найден. Напишите в поддержку."
+
+        owner_dev = await repo.get_device_by_username(username)
+        owner_usr = await repo.get_user_by_username(username)
+        owner_tg = None
+        if owner_dev:
+            owner_tg = int(owner_dev["telegram_id"])
+        elif owner_usr:
+            owner_tg = int(owner_usr["telegram_id"])
+
+        if owner_tg is not None and owner_tg != telegram_id:
+            return False, "Этот доступ уже привязан к другому Telegram-аккаунту."
+
+        if owner_tg == telegram_id:
+            return True, "Этот доступ уже привязан к вашему Telegram. Нажмите «🔑 Получить конфиг»."
+
+        current_user = await repo.get_user(telegram_id)
+        if current_user is None:
+            await repo.upsert_user(telegram_id, username)
+            await track_event(
+                "web_order_bound",
+                telegram_id=telegram_id,
+                event_value="slot_1",
+                event_meta={"order_id": order_id, "marzban_username": username},
+            )
+            return True, "Готово ✅ Доступ с сайта привязан к Telegram. Нажмите «🔑 Получить конфиг»."
+
+        devices = await repo.list_devices(telegram_id)
+        for row in devices:
+            if str(row.get("marzban_username") or "").strip() == username:
+                return True, "Этот доступ уже привязан к вашему Telegram. Нажмите «🔑 Получить конфиг»."
+
+        used_slots = {int(row.get("device_id") or 0) for row in devices}
+        slot = next_device_slot(used_slots, settings.device_limit)
+        if slot is None:
+            return False, (
+                f"Достигнут лимит устройств ({format_device_limit(settings.device_limit)}).\n"
+                "Освободите слот через «🔁 Заменить устройство» или напишите в поддержку."
+            )
+
+        await repo.upsert_device(telegram_id, slot, username, "Сайт")
+        await track_event(
+            "web_order_bound",
+            telegram_id=telegram_id,
+            event_value=f"slot_{slot}",
+            event_meta={"order_id": order_id, "marzban_username": username},
+        )
+        return True, f"Готово ✅ Доступ с сайта привязан как устройство #{slot}. Нажмите «🔑 Получить конфиг»."
+
 
     register_user_message_handlers(
         router=router,
@@ -2045,12 +2148,15 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             guard_message_rate_limit=guard_message_rate_limit,
             extract_start_payload=extract_start_payload,
             parse_referrer_from_payload=parse_referrer_from_payload,
+            parse_web_order_from_payload=parse_web_order_from_payload,
+            bind_web_order_fn=bind_web_order_to_user,
             build_start_text=build_start_text,
             plan_gb_text=plan_gb_text,
             format_device_limit=format_device_limit,
             keyboard_for_user=keyboard_for_user,
             is_admin_fn=is_admin,
             track_event=track_event,
+            bot_token=settings.bot_token,
             enabled_payment_providers=enabled_payment_providers,
             get_bot_username=get_bot_username,
             build_user_faq_text=build_user_faq_text,

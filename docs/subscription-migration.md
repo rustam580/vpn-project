@@ -1,4 +1,4 @@
-# Subscription Migration Runbook
+﻿# Subscription Migration Runbook
 
 Last updated: 2026-04-11
 
@@ -33,7 +33,7 @@ Set in Marzban `.env`:
 ```env
 XRAY_SUBSCRIPTION_URL_PREFIX=https://sub.yourdomain.tld
 XRAY_SUBSCRIPTION_PATH=sub
-SUB_SUPPORT_URL=https://t.me/lKRRworkl
+SUB_SUPPORT_URL=https://t.me/RootVPN_support_1
 ```
 
 Restart Marzban stack and verify:
@@ -92,3 +92,4 @@ If issue appears:
 1. Set `CONFIG_DELIVERY_MODE=direct`.
 2. Restart bot.
 3. Investigate domain/TLS/Marzban subscription prefix.
+

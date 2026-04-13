@@ -1,36 +1,36 @@
-# Сайт RootVPN
+﻿# РЎР°Р№С‚ RootVPN
 
-Сайт в папке `site/` теперь работает как отдельная точка продаж:
-- пользователь оплачивает на сайте,
-- сайт проверяет оплату,
-- выдает ссылку подписки без Telegram.
+РЎР°Р№С‚ РІ РїР°РїРєРµ `site/` С‚РµРїРµСЂСЊ СЂР°Р±РѕС‚Р°РµС‚ РєР°Рє РѕС‚РґРµР»СЊРЅР°СЏ С‚РѕС‡РєР° РїСЂРѕРґР°Р¶:
+- РїРѕР»СЊР·РѕРІР°С‚РµР»СЊ РѕРїР»Р°С‡РёРІР°РµС‚ РЅР° СЃР°Р№С‚Рµ,
+- СЃР°Р№С‚ РїСЂРѕРІРµСЂСЏРµС‚ РѕРїР»Р°С‚Сѓ,
+- РІС‹РґР°РµС‚ СЃСЃС‹Р»РєСѓ РїРѕРґРїРёСЃРєРё Р±РµР· Telegram.
 
-## Что уже должно быть
+## Р§С‚Рѕ СѓР¶Рµ РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ
 
-- Бот развернут в `/opt/vpn-bot`
-- `sub.rootvpn.tech:8443` уже проксирует на `127.0.0.1:8010` (subscription gateway)
-- Домен `rootvpn.tech` направлен на сервер
+- Р‘РѕС‚ СЂР°Р·РІРµСЂРЅСѓС‚ РІ `/opt/vpn-bot`
+- `sub.rootvpn.tech:8443` СѓР¶Рµ РїСЂРѕРєСЃРёСЂСѓРµС‚ РЅР° `127.0.0.1:8010` (subscription gateway)
+- Р”РѕРјРµРЅ `rootvpn.tech` РЅР°РїСЂР°РІР»РµРЅ РЅР° СЃРµСЂРІРµСЂ
 
-## 1. Обновить код на сервере
+## 1. РћР±РЅРѕРІРёС‚СЊ РєРѕРґ РЅР° СЃРµСЂРІРµСЂРµ
 
 ```bash
 cd /opt/vpn-bot
 git pull --ff-only
 ```
 
-## 2. Проверить `.env`
+## 2. РџСЂРѕРІРµСЂРёС‚СЊ `.env`
 
-Добавьте/проверьте:
+Р”РѕР±Р°РІСЊС‚Рµ/РїСЂРѕРІРµСЂСЊС‚Рµ:
 
 ```env
 WEBSITE_API_HOST=127.0.0.1
 WEBSITE_API_PORT=8011
 WEBSITE_PUBLIC_URL=https://rootvpn.tech
-WEBSITE_SUPPORT_URL=https://t.me/lKRRworkl
+WEBSITE_SUPPORT_URL=https://t.me/RootVPN_support_1
 WEBSITE_ENABLE_CRYPTO=true
 ```
 
-## 3. Поднять API сайта как сервис
+## 3. РџРѕРґРЅСЏС‚СЊ API СЃР°Р№С‚Р° РєР°Рє СЃРµСЂРІРёСЃ
 
 ```bash
 cp /opt/vpn-bot/deploy/vpn-site-api.service.example /etc/systemd/system/vpn-site-api.service
@@ -39,15 +39,15 @@ systemctl enable --now vpn-site-api
 systemctl status vpn-site-api --no-pager
 ```
 
-## 4. Настроить Caddy
+## 4. РќР°СЃС‚СЂРѕРёС‚СЊ Caddy
 
-Откройте:
+РћС‚РєСЂРѕР№С‚Рµ:
 
 ```bash
 nano /etc/caddy/Caddyfile
 ```
 
-Пример рабочего конфига (важно: блок `sub.rootvpn.tech:8443` должен быть только один раз):
+РџСЂРёРјРµСЂ СЂР°Р±РѕС‡РµРіРѕ РєРѕРЅС„РёРіР° (РІР°Р¶РЅРѕ: Р±Р»РѕРє `sub.rootvpn.tech:8443` РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ С‚РѕР»СЊРєРѕ РѕРґРёРЅ СЂР°Р·):
 
 ```caddyfile
 rootvpn.tech, www.rootvpn.tech {
@@ -69,7 +69,7 @@ sub.rootvpn.tech:8443 {
 }
 ```
 
-Проверка и применение:
+РџСЂРѕРІРµСЂРєР° Рё РїСЂРёРјРµРЅРµРЅРёРµ:
 
 ```bash
 caddy validate --config /etc/caddy/Caddyfile
@@ -77,7 +77,7 @@ systemctl reload caddy
 systemctl status caddy --no-pager
 ```
 
-## 5. Проверка
+## 5. РџСЂРѕРІРµСЂРєР°
 
 ```bash
 curl -I https://rootvpn.tech
@@ -86,34 +86,35 @@ curl -I https://rootvpn.tech/api/health
 curl -I https://sub.rootvpn.tech:8443/health
 ```
 
-Ожидаемо:
+РћР¶РёРґР°РµРјРѕ:
 - `rootvpn.tech` -> `200`
 - `/api/health` -> JSON `{"ok": true}`
 - `sub...:8443/health` -> `200`
 
-## 6. Обновление контента сайта
+## 6. РћР±РЅРѕРІР»РµРЅРёРµ РєРѕРЅС‚РµРЅС‚Р° СЃР°Р№С‚Р°
 
-Если меняете цены/тексты/кнопки в `site/index.html`, `site/styles.css`, `site/site.js`:
+Р•СЃР»Рё РјРµРЅСЏРµС‚Рµ С†РµРЅС‹/С‚РµРєСЃС‚С‹/РєРЅРѕРїРєРё РІ `site/index.html`, `site/styles.css`, `site/site.js`:
 
 ```bash
 cd /opt/vpn-bot
 git pull --ff-only
 ```
 
-Перезапуск `vpn-bot` для этого не нужен. Достаточно `git pull` (и при изменении Caddy — `systemctl reload caddy`).
+РџРµСЂРµР·Р°РїСѓСЃРє `vpn-bot` РґР»СЏ СЌС‚РѕРіРѕ РЅРµ РЅСѓР¶РµРЅ. Р”РѕСЃС‚Р°С‚РѕС‡РЅРѕ `git pull` (Рё РїСЂРё РёР·РјРµРЅРµРЅРёРё Caddy вЂ” `systemctl reload caddy`).
 
-## Частые проблемы
+## Р§Р°СЃС‚С‹Рµ РїСЂРѕР±Р»РµРјС‹
 
 1. `ambiguous site definition: sub.rootvpn.tech:8443`
-- В `Caddyfile` два одинаковых блока `sub.rootvpn.tech:8443`.
-- Оставьте только один.
+- Р’ `Caddyfile` РґРІР° РѕРґРёРЅР°РєРѕРІС‹С… Р±Р»РѕРєР° `sub.rootvpn.tech:8443`.
+- РћСЃС‚Р°РІСЊС‚Рµ С‚РѕР»СЊРєРѕ РѕРґРёРЅ.
 
-2. `www.rootvpn.tech` не открывается
-- Добавьте DNS-запись `A` для `www` на IP сервера.
+2. `www.rootvpn.tech` РЅРµ РѕС‚РєСЂС‹РІР°РµС‚СЃСЏ
+- Р”РѕР±Р°РІСЊС‚Рµ DNS-Р·Р°РїРёСЃСЊ `A` РґР»СЏ `www` РЅР° IP СЃРµСЂРІРµСЂР°.
 
-3. API не отвечает
-- Проверьте сервис:
+3. API РЅРµ РѕС‚РІРµС‡Р°РµС‚
+- РџСЂРѕРІРµСЂСЊС‚Рµ СЃРµСЂРІРёСЃ:
 ```bash
 systemctl status vpn-site-api --no-pager
 journalctl -u vpn-site-api -n 100 --no-pager
 ```
+

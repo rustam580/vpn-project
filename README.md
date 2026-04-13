@@ -1,21 +1,21 @@
-# VPN Bot + Marzban
+﻿# VPN Bot + Marzban
 
-Бот выдает VPN-подписки из Marzban и умеет продлевать доступ после оплаты.
+Р‘РѕС‚ РІС‹РґР°РµС‚ VPN-РїРѕРґРїРёСЃРєРё РёР· Marzban Рё СѓРјРµРµС‚ РїСЂРѕРґР»РµРІР°С‚СЊ РґРѕСЃС‚СѓРї РїРѕСЃР»Рµ РѕРїР»Р°С‚С‹.
 
-## Что есть в боте
-- `🔑 Получить подписку`
-- `💳 Купить доступ` (CryptoBot auto / Карта YooKassa)
-- `📊 Мой статус` (срок, сколько осталось, трафик)
-- `❓ FAQ`
-- `🆘 Поддержка`
+## Р§С‚Рѕ РµСЃС‚СЊ РІ Р±РѕС‚Рµ
+- `рџ”‘ РџРѕР»СѓС‡РёС‚СЊ РїРѕРґРїРёСЃРєСѓ`
+- `рџ’і РљСѓРїРёС‚СЊ РґРѕСЃС‚СѓРї` (CryptoBot auto / РљР°СЂС‚Р° YooKassa)
+- `рџ“Љ РњРѕР№ СЃС‚Р°С‚СѓСЃ` (СЃСЂРѕРє, СЃРєРѕР»СЊРєРѕ РѕСЃС‚Р°Р»РѕСЃСЊ, С‚СЂР°С„РёРє)
+- `вќ“ FAQ`
+- `рџ† РџРѕРґРґРµСЂР¶РєР°`
 
-Админ-команды:
+РђРґРјРёРЅ-РєРѕРјР°РЅРґС‹:
 - `/admin_stats`
 - `/grant <telegram_id> <days> <gb>`
 - `/disable <telegram_id>`
 - `/link <telegram_id> <marzban_username>`
 
-## Быстрый запуск
+## Р‘С‹СЃС‚СЂС‹Р№ Р·Р°РїСѓСЃРє
 ```bash
 cd /opt/vpn-bot
 python3 -m venv .venv
@@ -26,7 +26,7 @@ nano .env
 python bot.py
 ```
 
-## Запуск как сервис
+## Р—Р°РїСѓСЃРє РєР°Рє СЃРµСЂРІРёСЃ
 ```bash
 cp deploy/vpn-bot.service.example /etc/systemd/system/vpn-bot.service
 systemctl daemon-reload
@@ -35,55 +35,56 @@ systemctl status vpn-bot
 journalctl -u vpn-bot -f
 ```
 
-## Важные переменные `.env`
+## Р’Р°Р¶РЅС‹Рµ РїРµСЂРµРјРµРЅРЅС‹Рµ `.env`
 - `TRIAL_DAYS=1`
-- `TRIAL_GB=0` (безлимит)
+- `TRIAL_GB=0` (Р±РµР·Р»РёРјРёС‚)
 - `PAY_DAYS=30`
-- `PAY_GB=0` (безлимит)
+- `PAY_GB=0` (Р±РµР·Р»РёРјРёС‚)
 - `PAY_RUB=99`
 
-Поддержка:
-- `SUPPORT_USERNAME=your_support_username`
-- `SUPPORT_TEXT=Напишите нам, поможем с подключением и оплатой.`
+РџРѕРґРґРµСЂР¶РєР°:
+- `SUPPORT_USERNAME=RootVPN_support_1`
+- `SUPPORT_TEXT=РќР°РїРёС€РёС‚Рµ РЅР°Рј, РїРѕРјРѕР¶РµРј СЃ РїРѕРґРєР»СЋС‡РµРЅРёРµРј Рё РѕРїР»Р°С‚РѕР№.`
 
-Оплата:
+РћРїР»Р°С‚Р°:
 - CryptoBot: `CRYPTOBOT_TOKEN`
-- Автопроверка CryptoBot: `CRYPTOBOT_POLL_SECONDS` (по умолчанию 45 сек)
-- Карта YooKassa:
+- РђРІС‚РѕРїСЂРѕРІРµСЂРєР° CryptoBot: `CRYPTOBOT_POLL_SECONDS` (РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ 45 СЃРµРє)
+- РљР°СЂС‚Р° YooKassa:
   - `YOOKASSA_SHOP_ID`
   - `YOOKASSA_SECRET_KEY`
   - `YOOKASSA_RETURN_URL`
-- Anti-stuck для `processing`: `PAYMENT_PROCESSING_REQUEUE_SECONDS` (по умолчанию 600 сек)
+- Anti-stuck РґР»СЏ `processing`: `PAYMENT_PROCESSING_REQUEUE_SECONDS` (РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ 600 СЃРµРє)
 
-Миграция на подписки (дожим):
-- `SUB_MIGRATION_REMINDER_ENABLED` — включить мягкие напоминания не перешедшим
-- `SUB_MIGRATION_REMINDER_INTERVAL_SEC` — период проверки
-- `SUB_MIGRATION_REMINDER_COOLDOWN_HOURS` — защита от повторных напоминаний
-- `SUBSCRIPTION_HITS_RETENTION_DAYS` — хранение статистики перехода на подписки (дней)
+РњРёРіСЂР°С†РёСЏ РЅР° РїРѕРґРїРёСЃРєРё (РґРѕР¶РёРј):
+- `SUB_MIGRATION_REMINDER_ENABLED` вЂ” РІРєР»СЋС‡РёС‚СЊ РјСЏРіРєРёРµ РЅР°РїРѕРјРёРЅР°РЅРёСЏ РЅРµ РїРµСЂРµС€РµРґС€РёРј
+- `SUB_MIGRATION_REMINDER_INTERVAL_SEC` вЂ” РїРµСЂРёРѕРґ РїСЂРѕРІРµСЂРєРё
+- `SUB_MIGRATION_REMINDER_COOLDOWN_HOURS` вЂ” Р·Р°С‰РёС‚Р° РѕС‚ РїРѕРІС‚РѕСЂРЅС‹С… РЅР°РїРѕРјРёРЅР°РЅРёР№
+- `SUBSCRIPTION_HITS_RETENTION_DAYS` вЂ” С…СЂР°РЅРµРЅРёРµ СЃС‚Р°С‚РёСЃС‚РёРєРё РїРµСЂРµС…РѕРґР° РЅР° РїРѕРґРїРёСЃРєРё (РґРЅРµР№)
 
-## Панель Marzban
-Открывайте:
+## РџР°РЅРµР»СЊ Marzban
+РћС‚РєСЂС‹РІР°Р№С‚Рµ:
 - `http://<server_ip>/dashboard/`
 
-Если забыли админ-доступ:
+Р•СЃР»Рё Р·Р°Р±С‹Р»Рё Р°РґРјРёРЅ-РґРѕСЃС‚СѓРї:
 ```bash
 cd /opt/marzban
 docker compose exec marzban marzban cli admin create --sudo
 ```
 
-## Обновление бота на сервере
-1. Замените `bot.py` и `.env` при необходимости.
-2. Перезапустите:
+## РћР±РЅРѕРІР»РµРЅРёРµ Р±РѕС‚Р° РЅР° СЃРµСЂРІРµСЂРµ
+1. Р—Р°РјРµРЅРёС‚Рµ `bot.py` Рё `.env` РїСЂРё РЅРµРѕР±С…РѕРґРёРјРѕСЃС‚Рё.
+2. РџРµСЂРµР·Р°РїСѓСЃС‚РёС‚Рµ:
 ```bash
 systemctl restart vpn-bot
 journalctl -u vpn-bot -n 50 --no-pager
 ```
 
-## Опционально: Gateway для подписок
-Если Marzban отдает дубли в подписке, включите локальный gateway:
-- сервис: `deploy/vpn-sub-gateway.service.example`
-- описание и команды: `docs/subscription-gateway.md`
+## РћРїС†РёРѕРЅР°Р»СЊРЅРѕ: Gateway РґР»СЏ РїРѕРґРїРёСЃРѕРє
+Р•СЃР»Рё Marzban РѕС‚РґР°РµС‚ РґСѓР±Р»Рё РІ РїРѕРґРїРёСЃРєРµ, РІРєР»СЋС‡РёС‚Рµ Р»РѕРєР°Р»СЊРЅС‹Р№ gateway:
+- СЃРµСЂРІРёСЃ: `deploy/vpn-sub-gateway.service.example`
+- РѕРїРёСЃР°РЅРёРµ Рё РєРѕРјР°РЅРґС‹: `docs/subscription-gateway.md`
 
-## Опционально: Website
-- Статический сайт лежит в `site/`
-- Деплой и Caddy-конфиг: `docs/website.md`
+## РћРїС†РёРѕРЅР°Р»СЊРЅРѕ: Website
+- РЎС‚Р°С‚РёС‡РµСЃРєРёР№ СЃР°Р№С‚ Р»РµР¶РёС‚ РІ `site/`
+- Р”РµРїР»РѕР№ Рё Caddy-РєРѕРЅС„РёРі: `docs/website.md`
+
