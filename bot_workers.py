@@ -5,6 +5,8 @@ import logging
 import time
 from typing import Any
 
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramNotFound
+
 
 def auto_renew_plan(settings: Any, *, find_plan_fn: Any) -> Any:
     if settings.auto_renew_invoice_plan_key:
@@ -210,6 +212,12 @@ async def subscription_migration_worker(
                     text += f"\n\nЕсли нужна помощь: {support_link}"
                 try:
                     await bot.send_message(tg_id, text)
+                except (TelegramForbiddenError, TelegramNotFound, TelegramBadRequest) as exc:
+                    logging.info(
+                        "Sub migration worker: skipped tg=%s (%s)",
+                        tg_id,
+                        exc.__class__.__name__,
+                    )
                 except Exception:
                     logging.exception(
                         "Sub migration worker: failed to send tg=%s",
