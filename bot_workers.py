@@ -27,6 +27,11 @@ def auto_renew_provider(settings: Any) -> str | None:
     return None
 
 
+def subscription_migration_mark_bucket(*, now_ts: int, cooldown_hours: int) -> int:
+    seconds = max(1, int(cooldown_hours)) * 3600
+    return (int(now_ts) // seconds) * seconds
+
+
 async def cryptobot_auto_worker(
     *,
     settings: Any,
@@ -146,6 +151,93 @@ async def cryptobot_auto_worker(
                 )
             except Exception:
                 logging.exception("Auto crypto: worker alert notify failed")
+
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval)
+        except asyncio.TimeoutError:
+            pass
+
+
+async def subscription_migration_worker(
+    *,
+    settings: Any,
+    repo: Any,
+    bot: Any,
+    stop_event: asyncio.Event,
+    notify_admin_worker_alert_fn: Any,
+) -> None:
+    if not settings.sub_migration_reminder_enabled:
+        return
+    if settings.config_delivery_mode == "direct":
+        return
+
+    interval = max(300, int(settings.sub_migration_reminder_interval_sec))
+    lookback_days = max(1, int(settings.sub_migration_reminder_lookback_days))
+    cooldown_hours = max(1, int(settings.sub_migration_reminder_cooldown_hours))
+    batch = max(1, min(200, int(settings.sub_migration_reminder_batch)))
+
+    support_link = ""
+    support_username = str(getattr(settings, "support_username", "") or "").strip().lstrip("@")
+    if support_username:
+        support_link = f"https://t.me/{support_username}"
+
+    while not stop_event.is_set():
+        try:
+            now = int(time.time())
+            mark_bucket = subscription_migration_mark_bucket(
+                now_ts=now,
+                cooldown_hours=cooldown_hours,
+            )
+            rows = await repo.list_subscription_non_adopters(days=lookback_days, limit=batch)
+            for row in rows:
+                tg_id = int(row["telegram_id"])
+                created = await repo.mark_notification_once(
+                    telegram_id=tg_id,
+                    device_id=0,
+                    mark_type="sub_migration_prompt",
+                    expire_ts=mark_bucket,
+                )
+                if not created:
+                    continue
+                text = (
+                    "🔄 Обновите подключение на формат подписки.\n\n"
+                    "1) Нажмите «🔑 Получить подписку»\n"
+                    "2) Импортируйте новую ссылку в VPN-клиент\n"
+                    "3) Удалите старый ручной конфиг\n\n"
+                    "После перехода обновления будут приходить автоматически."
+                )
+                if support_link:
+                    text += f"\n\nЕсли нужна помощь: {support_link}"
+                try:
+                    await bot.send_message(tg_id, text)
+                except Exception:
+                    logging.exception(
+                        "Sub migration worker: failed to send tg=%s",
+                        tg_id,
+                    )
+                    continue
+                try:
+                    await repo.log_event(
+                        event_type="sub_migration_notice",
+                        telegram_id=tg_id,
+                        event_meta={
+                            "lookback_days": lookback_days,
+                            "cooldown_hours": cooldown_hours,
+                        },
+                    )
+                except Exception:
+                    logging.exception("Sub migration worker: failed to track event tg=%s", tg_id)
+                await asyncio.sleep(0.05)
+        except Exception as exc:
+            logging.exception("Sub migration worker iteration failed")
+            try:
+                await notify_admin_worker_alert_fn(
+                    key="worker.sub_migration.iteration_failed",
+                    title="Subscription migration worker failed",
+                    details=str(exc),
+                )
+            except Exception:
+                logging.exception("Sub migration worker: worker alert notify failed")
 
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=interval)

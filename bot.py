@@ -108,6 +108,7 @@ from bot_workers import (
     auto_renew_plan as _auto_renew_plan,
     auto_renew_provider as _auto_renew_provider,
     cryptobot_auto_worker as _cryptobot_auto_worker,
+    subscription_migration_worker as _subscription_migration_worker,
     subscription_renewal_worker as _subscription_renewal_worker,
     yookassa_auto_worker as _yookassa_auto_worker,
 )
@@ -444,6 +445,11 @@ class Settings:
     auto_renew_invoice_provider: str
     auto_renew_invoice_plan_key: str
     auto_renew_invoice_target: str
+    sub_migration_reminder_enabled: bool
+    sub_migration_reminder_interval_sec: int
+    sub_migration_reminder_lookback_days: int
+    sub_migration_reminder_cooldown_hours: int
+    sub_migration_reminder_batch: int
 
     @staticmethod
     def load() -> "Settings":
@@ -558,6 +564,19 @@ class Settings:
             auto_renew_invoice_provider=auto_provider,
             auto_renew_invoice_plan_key=os.getenv("AUTO_RENEW_INVOICE_PLAN_KEY", "").strip(),
             auto_renew_invoice_target=auto_target,
+            sub_migration_reminder_enabled=env_bool("SUB_MIGRATION_REMINDER_ENABLED", False),
+            sub_migration_reminder_interval_sec=max(
+                300, int(os.getenv("SUB_MIGRATION_REMINDER_INTERVAL_SEC", "900"))
+            ),
+            sub_migration_reminder_lookback_days=max(
+                1, int(os.getenv("SUB_MIGRATION_REMINDER_LOOKBACK_DAYS", "7"))
+            ),
+            sub_migration_reminder_cooldown_hours=max(
+                1, int(os.getenv("SUB_MIGRATION_REMINDER_COOLDOWN_HOURS", "24"))
+            ),
+            sub_migration_reminder_batch=max(
+                1, min(200, int(os.getenv("SUB_MIGRATION_REMINDER_BATCH", "20")))
+            ),
         )
 
     def cryptobot_enabled(self) -> bool:
@@ -981,6 +1000,11 @@ ENV_EDITABLE_KEYS: dict[str, str] = {
     "AUTO_RENEW_INVOICE_PROVIDER": "str",
     "AUTO_RENEW_INVOICE_PLAN_KEY": "str",
     "AUTO_RENEW_INVOICE_TARGET": "str",
+    "SUB_MIGRATION_REMINDER_ENABLED": "bool",
+    "SUB_MIGRATION_REMINDER_INTERVAL_SEC": "int",
+    "SUB_MIGRATION_REMINDER_LOOKBACK_DAYS": "int",
+    "SUB_MIGRATION_REMINDER_COOLDOWN_HOURS": "int",
+    "SUB_MIGRATION_REMINDER_BATCH": "int",
 }
 
 
@@ -1730,6 +1754,23 @@ async def subscription_renewal_worker(
         pay_action_keyboard_fn=pay_action_keyboard,
         notify_admin_worker_alert_fn=notify_admin_worker_alert,
     )
+
+
+async def subscription_migration_worker(
+    *,
+    settings: Settings,
+    repo: Repo,
+    bot: Bot,
+    stop_event: asyncio.Event,
+) -> None:
+    await _subscription_migration_worker(
+        settings=settings,
+        repo=repo,
+        bot=bot,
+        stop_event=stop_event,
+        notify_admin_worker_alert_fn=notify_admin_worker_alert,
+    )
+
 
 def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Router:
     router = Router()
@@ -2684,6 +2725,14 @@ async def main() -> None:
             stop_event=stop_event,
         )
     )
+    sub_migration_task = asyncio.create_task(
+        subscription_migration_worker(
+            settings=settings,
+            repo=repo,
+            bot=bot,
+            stop_event=stop_event,
+        )
+    )
 
     try:
         await dp.start_polling(bot)
@@ -2694,6 +2743,7 @@ async def main() -> None:
         report_task.cancel()
         deploy_report_task.cancel()
         renewal_task.cancel()
+        sub_migration_task.cancel()
         try:
             await worker_task
         except asyncio.CancelledError:
@@ -2712,6 +2762,10 @@ async def main() -> None:
             pass
         try:
             await renewal_task
+        except asyncio.CancelledError:
+            pass
+        try:
+            await sub_migration_task
         except asyncio.CancelledError:
             pass
         await marzban.close()

@@ -55,6 +55,11 @@ journalctl -u vpn-bot -f
   - `YOOKASSA_RETURN_URL`
 - Anti-stuck для `processing`: `PAYMENT_PROCESSING_REQUEUE_SECONDS` (по умолчанию 600 сек)
 
+Миграция на подписки (дожим):
+- `SUB_MIGRATION_REMINDER_ENABLED` — включить мягкие напоминания не перешедшим
+- `SUB_MIGRATION_REMINDER_INTERVAL_SEC` — период проверки
+- `SUB_MIGRATION_REMINDER_COOLDOWN_HOURS` — защита от повторных напоминаний
+
 ## Панель Marzban
 Открывайте:
 - `http://<server_ip>/dashboard/`
