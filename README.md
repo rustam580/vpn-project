@@ -83,3 +83,7 @@ journalctl -u vpn-bot -n 50 --no-pager
 Если Marzban отдает дубли в подписке, включите локальный gateway:
 - сервис: `deploy/vpn-sub-gateway.service.example`
 - описание и команды: `docs/subscription-gateway.md`
+
+## Опционально: Website
+- Статический сайт лежит в `site/`
+- Деплой и Caddy-конфиг: `docs/website.md`

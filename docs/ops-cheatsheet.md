@@ -21,6 +21,7 @@
 - Status: `sudo systemctl status caddy --no-pager`
 - Reload: `sudo systemctl reload caddy`
 - Config: `/etc/caddy/Caddyfile`
+- Site health: `curl -I https://rootvpn.tech`
 
 ## Deploy
 - Run: `sudo /usr/local/sbin/vpn-ops-deploy`
