@@ -450,6 +450,7 @@ class Settings:
     sub_migration_reminder_lookback_days: int
     sub_migration_reminder_cooldown_hours: int
     sub_migration_reminder_batch: int
+    subscription_hits_retention_days: int
 
     @staticmethod
     def load() -> "Settings":
@@ -576,6 +577,9 @@ class Settings:
             ),
             sub_migration_reminder_batch=max(
                 1, min(200, int(os.getenv("SUB_MIGRATION_REMINDER_BATCH", "20")))
+            ),
+            subscription_hits_retention_days=max(
+                7, int(os.getenv("SUBSCRIPTION_HITS_RETENTION_DAYS", "60"))
             ),
         )
 
@@ -1005,6 +1009,7 @@ ENV_EDITABLE_KEYS: dict[str, str] = {
     "SUB_MIGRATION_REMINDER_LOOKBACK_DAYS": "int",
     "SUB_MIGRATION_REMINDER_COOLDOWN_HOURS": "int",
     "SUB_MIGRATION_REMINDER_BATCH": "int",
+    "SUBSCRIPTION_HITS_RETENTION_DAYS": "int",
 }
 
 

@@ -203,6 +203,61 @@ async def test_notification_mark_is_deduplicated(repo) -> None:
     assert second is False
 
 
+async def test_delete_notification_mark_allows_retry(repo) -> None:
+    created = await repo.mark_notification_once(
+        telegram_id=9002,
+        device_id=0,
+        mark_type="sub_migration_prompt",
+        expire_ts=1700000000,
+    )
+    assert created is True
+    removed = await repo.delete_notification_mark(
+        telegram_id=9002,
+        device_id=0,
+        mark_type="sub_migration_prompt",
+        expire_ts=1700000000,
+    )
+    assert removed == 1
+    created_again = await repo.mark_notification_once(
+        telegram_id=9002,
+        device_id=0,
+        mark_type="sub_migration_prompt",
+        expire_ts=1700000000,
+    )
+    assert created_again is True
+
+
+async def test_prune_subscription_hits_removes_old_rows(repo, repo_conn) -> None:
+    now = int(time.time())
+    await repo_conn.execute(
+        """
+        INSERT INTO subscription_hits (
+            telegram_id, marzban_username, token, client_ip, user_agent,
+            raw_count, unique_count, was_deduped, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (9011, "tg_9011", "hash-old", "1.1.1.1", "ua-old", 2, 1, 1, now - 10 * 86400),
+    )
+    await repo_conn.execute(
+        """
+        INSERT INTO subscription_hits (
+            telegram_id, marzban_username, token, client_ip, user_agent,
+            raw_count, unique_count, was_deduped, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (9011, "tg_9011", "hash-new", "1.1.1.1", "ua-new", 1, 1, 0, now),
+    )
+    await repo_conn.commit()
+
+    removed = await repo.prune_subscription_hits(older_than_sec=3 * 86400)
+    assert removed == 1
+
+    cur = await repo_conn.execute("SELECT token FROM subscription_hits ORDER BY created_at ASC")
+    rows = await cur.fetchall()
+    await cur.close()
+    assert [str(row["token"]) for row in rows] == ["hash-new"]
+
+
 async def test_has_open_plan_payment_detects_pending(repo) -> None:
     tg_id = 9010
     assert (

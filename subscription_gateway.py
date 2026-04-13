@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import logging
 import os
 import re
@@ -156,6 +157,9 @@ def _log_subscription_hit(
 ) -> None:
     if not username:
         return
+    token_hash = ""
+    if token:
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
     try:
         conn = sqlite3.connect(db_path, timeout=5)
         try:
@@ -170,7 +174,7 @@ def _log_subscription_hit(
                 (
                     tg_id,
                     username,
-                    token,
+                    token_hash,
                     client_ip[:120],
                     user_agent[:300],
                     int(raw_count),

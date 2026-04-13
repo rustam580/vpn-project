@@ -223,6 +223,18 @@ async def subscription_migration_worker(
                         "Sub migration worker: failed to send tg=%s",
                         tg_id,
                     )
+                    try:
+                        await repo.delete_notification_mark(
+                            telegram_id=tg_id,
+                            device_id=0,
+                            mark_type="sub_migration_prompt",
+                            expire_ts=mark_bucket,
+                        )
+                    except Exception:
+                        logging.exception(
+                            "Sub migration worker: failed to rollback notification mark tg=%s",
+                            tg_id,
+                        )
                     continue
                 try:
                     await repo.log_event(
@@ -402,6 +414,13 @@ async def subscription_renewal_worker(
                     await repo.prune_notification_marks(older_than_sec=180 * 86400)
                 except Exception:
                     logging.exception("Renewal worker: prune notification marks failed")
+                try:
+                    await repo.prune_subscription_hits(
+                        older_than_sec=max(1, int(getattr(settings, "subscription_hits_retention_days", 60)))
+                        * 86400
+                    )
+                except Exception:
+                    logging.exception("Renewal worker: prune subscription hits failed")
                 last_prune = now
 
             users = await repo.list_users()

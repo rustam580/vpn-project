@@ -59,6 +59,7 @@ journalctl -u vpn-bot -f
 - `SUB_MIGRATION_REMINDER_ENABLED` — включить мягкие напоминания не перешедшим
 - `SUB_MIGRATION_REMINDER_INTERVAL_SEC` — период проверки
 - `SUB_MIGRATION_REMINDER_COOLDOWN_HOURS` — защита от повторных напоминаний
+- `SUBSCRIPTION_HITS_RETENTION_DAYS` — хранение статистики перехода на подписки (дней)
 
 ## Панель Marzban
 Открывайте:

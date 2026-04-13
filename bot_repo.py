@@ -604,6 +604,43 @@ class Repo:
         await self.conn.commit()
         return int(cur.rowcount or 0)
 
+    async def delete_notification_mark(
+        self,
+        *,
+        telegram_id: int,
+        device_id: int,
+        mark_type: str,
+        expire_ts: int,
+    ) -> int:
+        assert self.conn is not None
+        cur = await self.conn.execute(
+            """
+            DELETE FROM notification_marks
+            WHERE telegram_id = ?
+              AND device_id = ?
+              AND mark_type = ?
+              AND expire_ts = ?
+            """,
+            (
+                int(telegram_id),
+                int(device_id),
+                str(mark_type).strip()[:80],
+                int(expire_ts),
+            ),
+        )
+        await self.conn.commit()
+        return int(cur.rowcount or 0)
+
+    async def prune_subscription_hits(self, *, older_than_sec: int) -> int:
+        assert self.conn is not None
+        cutoff = int(time.time()) - max(86400, older_than_sec)
+        cur = await self.conn.execute(
+            "DELETE FROM subscription_hits WHERE created_at < ?",
+            (cutoff,),
+        )
+        await self.conn.commit()
+        return int(cur.rowcount or 0)
+
     async def bind_referrer(self, invited_telegram_id: int, referrer_telegram_id: int) -> str:
         assert self.conn is not None
         if invited_telegram_id == referrer_telegram_id:
