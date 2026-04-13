@@ -1,33 +1,33 @@
-# Website (RootVPN)
+# Сайт RootVPN
 
-This project now includes a static website in `site/`.
+В проект добавлен статический сайт в папке `site/`.
 
-## Local preview
+## Локальный предпросмотр
 
 ```bash
 cd /opt/vpn-bot/site
 python3 -m http.server 8088
 ```
 
-Open:
+Открыть в браузере:
 - `http://127.0.0.1:8088`
 
-## Production deploy with Caddy
+## Деплой в прод через Caddy
 
-1) Ensure files are on server:
+1. Обновить код на сервере:
 
 ```bash
 cd /opt/vpn-bot
 git pull --ff-only
 ```
 
-2) Backup Caddy config:
+2. Сделать бэкап Caddy-конфига:
 
 ```bash
 cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak-$(date +%F-%H%M%S)
 ```
 
-3) Add site block (example):
+3. Добавить блоки в `/etc/caddy/Caddyfile`:
 
 ```caddyfile
 rootvpn.tech, www.rootvpn.tech {
@@ -44,14 +44,14 @@ sub.rootvpn.tech:8443 {
 }
 ```
 
-4) Validate and reload:
+4. Проверить и применить конфиг:
 
 ```bash
 caddy validate --config /etc/caddy/Caddyfile
 systemctl reload caddy
 ```
 
-5) Verify:
+5. Проверить доступность:
 
 ```bash
 curl -I https://rootvpn.tech
@@ -59,8 +59,8 @@ curl -I https://www.rootvpn.tech
 curl -I https://sub.rootvpn.tech:8443/health
 ```
 
-## Notes
+## Важно
 
-- Static site changes are instant after `git pull` (no Python restart required).
-- Update Telegram links inside `site/index.html` if your bot/channel/support links change.
-- Keep `sub.rootvpn.tech:8443` separate for subscription delivery.
+- Сайт статический: после `git pull` он обновляется без перезапуска Python-бота.
+- Если меняются ссылки на бота/канал/поддержку, обновляйте их в `site/index.html`.
+- `sub.rootvpn.tech:8443` оставляем отдельным, это endpoint подписок.
