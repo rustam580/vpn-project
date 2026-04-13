@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>RootVPN — быстрый и стабильный VPN</title>
-  <meta name="description" content="RootVPN: быстрый VPN с удобной оплатой и поддержкой в Telegram. Подписка, автообновление, подключение за 1 минуту.">
+  <meta name="description" content="RootVPN: самостоятельный сайт для покупки VPN-доступа, оплата и выдача подписки сразу после платежа.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -17,12 +17,13 @@
   <header class="topbar">
     <div class="container topbar-inner">
       <a class="brand" href="#top">
-        <img class="brand-logo" src="assets/rootvpn-logo.png" alt="RootVPN logo">
+        <img class="brand-logo" src="assets/rootvpn-logo.png" alt="Логотип RootVPN">
         <span>RootVPN</span>
       </a>
       <nav class="topnav">
         <a href="#plans">Тарифы</a>
-        <a href="#how">Как подключиться</a>
+        <a href="#checkout">Купить на сайте</a>
+        <a href="#instructions">Инструкция</a>
         <a href="#faq">FAQ</a>
       </nav>
       <a class="btn btn-sm" href="https://t.me/VPNrobotBOT" target="_blank" rel="noopener">Открыть бота</a>
@@ -34,31 +35,31 @@
       <div class="container hero-grid">
         <div>
           <p class="eyebrow">ROOTVPN</p>
-          <h1>Быстрый VPN без лишней сложности</h1>
+          <h1>VPN без лишних шагов: сайт + бот</h1>
           <p class="lead">
-            Подключение за 1 минуту, удобная подписка, понятная поддержка.
-            Всё управление доступом уже в Telegram и теперь доступно через сайт.
+            Теперь доступ можно купить прямо на сайте, без Telegram.
+            После оплаты ссылка подписки выдается автоматически: импортируете в клиент и подключаетесь.
           </p>
           <div class="hero-actions">
-            <a class="btn btn-primary" href="https://t.me/VPNrobotBOT" target="_blank" rel="noopener">🚀 Начать в боте</a>
-            <a class="btn btn-ghost" href="https://t.me/rootvpn_chnl" target="_blank" rel="noopener">📢 Наш канал</a>
+            <a class="btn btn-primary" href="#checkout">💳 Купить на сайте</a>
+            <a class="btn btn-ghost" href="https://t.me/VPNrobotBOT" target="_blank" rel="noopener">🤖 Купить в боте</a>
           </div>
           <ul class="trust-list">
-            <li>Стабильный доступ 24/7</li>
-            <li>Подписка и автообновление конфигов</li>
+            <li>Автовыдача доступа после оплаты</li>
+            <li>Подписка с автообновлением в клиенте</li>
             <li>Поддержка: <a href="https://t.me/lKRRworkl" target="_blank" rel="noopener">@lKRRworkl</a></li>
           </ul>
         </div>
         <aside class="hero-card">
-          <img class="hero-logo" src="assets/rootvpn-logo.png" alt="RootVPN logo">
-          <p class="hero-card-title">Что уже есть</p>
+          <img class="hero-logo" src="assets/rootvpn-logo.png" alt="Логотип RootVPN">
+          <p class="hero-card-title">Что вы получаете</p>
           <ul>
-            <li>Подписки вместо ручных ключей</li>
-            <li>Уведомления об окончании доступа</li>
-            <li>Оплата картой и crypto</li>
-            <li>Управление устройствами</li>
+            <li>Ссылку подписки</li>
+            <li>Импорт в Happ / V2Box</li>
+            <li>Удобное продление доступа</li>
+            <li>Инструкции и поддержку</li>
           </ul>
-          <a class="btn btn-primary btn-block" href="https://t.me/VPNrobotBOT" target="_blank" rel="noopener">Получить доступ</a>
+          <a class="btn btn-primary btn-block" href="#checkout">Перейти к оплате</a>
         </aside>
       </div>
     </section>
@@ -66,62 +67,101 @@
     <section class="plans" id="plans">
       <div class="container">
         <h2>Тарифы</h2>
-        <p class="section-sub">Оплата в боте. Подключение сразу после подтверждения платежа.</p>
+        <p class="section-sub">Актуальные тарифы загружаются автоматически в блоке оплаты ниже.</p>
         <div class="plans-grid">
           <article class="plan">
-            <p class="plan-name">1 месяц</p>
+            <p class="plan-name">Старт</p>
             <p class="plan-price">99 ₽</p>
             <ul>
               <li>1 устройство</li>
               <li>Безлимитный трафик</li>
               <li>Подписка с автообновлением</li>
             </ul>
-            <a class="btn btn-primary btn-block" href="https://t.me/VPNrobotBOT" target="_blank" rel="noopener">Выбрать</a>
           </article>
           <article class="plan plan-featured">
-            <p class="plan-badge">Хит</p>
-            <p class="plan-name">3 месяца</p>
+            <p class="plan-badge">Популярный</p>
+            <p class="plan-name">Оптимум</p>
             <p class="plan-price">279 ₽</p>
             <ul>
+              <li>Удобный пакет на несколько месяцев</li>
               <li>1 устройство</li>
-              <li>Выгоднее помесячной оплаты</li>
               <li>Поддержка в Telegram</li>
             </ul>
-            <a class="btn btn-primary btn-block" href="https://t.me/VPNrobotBOT" target="_blank" rel="noopener">Выбрать</a>
           </article>
           <article class="plan">
-            <p class="plan-name">12 месяцев</p>
+            <p class="plan-name">Годовой</p>
             <p class="plan-price">1099 ₽</p>
             <ul>
-              <li>Лучшая цена за период</li>
+              <li>Максимально выгодная цена</li>
               <li>1 устройство</li>
-              <li>Быстрое продление</li>
+              <li>Быстрое продление доступа</li>
             </ul>
-            <a class="btn btn-primary btn-block" href="https://t.me/VPNrobotBOT" target="_blank" rel="noopener">Выбрать</a>
           </article>
         </div>
       </div>
     </section>
 
-    <section class="how" id="how">
+    <section class="checkout" id="checkout">
       <div class="container">
-        <h2>Как подключиться</h2>
+        <h2>Купить на сайте</h2>
+        <p class="section-sub">Выберите тариф, оплатите заказ и нажмите «Проверить оплату».</p>
+
+        <div class="checkout-grid">
+          <form id="checkout-form" class="checkout-card">
+            <label class="field-label" for="plan-select">Тариф</label>
+            <select id="plan-select" class="field-input" required></select>
+
+            <label class="field-label" for="provider-select">Способ оплаты</label>
+            <select id="provider-select" class="field-input" required></select>
+
+            <label class="field-label" for="contact-input">Контакт (необязательно)</label>
+            <input id="contact-input" class="field-input" placeholder="@telegram или email">
+
+            <button type="submit" class="btn btn-primary btn-block">Создать заказ</button>
+            <p id="checkout-error" class="msg msg-error" aria-live="polite"></p>
+          </form>
+
+          <div class="checkout-card" id="order-card">
+            <p class="order-title">Ваш заказ</p>
+            <p>Order ID: <code id="order-id">—</code></p>
+            <p>Статус: <strong id="order-status">—</strong></p>
+            <div class="order-actions">
+              <a id="pay-link" class="btn btn-ghost btn-block" href="#" target="_blank" rel="noopener" hidden>Открыть оплату</a>
+              <button id="check-btn" class="btn btn-primary btn-block" type="button" disabled>Проверить оплату</button>
+            </div>
+            <p id="order-message" class="msg" aria-live="polite"></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="instructions" id="instructions">
+      <div class="container">
+        <h2>Инструкция после оплаты</h2>
         <div class="steps">
           <article class="step">
             <p class="step-num">01</p>
-            <h3>Откройте бота</h3>
-            <p>Нажмите «Получить подписку» и получите персональную ссылку.</p>
+            <h3>Получите ссылку подписки</h3>
+            <p>После статуса <b>paid_applied</b> сайт покажет вашу ссылку подписки.</p>
           </article>
           <article class="step">
             <p class="step-num">02</p>
             <h3>Импортируйте в клиент</h3>
-            <p>Вставьте ссылку подписки в VPN-клиент (Happ / V2Box).</p>
+            <p>Вставьте ссылку в Happ или V2Box как Subscription URL.</p>
           </article>
           <article class="step">
             <p class="step-num">03</p>
-            <h3>Пользуйтесь</h3>
-            <p>Продление и обновление конфигов происходит через подписку.</p>
+            <h3>Если Happ не импортирует</h3>
+            <p>Settings → Dev Settings → Enable for all configurations.</p>
           </article>
+        </div>
+
+        <div id="delivery-box" class="delivery-box" hidden>
+          <p class="delivery-title">Доступ выдан ✅</p>
+          <label class="field-label" for="sub-url">Ссылка подписки</label>
+          <textarea id="sub-url" class="field-input code-field" rows="3" readonly></textarea>
+          <button id="copy-sub-url" class="btn btn-ghost" type="button">Скопировать ссылку</button>
+          <p id="copy-msg" class="msg" aria-live="polite"></p>
         </div>
       </div>
     </section>
@@ -130,16 +170,16 @@
       <div class="container">
         <h2>FAQ</h2>
         <details>
-          <summary>Можно ли подключить несколько устройств?</summary>
-          <p>Да. В боте есть покупка и управление дополнительными устройствами.</p>
+          <summary>Можно ли купить без Telegram?</summary>
+          <p>Да. Сайт работает как отдельный канал продаж: оплата и выдача доступа доступны прямо здесь.</p>
         </details>
         <details>
-          <summary>Что делать, если не подключается?</summary>
-          <p>Напишите в поддержку: <a href="https://t.me/lKRRworkl" target="_blank" rel="noopener">@lKRRworkl</a>.</p>
+          <summary>Платеж прошел, но доступ не выдался. Что делать?</summary>
+          <p>Нажмите «Проверить оплату» еще раз через 10-20 секунд. Если не помогло, напишите в поддержку <a href="https://t.me/lKRRworkl" target="_blank" rel="noopener">@lKRRworkl</a>.</p>
         </details>
         <details>
-          <summary>Как обновлять конфиги?</summary>
-          <p>Используйте ссылку подписки — клиент обновит конфиги автоматически.</p>
+          <summary>Сайт и бот можно использовать одновременно?</summary>
+          <p>Да, это параллельные каналы. Выбирайте тот, который удобнее.</p>
         </details>
       </div>
     </section>

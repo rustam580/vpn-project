@@ -75,6 +75,7 @@ async def yookassa_create_payment(
     *,
     amount_rub: float | None = None,
     description: str | None = None,
+    return_url: str | None = None,
 ) -> tuple[str, str]:
     amount = settings.pay_rub if amount_rub is None else float(amount_rub)
     desc = description or f"VPN {settings.pay_days}d {_plan_gb_for_desc(settings.pay_gb)}"
@@ -83,7 +84,10 @@ async def yookassa_create_payment(
         "capture": True,
         "description": desc,
         "metadata": {"telegram_id": str(telegram_id)},
-        "confirmation": {"type": "redirect", "return_url": settings.yookassa_return_url},
+        "confirmation": {
+            "type": "redirect",
+            "return_url": (return_url or settings.yookassa_return_url),
+        },
     }
     async with httpx.AsyncClient(base_url="https://api.yookassa.ru", timeout=20.0) as client:
         r = await client.post(

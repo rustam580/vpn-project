@@ -10,3 +10,4 @@ test_tmp/
 .tmppytest/
 tmp_pytest/
 pytest-cache-files-*/
+node_modules/

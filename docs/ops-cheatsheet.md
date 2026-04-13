@@ -11,6 +11,12 @@
 - Logs: `sudo journalctl -u vpn-sub-gateway -n 200 --no-pager`
 - Health: `curl -I https://sub.rootvpn.tech:8443/health`
 
+## Website API
+- Status: `sudo systemctl status vpn-site-api --no-pager`
+- Restart: `sudo systemctl restart vpn-site-api`
+- Logs: `sudo journalctl -u vpn-site-api -n 200 --no-pager`
+- Health: `curl -I https://rootvpn.tech/api/health`
+
 ## Marzban
 - Compose: `cd /opt/marzban`
 - Up: `sudo docker-compose up -d`

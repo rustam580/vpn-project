@@ -9,11 +9,12 @@ from typing import Any
 import aiosqlite
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "db" / "migrations"
-SCHEMA_VERSION_LATEST = 3
+SCHEMA_VERSION_LATEST = 4
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (1, "001_init.sql"),
     (2, "002_legacy_columns.sql"),
     (3, "003_subscription_hits.sql"),
+    (4, "004_web_orders.sql"),
 )
 
 
@@ -640,6 +641,98 @@ class Repo:
         )
         await self.conn.commit()
         return int(cur.rowcount or 0)
+
+    async def create_web_order(
+        self,
+        *,
+        order_id: str,
+        provider: str,
+        external_id: str,
+        status: str,
+        plan_key: str,
+        days: int,
+        gb: int,
+        amount_rub: float,
+        customer_contact: str,
+        pay_url: str,
+    ) -> None:
+        assert self.conn is not None
+        now = int(time.time())
+        await self.conn.execute(
+            """
+            INSERT INTO web_orders (
+                order_id, provider, external_id, status, plan_key, days, gb, amount_rub,
+                customer_contact, marzban_username, pay_url, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
+            ON CONFLICT(order_id) DO UPDATE SET
+                provider = excluded.provider,
+                external_id = excluded.external_id,
+                status = excluded.status,
+                plan_key = excluded.plan_key,
+                days = excluded.days,
+                gb = excluded.gb,
+                amount_rub = excluded.amount_rub,
+                customer_contact = excluded.customer_contact,
+                pay_url = excluded.pay_url,
+                updated_at = excluded.updated_at
+            """,
+            (
+                order_id,
+                provider,
+                external_id,
+                status,
+                plan_key,
+                int(days),
+                int(gb),
+                float(amount_rub),
+                customer_contact,
+                pay_url,
+                now,
+                now,
+            ),
+        )
+        await self.conn.commit()
+
+    async def get_web_order(self, order_id: str) -> dict[str, Any] | None:
+        assert self.conn is not None
+        c = await self.conn.execute(
+            """
+            SELECT
+                order_id, provider, external_id, status, plan_key, days, gb, amount_rub,
+                customer_contact, marzban_username, pay_url, created_at, updated_at
+            FROM web_orders
+            WHERE order_id = ?
+            LIMIT 1
+            """,
+            (order_id,),
+        )
+        row = await c.fetchone()
+        await c.close()
+        return dict(row) if row else None
+
+    async def set_web_order_status(self, order_id: str, status: str) -> None:
+        assert self.conn is not None
+        await self.conn.execute(
+            """
+            UPDATE web_orders
+            SET status = ?, updated_at = ?
+            WHERE order_id = ?
+            """,
+            (status, int(time.time()), order_id),
+        )
+        await self.conn.commit()
+
+    async def attach_web_order_access(self, *, order_id: str, marzban_username: str) -> None:
+        assert self.conn is not None
+        await self.conn.execute(
+            """
+            UPDATE web_orders
+            SET marzban_username = ?, updated_at = ?
+            WHERE order_id = ?
+            """,
+            (marzban_username, int(time.time()), order_id),
+        )
+        await self.conn.commit()
 
     async def bind_referrer(self, invited_telegram_id: int, referrer_telegram_id: int) -> str:
         assert self.conn is not None

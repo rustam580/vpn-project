@@ -310,6 +310,95 @@ h2 {
   line-height: 1.5;
 }
 
+.checkout {
+  padding: 42px 0;
+}
+
+.checkout-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.checkout-card {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  padding: 18px;
+}
+
+.field-label {
+  display: block;
+  margin: 0 0 8px;
+  color: #bbd6ef;
+  font-size: 14px;
+}
+
+.field-input {
+  width: 100%;
+  border: 1px solid rgba(116, 172, 242, 0.35);
+  border-radius: 12px;
+  background: rgba(8, 22, 40, 0.9);
+  color: #e5f2ff;
+  padding: 12px;
+  margin: 0 0 12px;
+  font: inherit;
+}
+
+.field-input:focus {
+  outline: none;
+  border-color: rgba(72, 211, 255, 0.8);
+  box-shadow: 0 0 0 2px rgba(72, 211, 255, 0.2);
+}
+
+.code-field {
+  min-height: 92px;
+  font-family: "IBM Plex Mono", "Consolas", monospace;
+  font-size: 13px;
+}
+
+.order-title {
+  margin: 0 0 8px;
+  color: #d6ecff;
+  font-weight: 700;
+}
+
+.order-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.msg {
+  margin: 10px 0 0;
+  font-size: 14px;
+  color: #aecdde;
+}
+
+.msg-error {
+  color: #ff9ba7;
+}
+
+.msg-ok {
+  color: #84f0c2;
+}
+
+.delivery-box {
+  margin-top: 16px;
+  border: 1px solid rgba(72, 242, 205, 0.42);
+  border-radius: 16px;
+  background: rgba(9, 35, 38, 0.62);
+  box-shadow: var(--shadow);
+  padding: 18px;
+}
+
+.delivery-title {
+  margin: 0 0 10px;
+  color: #baffee;
+  font-weight: 700;
+}
+
 .steps {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -380,7 +469,8 @@ h2 {
 @media (max-width: 960px) {
   .hero-grid,
   .plans-grid,
-  .steps {
+  .steps,
+  .checkout-grid {
     grid-template-columns: 1fr;
   }
 

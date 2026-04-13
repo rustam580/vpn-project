@@ -1,37 +1,62 @@
 # Сайт RootVPN
 
-В проект добавлен статический сайт в папке `site/`.
+Сайт в папке `site/` теперь работает как отдельная точка продаж:
+- пользователь оплачивает на сайте,
+- сайт проверяет оплату,
+- выдает ссылку подписки без Telegram.
 
-## Локальный предпросмотр
+## Что уже должно быть
 
-```bash
-cd /opt/vpn-bot/site
-python3 -m http.server 8088
-```
+- Бот развернут в `/opt/vpn-bot`
+- `sub.rootvpn.tech:8443` уже проксирует на `127.0.0.1:8010` (subscription gateway)
+- Домен `rootvpn.tech` направлен на сервер
 
-Открыть в браузере:
-- `http://127.0.0.1:8088`
-
-## Деплой в прод через Caddy
-
-1. Обновить код на сервере:
+## 1. Обновить код на сервере
 
 ```bash
 cd /opt/vpn-bot
 git pull --ff-only
 ```
 
-2. Сделать бэкап Caddy-конфига:
+## 2. Проверить `.env`
 
-```bash
-cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak-$(date +%F-%H%M%S)
+Добавьте/проверьте:
+
+```env
+WEBSITE_API_HOST=127.0.0.1
+WEBSITE_API_PORT=8011
+WEBSITE_PUBLIC_URL=https://rootvpn.tech
+WEBSITE_SUPPORT_URL=https://t.me/lKRRworkl
+WEBSITE_ENABLE_CRYPTO=true
 ```
 
-3. Добавить блоки в `/etc/caddy/Caddyfile`:
+## 3. Поднять API сайта как сервис
+
+```bash
+cp /opt/vpn-bot/deploy/vpn-site-api.service.example /etc/systemd/system/vpn-site-api.service
+systemctl daemon-reload
+systemctl enable --now vpn-site-api
+systemctl status vpn-site-api --no-pager
+```
+
+## 4. Настроить Caddy
+
+Откройте:
+
+```bash
+nano /etc/caddy/Caddyfile
+```
+
+Пример рабочего конфига (важно: блок `sub.rootvpn.tech:8443` должен быть только один раз):
 
 ```caddyfile
 rootvpn.tech, www.rootvpn.tech {
     root * /opt/vpn-bot/site
+
+    handle_path /api/* {
+        reverse_proxy 127.0.0.1:8011
+    }
+
     file_server
 }
 
@@ -44,23 +69,51 @@ sub.rootvpn.tech:8443 {
 }
 ```
 
-4. Проверить и применить конфиг:
+Проверка и применение:
 
 ```bash
 caddy validate --config /etc/caddy/Caddyfile
 systemctl reload caddy
+systemctl status caddy --no-pager
 ```
 
-5. Проверить доступность:
+## 5. Проверка
 
 ```bash
 curl -I https://rootvpn.tech
 curl -I https://www.rootvpn.tech
+curl -I https://rootvpn.tech/api/health
 curl -I https://sub.rootvpn.tech:8443/health
 ```
 
-## Важно
+Ожидаемо:
+- `rootvpn.tech` -> `200`
+- `/api/health` -> JSON `{"ok": true}`
+- `sub...:8443/health` -> `200`
 
-- Сайт статический: после `git pull` он обновляется без перезапуска Python-бота.
-- Если меняются ссылки на бота/канал/поддержку, обновляйте их в `site/index.html`.
-- `sub.rootvpn.tech:8443` оставляем отдельным, это endpoint подписок.
+## 6. Обновление контента сайта
+
+Если меняете цены/тексты/кнопки в `site/index.html`, `site/styles.css`, `site/site.js`:
+
+```bash
+cd /opt/vpn-bot
+git pull --ff-only
+```
+
+Перезапуск `vpn-bot` для этого не нужен. Достаточно `git pull` (и при изменении Caddy — `systemctl reload caddy`).
+
+## Частые проблемы
+
+1. `ambiguous site definition: sub.rootvpn.tech:8443`
+- В `Caddyfile` два одинаковых блока `sub.rootvpn.tech:8443`.
+- Оставьте только один.
+
+2. `www.rootvpn.tech` не открывается
+- Добавьте DNS-запись `A` для `www` на IP сервера.
+
+3. API не отвечает
+- Проверьте сервис:
+```bash
+systemctl status vpn-site-api --no-pager
+journalctl -u vpn-site-api -n 100 --no-pager
+```

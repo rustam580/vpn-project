@@ -360,3 +360,67 @@ async def test_repo_migrates_legacy_db(local_tmp_path) -> None:
         assert "device_name" in device_col_names
     finally:
         await migrated_repo.close()
+
+
+async def test_web_order_lifecycle(repo) -> None:
+    await repo.create_web_order(
+        order_id="ord-1",
+        provider="card",
+        external_id="pay-1",
+        status="pending",
+        plan_key="m1",
+        days=30,
+        gb=0,
+        amount_rub=99.0,
+        customer_contact="@user",
+        pay_url="https://pay.local/pay-1",
+    )
+
+    row = await repo.get_web_order("ord-1")
+    assert row is not None
+    assert row["provider"] == "card"
+    assert row["status"] == "pending"
+    assert row["marzban_username"] is None
+
+    await repo.set_web_order_status("ord-1", "succeeded")
+    await repo.attach_web_order_access(order_id="ord-1", marzban_username="web_ord_1")
+
+    row2 = await repo.get_web_order("ord-1")
+    assert row2 is not None
+    assert row2["status"] == "succeeded"
+    assert row2["marzban_username"] == "web_ord_1"
+
+
+async def test_web_order_upsert_by_order_id(repo) -> None:
+    await repo.create_web_order(
+        order_id="ord-2",
+        provider="card",
+        external_id="pay-2",
+        status="pending",
+        plan_key="m1",
+        days=30,
+        gb=0,
+        amount_rub=99.0,
+        customer_contact="first-contact",
+        pay_url="https://pay.local/pay-2",
+    )
+    await repo.create_web_order(
+        order_id="ord-2",
+        provider="crypto",
+        external_id="pay-2b",
+        status="paid",
+        plan_key="m3",
+        days=90,
+        gb=0,
+        amount_rub=279.0,
+        customer_contact="second-contact",
+        pay_url="https://pay.local/pay-2b",
+    )
+
+    row = await repo.get_web_order("ord-2")
+    assert row is not None
+    assert row["provider"] == "crypto"
+    assert row["external_id"] == "pay-2b"
+    assert row["status"] == "paid"
+    assert row["plan_key"] == "m3"
+    assert row["days"] == 90

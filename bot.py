@@ -1364,12 +1364,14 @@ async def yookassa_create_payment(
     *,
     amount_rub: float | None = None,
     description: str | None = None,
+    return_url: str | None = None,
 ) -> tuple[str, str]:
     return await ps_yookassa_create_payment(
         settings,
         telegram_id,
         amount_rub=amount_rub,
         description=description,
+        return_url=return_url,
     )
 
 
