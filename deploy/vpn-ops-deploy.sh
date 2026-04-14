@@ -16,7 +16,9 @@ fi
 
 restart_if_exists() {
   local svc="$1"
-  if systemctl list-unit-files | grep -q "^${svc}\.service"; then
+  local load_state
+  load_state="$(systemctl show -p LoadState --value "${svc}.service" 2>/dev/null || true)"
+  if [[ -n "$load_state" ]] && [[ "$load_state" != "not-found" ]]; then
     echo "==> Restart ${svc}"
     systemctl restart "${svc}"
   else

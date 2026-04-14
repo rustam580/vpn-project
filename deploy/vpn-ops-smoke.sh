@@ -50,7 +50,9 @@ _is_true() {
 _check_service_active() {
   local svc="$1"
   local required="$2"
-  if ! systemctl list-unit-files | grep -q "^${svc}\.service"; then
+  local load_state
+  load_state="$(systemctl show -p LoadState --value "${svc}.service" 2>/dev/null || true)"
+  if [[ -z "$load_state" ]] || [[ "$load_state" == "not-found" ]]; then
     if [[ "$required" == "1" ]]; then
       _fail "service ${svc}.service is not installed"
     fi
