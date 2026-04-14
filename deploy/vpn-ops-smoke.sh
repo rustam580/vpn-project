@@ -6,6 +6,8 @@ SMOKE_REQUIRE_WEBSITE_API="${SMOKE_REQUIRE_WEBSITE_API:-1}"
 SMOKE_REQUIRE_SUB_GATEWAY="${SMOKE_REQUIRE_SUB_GATEWAY:-1}"
 SMOKE_CHECK_PUBLIC_ROUTES="${SMOKE_CHECK_PUBLIC_ROUTES:-1}"
 SMOKE_INSECURE_TLS="${SMOKE_INSECURE_TLS:-0}"
+SMOKE_RETRY_ATTEMPTS="${SMOKE_RETRY_ATTEMPTS:-15}"
+SMOKE_RETRY_DELAY_SEC="${SMOKE_RETRY_DELAY_SEC:-1}"
 
 BOT_LOCAL_HEALTH_URL="${BOT_LOCAL_HEALTH_URL:-http://127.0.0.1:8000/api/system}"
 SITE_LOCAL_HEALTH_URL="${SITE_LOCAL_HEALTH_URL:-http://127.0.0.1:8011/api/health}"
@@ -74,8 +76,18 @@ _curl_json_check() {
   if _is_true "$SMOKE_INSECURE_TLS"; then
     extra+=("-k")
   fi
-  local body
-  body="$(curl -fsS --max-time 15 "${extra[@]}" "$url")" || _fail "HTTP check failed: $url"
+  local body=""
+  local attempt
+  for attempt in $(seq 1 "$SMOKE_RETRY_ATTEMPTS"); do
+    body="$(curl -fsS --max-time 15 "${extra[@]}" "$url" || true)"
+    if [[ -n "$body" ]]; then
+      break
+    fi
+    if [[ "$attempt" -lt "$SMOKE_RETRY_ATTEMPTS" ]]; then
+      sleep "$SMOKE_RETRY_DELAY_SEC"
+    fi
+  done
+  [[ -n "$body" ]] || _fail "HTTP check failed after retries: $url"
   if [[ -n "$must_contain" ]] && [[ "$body" != *"$must_contain"* ]]; then
     _fail "unexpected response for $url (missing '$must_contain')"
   fi
@@ -88,8 +100,17 @@ _curl_alive_check() {
   if _is_true "$SMOKE_INSECURE_TLS"; then
     extra+=("-k")
   fi
-  local code
-  code="$(curl -sS -o /dev/null --max-time 15 -w "%{http_code}" "${extra[@]}" "$url" || true)"
+  local code=""
+  local attempt
+  for attempt in $(seq 1 "$SMOKE_RETRY_ATTEMPTS"); do
+    code="$(curl -sS -o /dev/null --max-time 15 -w "%{http_code}" "${extra[@]}" "$url" || true)"
+    if [[ -n "$code" ]] && [[ "$code" != "000" ]]; then
+      break
+    fi
+    if [[ "$attempt" -lt "$SMOKE_RETRY_ATTEMPTS" ]]; then
+      sleep "$SMOKE_RETRY_DELAY_SEC"
+    fi
+  done
   case "$code" in
     200|201|202|204|301|302|307|308|401|403)
       _ok "HTTP alive check passed: $url (status=$code)"
