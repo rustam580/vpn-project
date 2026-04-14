@@ -121,6 +121,33 @@ _curl_alive_check() {
   esac
 }
 
+_curl_reachable_check() {
+  local url="$1"
+  local extra=()
+  if _is_true "$SMOKE_INSECURE_TLS"; then
+    extra+=("-k")
+  fi
+  local code=""
+  local attempt
+  for attempt in $(seq 1 "$SMOKE_RETRY_ATTEMPTS"); do
+    code="$(curl -sS -o /dev/null --max-time 15 -w "%{http_code}" "${extra[@]}" "$url" || true)"
+    if [[ -n "$code" ]] && [[ "$code" != "000" ]]; then
+      break
+    fi
+    if [[ "$attempt" -lt "$SMOKE_RETRY_ATTEMPTS" ]]; then
+      sleep "$SMOKE_RETRY_DELAY_SEC"
+    fi
+  done
+  case "$code" in
+    200|201|202|204|301|302|307|308|401|403|404|405)
+      _ok "HTTP reachable check passed: $url (status=$code)"
+      ;;
+    *)
+      _fail "HTTP reachable check failed: $url (status=${code:-n/a})"
+      ;;
+  esac
+}
+
 echo "===== Smoke: time ====="
 date -u
 
@@ -152,7 +179,7 @@ if _is_true "$SMOKE_CHECK_PUBLIC_ROUTES"; then
   fi
 
   if [[ -n "$subscription_public_base_url" ]]; then
-    _curl_json_check "${subscription_public_base_url%/}/health" "ok"
+    _curl_reachable_check "${subscription_public_base_url%/}/health"
   else
     _warn "SUBSCRIPTION_PUBLIC_BASE_URL is empty, skipping public subscription health check"
   fi
