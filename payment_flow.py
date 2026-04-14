@@ -5,6 +5,7 @@ from typing import Any, Awaitable, Callable
 
 CheckerFn = Callable[[Any, str], Awaitable[str]]
 ApplyFn = Callable[..., Awaitable[tuple[dict[str, Any], str, str | None]]]
+BYTES_IN_GB = 1024**3
 
 
 async def apply_paid_payment(
@@ -25,12 +26,14 @@ async def apply_paid_payment(
 ) -> tuple[dict[str, Any], str, str | None]:
     purpose = str(payment.get("purpose") or "plan")
     if purpose == "device_add":
+        days = int(payment.get("days") or 0)
+        gb = int(payment.get("gb") or 0)
         slot = int(payment.get("device_slot") or 0)
         if strict_device_slot and (slot <= 0 or (settings.device_limit > 0 and slot > settings.device_limit)):
             await repo.set_payment_status(provider, external_id, "failed")
             return {}, purpose, "❌ Некорректный слот устройства."
         if slot > 0:
-            _, updated_user, _ = await ensure_device_fn(
+            username, updated_user, _ = await ensure_device_fn(
                 telegram_id=int(payment["telegram_id"]),
                 device_id=slot,
                 repo=repo,
@@ -38,7 +41,30 @@ async def apply_paid_payment(
                 settings=settings,
                 create_if_missing=True,
             )
+            if not username:
+                await repo.set_payment_status(provider, external_id, "failed")
+                return {}, purpose, "❌ Не удалось создать устройство."
             updated = updated_user or {}
+            if days > 0 or gb != 0:
+                now = int(time.time())
+                current_expire = int((updated.get("expire") or 0))
+                target_expire = max(current_expire, now + days * 24 * 3600) if days > 0 else current_expire
+
+                current_limit = int((updated.get("data_limit") or 0))
+                if gb <= 0:
+                    target_limit = 0
+                else:
+                    base_limit = gb * BYTES_IN_GB
+                    target_limit = max(current_limit, base_limit) if current_limit > 0 else base_limit
+
+                updated = await marzban.modify_user(
+                    username,
+                    {
+                        "expire": target_expire,
+                        "data_limit": target_limit,
+                        "status": "active",
+                    },
+                )
         else:
             updated = {}
     elif purpose == "plan_device":
@@ -194,6 +220,13 @@ async def check_and_apply_payment(
 
     if purpose == "device_add":
         slot = int(payment.get("device_slot") or 0)
+        added_days = int(payment.get("days") or 0)
+        if added_days > 0:
+            return (
+                f"✅ Устройство {slot} добавлено, срок нового устройства: +{added_days} дней.\n"
+                f"Назовите его командой: /device_name {slot} Мой ноутбук",
+                updated,
+            )
         return (
             f"✅ Устройство {slot} добавлено.\n"
             f"Назовите его командой: /device_name {slot} Мой ноутбук",

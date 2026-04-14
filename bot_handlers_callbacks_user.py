@@ -169,7 +169,7 @@ def register_user_callback_handlers(*, router: Router, deps: UserCallbackDeps) -
             await callback.message.answer(
                 f"📱 Доп. устройство: {settings.device_add_rub:.2f} RUB.\n"
                 "Оплата добавляет только новый слот устройства.\n"
-                "Срок доступа не продлевается.\n"
+                f"Новое устройство получает +{max(0, int(settings.pay_days))} дней доступа.\n"
                 "После оплаты устройство появится автоматически.\n"
                 "Название можно задать через «Переименовать устройство».",
                 reply_markup=device_methods_keyboard(settings),
@@ -729,6 +729,9 @@ def register_user_callback_handlers(*, router: Router, deps: UserCallbackDeps) -
                 await callback.answer("Нет свободных слотов", show_alert=True)
                 return
 
+            device_days = max(0, int(getattr(settings, "pay_days", 30) or 0))
+            device_gb = int(getattr(settings, "pay_gb", 0) or 0)
+
             if provider == "crypto":
                 if not settings.cryptobot_enabled():
                     await callback.answer("CryptoBot не настроен", show_alert=True)
@@ -757,8 +760,8 @@ def register_user_callback_handlers(*, router: Router, deps: UserCallbackDeps) -
                 provider=provider,
                 external_id=external_id,
                 telegram_id=tg_id,
-                days=0,
-                gb=0,
+                days=device_days,
+                gb=device_gb,
                 amount_rub=settings.device_add_rub,
                 pay_url=pay_url,
                 status="pending",
@@ -779,7 +782,7 @@ def register_user_callback_handlers(*, router: Router, deps: UserCallbackDeps) -
                 f"✅ Платеж за устройство создан ({provider}).\n"
                 f"ID: {external_id}\n"
                 f"Слот: {slot}\n"
-                "Срок доступа не продлевается.\n"
+                f"Новое устройство получит +{device_days} дней доступа.\n"
                 "Важно: одна ссылка = одно устройство.",
                 reply_markup=pay_action_keyboard(provider, external_id, pay_url),
             )

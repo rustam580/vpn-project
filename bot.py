@@ -2364,7 +2364,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
         await message.answer(
             f"📱 Доп. устройство: {settings.device_add_rub:.2f} RUB.\n"
             "Оплата добавляет только новый слот устройства.\n"
-            "Срок доступа не продлевается.\n"
+            f"Новое устройство получает +{max(0, int(settings.pay_days))} дней доступа.\n"
             "После оплаты устройство появится автоматически.\n"
             "Название можно задать через «Переименовать устройство».",
             reply_markup=device_methods_keyboard(settings),
