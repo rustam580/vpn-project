@@ -35,9 +35,9 @@ fi
 
 echo "==> Install deps"
 if [[ -x .venv/bin/pip ]]; then
-  .venv/bin/pip install -U -r requirements.txt
+  .venv/bin/pip install -r requirements.txt
 else
-  python3 -m pip install -U -r requirements.txt
+  python3 -m pip install -r requirements.txt
 fi
 
 echo "==> Syntax check"

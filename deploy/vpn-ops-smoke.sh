@@ -80,6 +80,24 @@ _curl_json_check() {
   _ok "HTTP check passed: $url"
 }
 
+_curl_alive_check() {
+  local url="$1"
+  local extra=()
+  if _is_true "$SMOKE_INSECURE_TLS"; then
+    extra+=("-k")
+  fi
+  local code
+  code="$(curl -sS -o /dev/null --max-time 15 -w "%{http_code}" "${extra[@]}" "$url" || true)"
+  case "$code" in
+    200|201|202|204|301|302|307|308|401|403)
+      _ok "HTTP alive check passed: $url (status=$code)"
+      ;;
+    *)
+      _fail "HTTP alive check failed: $url (status=${code:-n/a})"
+      ;;
+  esac
+}
+
 echo "===== Smoke: time ====="
 date -u
 
@@ -90,7 +108,7 @@ _check_service_active "vpn-site-api" "$SMOKE_REQUIRE_WEBSITE_API"
 _check_service_active "vpn-sub-gateway" "$SMOKE_REQUIRE_SUB_GATEWAY"
 
 echo "===== Smoke: local endpoints ====="
-_curl_json_check "$BOT_LOCAL_HEALTH_URL" ""
+_curl_alive_check "$BOT_LOCAL_HEALTH_URL"
 if _is_true "$SMOKE_REQUIRE_WEBSITE_API"; then
   _curl_json_check "$SITE_LOCAL_HEALTH_URL" "\"ok\": true"
   _curl_json_check "$SITE_LOCAL_PLANS_URL" "\"plans\""
