@@ -115,7 +115,6 @@ def _build_delivery_payload(settings: bot.Settings, user: dict[str, Any]) -> dic
         _absolutize_delivery_link(settings, x)
         for x in bot.extract_subscription_links(
             user,
-            mode=settings.config_delivery_mode,
             public_base_url=settings.subscription_public_base_url,
         )
     ]
