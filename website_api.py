@@ -281,28 +281,40 @@ async def create_app() -> web.Application:
             logging.exception("Website checkout payment create failed")
             return _json_error(f"Не удалось создать платеж: {exc}", status=502)
 
-        await repo.create_web_order(
-            order_id=order_id,
-            provider=provider,
-            external_id=external_id,
-            status="pending",
-            plan_key=plan.key,
-            days=plan.days,
-            gb=plan.gb,
-            amount_rub=plan.rub,
-            customer_contact=contact,
-            pay_url=pay_url,
-        )
-        await repo.log_event(
-            event_type="web_order_created",
-            event_value=provider,
-            event_meta={
-                "order_id": order_id,
-                "external_id": external_id,
-                "plan_key": plan.key,
-                "amount_rub": plan.rub,
-            },
-        )
+        try:
+            await repo.create_web_order(
+                order_id=order_id,
+                provider=provider,
+                external_id=external_id,
+                status="pending",
+                plan_key=plan.key,
+                days=plan.days,
+                gb=plan.gb,
+                amount_rub=plan.rub,
+                customer_contact=contact,
+                pay_url=pay_url,
+            )
+            await repo.log_event(
+                event_type="web_order_created",
+                event_value=provider,
+                event_meta={
+                    "order_id": order_id,
+                    "external_id": external_id,
+                    "plan_key": plan.key,
+                    "amount_rub": plan.rub,
+                },
+            )
+        except Exception as exc:
+            logging.exception(
+                "Website checkout order persist failed: order_id=%s provider=%s external_id=%s",
+                order_id,
+                provider,
+                external_id,
+            )
+            return _json_error(
+                f"Не удалось сохранить заказ в БД. Напишите в поддержку и укажите Order ID: {order_id}. Причина: {exc}",
+                status=500,
+            )
         return web.json_response(
             {
                 "ok": True,
