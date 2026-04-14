@@ -28,6 +28,7 @@ class WebsiteRuntime:
     public_url: str
     support_url: str
     enable_crypto: bool
+    bot_username: str
 
     @staticmethod
     def load(settings: bot.Settings) -> "WebsiteRuntime":
@@ -40,12 +41,14 @@ class WebsiteRuntime:
         enable_crypto = (
             str(os.getenv("WEBSITE_ENABLE_CRYPTO", "true")).strip().lower() in {"1", "true", "yes", "on"}
         )
+        bot_username = str(os.getenv("WEBSITE_BOT_USERNAME", "")).strip().lstrip("@")
         return WebsiteRuntime(
             host=host,
             port=port,
             public_url=public_url,
             support_url=support_url,
             enable_crypto=enable_crypto,
+            bot_username=bot_username,
         )
 
 
@@ -365,6 +368,12 @@ async def create_app() -> web.Application:
                 return _json_error(f"Оплата принята, но выдача доступа не удалась: {exc}", status=502)
 
             delivery = _build_delivery_payload(settings, issued["user"])
+            tg_bind_payload = bot.build_web_bind_payload(order_id, bot_token=settings.bot_token)
+            tg_bind_url = (
+                f"https://t.me/{runtime.bot_username}?start={tg_bind_payload}"
+                if runtime.bot_username
+                else ""
+            )
             return web.json_response(
                 {
                     "ok": True,
@@ -374,6 +383,8 @@ async def create_app() -> web.Application:
                     "subscription_url": delivery["subscription_url"],
                     "subscription_links": delivery["subscription_links"],
                     "direct_links": delivery["direct_links"],
+                    "tg_bind_payload": tg_bind_payload,
+                    "tg_bind_url": tg_bind_url,
                     "support_url": runtime.support_url,
                 }
             )

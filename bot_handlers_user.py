@@ -16,12 +16,15 @@ class UserMessageDeps:
     guard_message_rate_limit: Any
     extract_start_payload: Any
     parse_referrer_from_payload: Any
+    parse_web_order_from_payload: Any
+    bind_web_order_fn: Any
     build_start_text: Any
     plan_gb_text: Any
     format_device_limit: Any
     keyboard_for_user: Any
     is_admin_fn: Any
     track_event: Any
+    bot_token: str
     enabled_payment_providers: Any
     get_bot_username: Any
     build_user_faq_text: Any
@@ -35,12 +38,15 @@ def register_user_message_handlers(*, router: Router, deps: UserMessageDeps) -> 
     guard_message_rate_limit = deps.guard_message_rate_limit
     extract_start_payload = deps.extract_start_payload
     parse_referrer_from_payload = deps.parse_referrer_from_payload
+    parse_web_order_from_payload = deps.parse_web_order_from_payload
+    bind_web_order_fn = deps.bind_web_order_fn
     build_start_text = deps.build_start_text
     plan_gb_text = deps.plan_gb_text
     format_device_limit = deps.format_device_limit
     keyboard_for_user = deps.keyboard_for_user
     is_admin_fn = deps.is_admin_fn
     track_event = deps.track_event
+    bot_token = deps.bot_token
     enabled_payment_providers = deps.enabled_payment_providers
     get_bot_username = deps.get_bot_username
     build_user_faq_text = deps.build_user_faq_text
@@ -54,6 +60,26 @@ def register_user_message_handlers(*, router: Router, deps: UserMessageDeps) -> 
         tg_id = int(message.from_user.id) if message.from_user else None
         if tg_id is not None:
             payload = extract_start_payload(message.text)
+            web_order_id = parse_web_order_from_payload(payload, bot_token=bot_token)
+            if web_order_id:
+                ok, bind_msg = await bind_web_order_fn(
+                    telegram_id=tg_id,
+                    order_id=web_order_id,
+                )
+                await message.answer(bind_msg)
+                if ok:
+                    await track_event(
+                        "web_order_bind_start_ok",
+                        telegram_id=tg_id,
+                        event_meta={"order_id": web_order_id},
+                    )
+                else:
+                    await track_event(
+                        "web_order_bind_start_failed",
+                        telegram_id=tg_id,
+                        event_meta={"order_id": web_order_id},
+                    )
+
             referrer_id = parse_referrer_from_payload(payload)
             if referrer_id is not None:
                 bind_result = await repo.bind_referrer(
