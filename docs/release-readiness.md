@@ -1,6 +1,6 @@
 # Release Readiness
 
-Last updated: 2026-04-02
+Last updated: 2026-04-15
 
 ## Goal
 This checklist is for "safe ad scaling": when incoming traffic grows and the bot must keep sales, delivery, and support stable.
@@ -30,8 +30,12 @@ This checklist is for "safe ad scaling": when incoming traffic grows and the bot
 2. Server deploy checks:
 - `git pull --ff-only`
 - `systemctl restart vpn-bot`
+- `systemctl restart vpn-site-api`
 - `systemctl is-active vpn-bot`
+- `systemctl is-active vpn-site-api`
 - `journalctl -u vpn-bot -n 80 --no-pager`
+- `journalctl -u vpn-site-api -n 80 --no-pager`
+- `curl -s http://127.0.0.1:8011/api/health`
 
 3. Backups:
 - Confirm both timers are active:
@@ -67,7 +71,8 @@ Use weekly summary in admin report to compare:
 2. Send one internal test payment (small amount).
 3. Validate:
 - payment status changes to `paid_applied`
-- user receives updated access message
+- user receives updated access message (bot flow)
+- website order returns subscription link (site flow)
 - admin receives payment notification
 
 4. Publish channel post with:
@@ -77,6 +82,23 @@ Use weekly summary in admin report to compare:
 
 5. Start first ad source with limited budget.
 6. Watch logs and admin alerts for 2-3 hours.
+
+## P1 Website/Subscription Checks
+1. Caddy routes are valid and non-duplicated:
+- one `sub.<domain>:8443` block only
+- `/api/*` proxied to `127.0.0.1:8011`
+
+2. Site API flow works:
+- `GET /api/plans`
+- `POST /api/checkout`
+- `GET /api/order/{order_id}`
+
+3. Subscription gateway health is OK:
+- `https://sub.<domain>:8443/health` returns `200`
+
+4. Telegram bind flow works for web order:
+- paid web order has `tg_bind_url`
+- `/start webbind_*` binds order to Telegram user
 
 ## P2 First 7 Days After Launch
 1. Daily check:

@@ -1,6 +1,6 @@
 ﻿# Project State
 
-Last updated: 2026-04-02
+Last updated: 2026-04-14
 
 ## Current Production
 - Server: Aeza VPS (USA)
@@ -10,6 +10,8 @@ Last updated: 2026-04-02
 
 ## Core Services
 - `vpn-bot.service` (aiogram polling)
+- `vpn-site-api.service` (website checkout/status API)
+- `vpn-sub-gateway.service` (subscription dedupe + hit logging)
 - Marzban (`127.0.0.1:8000`)
 - `caddy.service` (reverse proxy)
 - Backup timers: `vpn-bot-backup.timer`, `vpn-bot-restore-check.timer`
@@ -21,6 +23,8 @@ Last updated: 2026-04-02
 - Additional slot purchase is supported (`device_add`).
 - Referral program is active.
 - Renewal reminders and expired alerts are active.
+- Website standalone sales are active (`/api/checkout`, `/api/order/{id}`).
+- Paid web orders can be bound to Telegram via `/start webbind_*`.
 
 ## Payments
 - Providers in production: `card` (YooKassa), `crypto` (CryptoBot)
@@ -38,10 +42,14 @@ Last updated: 2026-04-02
 
 ## Operations
 - Deploy script: `/usr/local/sbin/vpn-ops-deploy`
+- Smoke script: `/usr/local/sbin/vpn-ops-smoke`
 - Deploy report file: `/opt/vpn-bot/deploy/last-deploy.log`
 - DB: `/opt/vpn-bot/data/bot.sqlite3`
 - DB migrations: `schema_version` + `db/migrations/*.sql` (auto-applied on start)
 - Backups: `/opt/backups/vpn-bot`
+- Website static files: `/opt/vpn-bot/site`
+- Website API local endpoint: `127.0.0.1:8011`
+- Subscription gateway local endpoint: `127.0.0.1:8010`
 
 ## Context Handoff Protocol (Do Not Skip)
 Use this sequence at the start of every new session:

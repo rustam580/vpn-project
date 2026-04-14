@@ -32,7 +32,10 @@
 ## Deploy
 - Run: `sudo /usr/local/sbin/vpn-ops-deploy`
 - Report file: `/opt/vpn-bot/deploy/last-deploy.log`
+- Smoke: `sudo /usr/local/sbin/vpn-ops-smoke`
 
 ## Quick Checks
 - Open panel: `http://77.110.125.105/dashboard/`
 - Local API: `curl -s http://127.0.0.1:8000/api/system`
+- Local site API: `curl -s http://127.0.0.1:8011/api/health`
+- Local sub gateway: `curl -s http://127.0.0.1:8010/health`

@@ -1,6 +1,6 @@
 # Runbook
 
-Last updated: 2026-03-22
+Last updated: 2026-04-15
 
 ## 1) Connect to Server
 Use SSH key auth (password auth is disabled).
@@ -23,9 +23,12 @@ Git-based flow (recommended): see `docs/git-setup.md`.
 ## 3) Fast Ops Shortcuts
 ```bash
 sudo vpn-ops-health
+sudo vpn-ops-smoke
 sudo vpn-ops-deploy
 sudo vpn-ops-backup-check
 ```
+
+`vpn-ops-deploy` now includes smoke checks after restart (bot/site API/subscription gateway).
 
 ## 4) Backup/Restore Check
 Automatic timers:
@@ -46,11 +49,13 @@ If bot is not responding:
 2. Check Marzban API local endpoint.
 3. Check outbound internet from server.
 4. Restart bot service once.
+5. Run smoke checks for bot+site+gateway.
 
 ```bash
 sudo systemctl status vpn-bot --no-pager
 sudo journalctl -u vpn-bot -n 120 --no-pager
 curl -I http://127.0.0.1:8000/dashboard/
+sudo vpn-ops-smoke
 ```
 
 ## 6) Payment Support Commands

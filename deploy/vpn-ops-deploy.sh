@@ -14,6 +14,16 @@ if [[ "${EUID}" -ne 0 ]]; then
   exit 1
 fi
 
+restart_if_exists() {
+  local svc="$1"
+  if systemctl list-unit-files | grep -q "^${svc}\.service"; then
+    echo "==> Restart ${svc}"
+    systemctl restart "${svc}"
+  else
+    echo "WARN: ${svc}.service not found, skipping restart"
+  fi
+}
+
 cd /opt/vpn-bot
 
 if [[ -d .git ]]; then
@@ -35,11 +45,22 @@ python3 scripts/compile_all.py
 
 echo "==> Restart vpn-bot"
 systemctl restart vpn-bot
+restart_if_exists vpn-site-api
+restart_if_exists vpn-sub-gateway
 
 echo "==> Service status"
 systemctl --no-pager --full status vpn-bot | sed -n '1,25p'
 
 echo "==> Recent logs"
 journalctl -u vpn-bot -n 60 --no-pager
+
+echo "==> Smoke checks"
+if [[ -x /usr/local/sbin/vpn-ops-smoke ]]; then
+  /usr/local/sbin/vpn-ops-smoke
+elif [[ -x /opt/vpn-bot/deploy/vpn-ops-smoke.sh ]]; then
+  /opt/vpn-bot/deploy/vpn-ops-smoke.sh
+else
+  echo "WARN: smoke script not found/executable, skipping"
+fi
 
 echo "OK: deploy done"
