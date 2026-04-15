@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 import os
 import time
@@ -8,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
+import httpx
 from aiohttp import web
 
 import bot
@@ -125,6 +127,53 @@ def _build_delivery_payload(settings: bot.Settings, user: dict[str, Any]) -> dic
         "subscription_links": subscription_links,
         "direct_links": direct_links,
     }
+
+
+async def _notify_admin_web_order_paid(
+    *,
+    settings: bot.Settings,
+    order: dict[str, Any],
+    marzban_username: str,
+) -> None:
+    if not settings.bot_token or not settings.admin_ids:
+        return
+
+    order_id = str(order.get("order_id") or "")
+    provider = str(order.get("provider") or "")
+    plan_key = str(order.get("plan_key") or "")
+    amount_rub = float(order.get("amount_rub") or 0)
+    contact = str(order.get("customer_contact") or "").strip()
+    external_id = str(order.get("external_id") or "")
+
+    lines = [
+        "🌐 Оплата через сайт подтверждена",
+        f"Order ID: <code>{html.escape(order_id)}</code>",
+        f"Провайдер: {html.escape(provider)}",
+        f"Сумма: {amount_rub:.2f} RUB",
+        f"План: {html.escape(plan_key)}",
+        f"Marzban: <code>{html.escape(marzban_username)}</code>",
+    ]
+    if external_id:
+        lines.append(f"External ID: <code>{html.escape(external_id)}</code>")
+    if contact:
+        lines.append(f"Контакт: {html.escape(contact)}")
+    text = "\n".join(lines)
+
+    url = f"https://api.telegram.org/bot{settings.bot_token}/sendMessage"
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for admin_id in settings.admin_ids:
+            try:
+                await client.post(
+                    url,
+                    json={
+                        "chat_id": int(admin_id),
+                        "text": text,
+                        "parse_mode": "HTML",
+                        "disable_web_page_preview": True,
+                    },
+                )
+            except Exception:
+                logging.exception("Website notify: failed to send web payment to admin %s", admin_id)
 
 
 async def _ensure_web_access(
@@ -336,6 +385,7 @@ async def create_app() -> web.Application:
             return _json_error("Заказ не найден", status=404)
 
         status = str(order.get("status") or "pending")
+        previous_status = status
         provider = str(order.get("provider") or "")
 
         if status not in {"paid_applied", "canceled", "expired", "failed"}:
@@ -365,6 +415,17 @@ async def create_app() -> web.Application:
             except Exception as exc:
                 logging.exception("Website order access provision failed: %s", order_id)
                 return _json_error(f"Оплата принята, но выдача доступа не удалась: {exc}", status=502)
+
+            if previous_status != "paid_applied":
+                try:
+                    latest_order = await repo.get_web_order(order_id) or order
+                    await _notify_admin_web_order_paid(
+                        settings=settings,
+                        order=latest_order,
+                        marzban_username=str(issued["username"]),
+                    )
+                except Exception:
+                    logging.exception("Website notify: failed for order %s", order_id)
 
             delivery = _build_delivery_payload(settings, issued["user"])
             tg_bind_payload = bot.build_web_bind_payload(order_id, bot_token=settings.bot_token)
