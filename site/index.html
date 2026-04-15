@@ -3,189 +3,264 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>RootVPN — быстрый и стабильный VPN</title>
-  <meta name="description" content="RootVPN: самостоятельный сайт для покупки VPN-доступа, оплата и выдача подписки сразу после платежа.">
+  <title>RootVPN — премиальный VPN без лишних шагов</title>
+  <meta name="description" content="RootVPN: быстрый, стабильный и приватный VPN. Покупка на сайте, мгновенная выдача подписки, поддержка в Telegram.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="bg-blur bg-blur-a" aria-hidden="true"></div>
-  <div class="bg-blur bg-blur-b" aria-hidden="true"></div>
+  <div class="page-glow glow-top" aria-hidden="true"></div>
+  <div class="page-glow glow-bottom" aria-hidden="true"></div>
 
-  <header class="topbar">
-    <div class="container topbar-inner">
-      <a class="brand" href="#top">
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="#top" aria-label="RootVPN">
         <img class="brand-logo" src="assets/rootvpn-logo.png" alt="Логотип RootVPN">
-        <span>RootVPN</span>
+        <span class="brand-text">RootVPN</span>
       </a>
-      <nav class="topnav">
+      <nav class="main-nav" aria-label="Главная навигация">
         <a href="#plans">Тарифы</a>
         <a href="#checkout">Купить на сайте</a>
         <a href="#instructions">Инструкция</a>
         <a href="#faq">FAQ</a>
       </nav>
-      <a class="btn btn-sm" href="https://t.me/VPNrobotBOT" target="_blank" rel="noopener">Открыть бота</a>
+      <a class="btn btn-outline btn-small" href="https://t.me/VPNrobotBOT" target="_blank" rel="noopener">Открыть Telegram-бота</a>
     </div>
   </header>
 
   <main id="top">
-    <section class="hero">
+    <section class="hero section">
       <div class="container hero-grid">
-        <div>
+        <div class="hero-copy">
           <p class="eyebrow">ROOTVPN</p>
-          <h1>Быстрый и стабильный VPN</h1>
-          <p class="lead">
-            После оплаты ссылка подписки выдается автоматически: импортируете в клиент и подключаетесь.
+          <h1>Премиальный VPN для стабильного доступа без ручной настройки</h1>
+          <p class="hero-subtitle">
+            Оплачиваете в пару кликов, получаете ссылку подписки автоматически,
+            импортируете в клиент и подключаетесь. Без лишней рутины.
           </p>
           <div class="hero-actions">
-            <a class="btn btn-primary" href="#checkout">💳 Купить на сайте</a>
-            <a class="btn btn-ghost" href="https://t.me/VPNrobotBOT" target="_blank" rel="noopener">🤖 Купить в боте</a>
+            <a class="btn btn-primary" href="#checkout">Купить на сайте</a>
+            <a class="btn btn-outline" href="https://t.me/VPNrobotBOT" target="_blank" rel="noopener">Открыть Telegram-бота</a>
           </div>
           <ul class="trust-list">
-            <li>Автовыдача доступа после оплаты</li>
-            <li>Подписка с автообновлением в клиенте</li>
+            <li>Автовыдача доступа сразу после оплаты</li>
+            <li>Подписка с автообновлением в клиентах</li>
             <li>Поддержка: <a href="https://t.me/RootVPN_support_1" target="_blank" rel="noopener">@RootVPN_support_1</a></li>
           </ul>
         </div>
-        <aside class="hero-card">
-          <img class="hero-logo" src="assets/rootvpn-logo.png" alt="Логотип RootVPN">
-          <p class="hero-card-title">Что вы получаете</p>
-          <ul>
-            <li>Ссылку подписки</li>
-            <li>Импорт в Happ / V2Box и другие клиенты</li>
-            <li>Удобное продление доступа</li>
-            <li>Инструкции и поддержку</li>
-          </ul>
-          <a class="btn btn-primary btn-block" href="#checkout">Перейти к оплате</a>
+
+        <aside class="hero-panel glass-card">
+          <div class="hero-logo-wrap">
+            <img class="hero-logo" src="assets/rootvpn-logo.png" alt="RootVPN">
+          </div>
+          <h2>RootVPN Access</h2>
+          <p>
+            Вы получаете подписку, которая работает в популярных клиентах
+            и обновляется без ручного копирования конфигов.
+          </p>
+          <div class="hero-metrics">
+            <div class="metric-card">
+              <span class="metric-label">Формат</span>
+              <strong>Subscription URL</strong>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">Импорт</span>
+              <strong>Happ / V2Box</strong>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">Выдача</span>
+              <strong>Автоматически</strong>
+            </div>
+          </div>
         </aside>
       </div>
     </section>
 
-    <section class="plans" id="plans">
+    <section class="benefits section" id="benefits">
       <div class="container">
-        <h2>Тарифы</h2>
-        <p class="section-sub">Актуальные тарифы загружаются автоматически в блоке оплаты ниже.</p>
-        <div class="plans-grid">
-          <article class="plan">
-            <p class="plan-name">Старт</p>
-            <p class="plan-price">99 ₽</p>
-            <ul>
-              <li>1 устройство</li>
-              <li>Безлимитный трафик</li>
-              <li>Подписка с автообновлением</li>
-            </ul>
+        <div class="section-head">
+          <p class="eyebrow">Преимущества</p>
+          <h2>Что делает RootVPN удобным каждый день</h2>
+        </div>
+        <div class="benefits-grid">
+          <article class="glass-card benefit-card">
+            <h3>Быстрое подключение</h3>
+            <p>Ссылка подписки приходит сразу после подтверждения платежа, без ожидания ручной выдачи.</p>
           </article>
-          <article class="plan plan-featured">
-            <p class="plan-badge">Популярный</p>
-            <p class="plan-name">Оптимум</p>
-            <p class="plan-price">279 ₽</p>
-            <ul>
-              <li>1 устройство</li>
-              <li>Безлимитный трафик</li>
-              <li>Подписка с автообновлением</li>
-            </ul>
+          <article class="glass-card benefit-card">
+            <h3>Современный формат</h3>
+            <p>Работа через подписку удобнее прямых ключей: обновления подтягиваются в клиентах автоматически.</p>
           </article>
-          <article class="plan">
-            <p class="plan-name">Годовой</p>
-            <p class="plan-price">1099 ₽</p>
-            <ul>
-              <li>Максимально выгодная цена</li>
-              <li>1 устройство</li>
-              <li>Быстрое продление доступа</li>
-              <li>Подписка с автообновлением</li>
-            </ul>
+          <article class="glass-card benefit-card">
+            <h3>Прозрачная оплата</h3>
+            <p>Проверка статуса заказа в реальном времени и моментальная выдача доступа после paid_applied.</p>
+          </article>
+          <article class="glass-card benefit-card">
+            <h3>Поддержка в Telegram</h3>
+            <p>Если что-то пошло не так, можно быстро обратиться в поддержку и получить помощь по шагам.</p>
           </article>
         </div>
       </div>
     </section>
 
-    <section class="checkout" id="checkout">
+    <section class="pricing section" id="plans">
       <div class="container">
-        <h2>Купить на сайте</h2>
-        <p class="section-sub">Выберите тариф, оплатите заказ и нажмите «Проверить оплату».</p>
+        <div class="section-head">
+          <p class="eyebrow">Тарифы</p>
+          <h2>Выберите подходящий режим доступа</h2>
+          <p class="section-note">Карточки фиксируют маркетинговые планы, а форма оплаты ниже загружает актуальные тарифы по API.</p>
+        </div>
+        <div class="pricing-grid">
+          <article class="glass-card price-card">
+            <p class="price-name">Старт</p>
+            <p class="price-value">99 ₽</p>
+            <ul>
+              <li>1 устройство</li>
+              <li>Безлимитный трафик</li>
+              <li>Подписка с автообновлением</li>
+            </ul>
+            <a class="btn btn-outline btn-block" href="#checkout">Выбрать</a>
+          </article>
+
+          <article class="glass-card price-card featured">
+            <p class="price-badge">Featured · 3 месяца</p>
+            <p class="price-name">Оптимум</p>
+            <p class="price-value">279 ₽</p>
+            <ul>
+              <li>Оптимальный период без частых продлений</li>
+              <li>1 устройство</li>
+              <li>Приоритетный баланс цены и удобства</li>
+            </ul>
+            <a class="btn btn-primary btn-block" href="#checkout">Выбрать</a>
+          </article>
+
+          <article class="glass-card price-card">
+            <p class="price-name">Годовой</p>
+            <p class="price-value">1099 ₽</p>
+            <ul>
+              <li>Максимально выгодная стоимость</li>
+              <li>1 устройство</li>
+              <li>Минимум действий в течение года</li>
+            </ul>
+            <a class="btn btn-outline btn-block" href="#checkout">Выбрать</a>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="checkout section" id="checkout">
+      <div class="container">
+        <div class="section-head">
+          <p class="eyebrow">Checkout</p>
+          <h2>Покупка на сайте</h2>
+          <p class="section-note">Выберите тариф и способ оплаты. После платежа нажмите «Проверить оплату».</p>
+        </div>
 
         <div class="checkout-grid">
-          <form id="checkout-form" class="checkout-card">
+          <form id="checkout-form" class="glass-card checkout-card" novalidate>
             <label class="field-label" for="plan-select">Тариф</label>
             <select id="plan-select" class="field-input" required></select>
 
             <label class="field-label" for="provider-select">Способ оплаты</label>
             <select id="provider-select" class="field-input" required></select>
 
-            <label class="field-label" for="contact-input">Контакт (необязательно)</label>
-            <input id="contact-input" class="field-input" placeholder="@telegram или email">
+            <label class="field-label" for="contact-input">Контакт для связи (необязательно)</label>
+            <input id="contact-input" class="field-input" placeholder="@telegram или email" autocomplete="off">
 
             <button type="submit" class="btn btn-primary btn-block">Создать заказ</button>
             <p id="checkout-error" class="msg msg-error" aria-live="polite"></p>
           </form>
 
-          <div class="checkout-card" id="order-card">
-            <p class="order-title">Ваш заказ</p>
-            <p>Order ID: <code id="order-id">—</code></p>
-            <p>Статус: <strong id="order-status">—</strong></p>
+          <div class="glass-card checkout-card order-card">
+            <div class="order-head">
+              <h3>Ваш заказ</h3>
+              <span class="order-meta">Статус в реальном времени</span>
+            </div>
+            <p class="order-line">Order ID: <code id="order-id">—</code></p>
+            <p class="order-line">Статус: <strong id="order-status">—</strong></p>
+
             <div class="order-actions">
-              <a id="pay-link" class="btn btn-ghost btn-block" href="#" target="_blank" rel="noopener" hidden>Открыть оплату</a>
+              <a id="pay-link" class="btn btn-outline btn-block" href="#" target="_blank" rel="noopener" hidden>Открыть оплату</a>
               <button id="check-btn" class="btn btn-primary btn-block" type="button" disabled>Проверить оплату</button>
             </div>
+
             <p id="order-message" class="msg" aria-live="polite"></p>
+
+            <div id="delivery-box" class="delivery-box" hidden>
+              <p class="delivery-title">Доступ выдан ✅</p>
+              <label class="field-label" for="sub-url">Ссылка подписки</label>
+              <textarea id="sub-url" class="field-input code-field" rows="4" readonly></textarea>
+              <button id="copy-sub-url" class="btn btn-outline" type="button">Скопировать ссылку</button>
+              <p id="copy-msg" class="msg" aria-live="polite"></p>
+            </div>
           </div>
         </div>
       </div>
     </section>
 
-    <section class="instructions" id="instructions">
+    <section class="instructions section" id="instructions">
       <div class="container">
-        <h2>Инструкция после оплаты</h2>
-        <div class="steps">
-          <article class="step">
-            <p class="step-num">01</p>
-            <h3>Получите ссылку подписки</h3>
-            <p>После подтверждения оплаты сайт покажет вашу ссылку подписки.</p>
-          </article>
-          <article class="step">
-            <p class="step-num">02</p>
-            <h3>Импортируйте в клиент</h3>
-            <p>Вставьте ссылку в Happ, V2Box или другой клиент как Subscription URL.</p>
-          </article>
-          <article class="step">
-            <p class="step-num">03</p>
-            <h3>Пользуйтесь VPN</h3>
-            <p>Настройте клиент и подключайтесь к VPN для безопасного интернет-соединения.</p>
-          </article>
+        <div class="section-head">
+          <p class="eyebrow">После оплаты</p>
+          <h2>Как импортировать подписку</h2>
         </div>
 
-        <div id="delivery-box" class="delivery-box" hidden>
-          <p class="delivery-title">Доступ выдан ✅</p>
-          <label class="field-label" for="sub-url">Ссылка подписки</label>
-          <textarea id="sub-url" class="field-input code-field" rows="3" readonly></textarea>
-          <button id="copy-sub-url" class="btn btn-ghost" type="button">Скопировать ссылку</button>
-          <p id="copy-msg" class="msg" aria-live="polite"></p>
+        <div class="instructions-grid">
+          <article class="glass-card instruction-card">
+            <p class="step-num">01</p>
+            <h3>Получите ссылку подписки</h3>
+            <p>После статуса <code>paid_applied</code> сайт покажет Subscription URL в блоке выдачи.</p>
+          </article>
+          <article class="glass-card instruction-card">
+            <p class="step-num">02</p>
+            <h3>Импорт в Happ</h3>
+            <p>Откройте Happ, добавьте подписку через URL и вставьте ссылку из блока выдачи.</p>
+          </article>
+          <article class="glass-card instruction-card">
+            <p class="step-num">03</p>
+            <h3>Импорт в V2Box</h3>
+            <p>В V2Box выберите Add Subscription, вставьте URL и обновите список серверов.</p>
+          </article>
+          <article class="glass-card instruction-card">
+            <p class="step-num">04</p>
+            <h3>Если Happ не импортирует</h3>
+            <p>Settings → Dev Settings → Enable for all configurations, затем повторите импорт.</p>
+          </article>
         </div>
       </div>
     </section>
 
-    <section class="faq" id="faq">
+    <section class="faq section" id="faq">
       <div class="container">
-        <h2>FAQ</h2>
-        <details>
-          <summary>Что я получу после оплаты?</summary>
-          <p>После подтверждения оплаты вы получите ссылку на вашу подписку, которую можно импортировать в любой поддерживаемый клиент.</p>
-        </details>
-        <details>
-          <summary>Что делать, если Happ не импортирует ссылку?</summary>
-          <p>Зайдите в Settings → Dev Settings → Enable for all configurations, затем попробуйте импорт еще раз.</p>
-        </details>
-        <details>
-          <summary>Как подключить VPN после покупки?</summary>
-          <p>После получения ссылки на подписку, импортируйте её в ваш клиент (Happ, V2Box или другой) как Subscription URL.</p>
-        </details>
+        <div class="section-head">
+          <p class="eyebrow">FAQ</p>
+          <h2>Частые вопросы</h2>
+        </div>
+        <div class="faq-list">
+          <details class="glass-card">
+            <summary>Можно ли купить VPN без Telegram?</summary>
+            <p>Да. Сайт работает как отдельный канал продаж: оплата и выдача подписки доступны напрямую.</p>
+          </details>
+          <details class="glass-card">
+            <summary>Платеж прошел, но доступ не появился. Что делать?</summary>
+            <p>Нажмите «Проверить оплату» еще раз через 10–20 секунд. Если не помогло — напишите в <a href="https://t.me/RootVPN_support_1" target="_blank" rel="noopener">поддержку</a>.</p>
+          </details>
+          <details class="glass-card">
+            <summary>Будут ли обновляться конфиги после продления?</summary>
+            <p>Да. Вы используете подписочный формат, поэтому обновления подтягиваются в клиенте автоматически.</p>
+          </details>
+          <details class="glass-card">
+            <summary>Можно ли использовать и сайт, и бота одновременно?</summary>
+            <p>Да. Это параллельные каналы. Покупать можно на сайте, а управлять доступом и в Telegram-боте.</p>
+          </details>
+        </div>
       </div>
     </section>
   </main>
 
-  <footer class="footer">
+  <footer class="site-footer">
     <div class="container footer-inner">
       <p>© <span id="year"></span> RootVPN</p>
       <div class="footer-links">
