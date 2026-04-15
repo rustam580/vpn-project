@@ -163,7 +163,7 @@ async def _notify_admin_web_order_paid(
     async with httpx.AsyncClient(timeout=10.0) as client:
         for admin_id in settings.admin_ids:
             try:
-                await client.post(
+                resp = await client.post(
                     url,
                     json={
                         "chat_id": int(admin_id),
@@ -172,6 +172,24 @@ async def _notify_admin_web_order_paid(
                         "disable_web_page_preview": True,
                     },
                 )
+                if resp.status_code >= 400:
+                    logging.error(
+                        "Website notify: Telegram HTTP error for admin %s: %s %s",
+                        admin_id,
+                        resp.status_code,
+                        (resp.text or "")[:400],
+                    )
+                    continue
+                try:
+                    payload = resp.json()
+                except Exception:
+                    payload = None
+                if isinstance(payload, dict) and payload.get("ok") is False:
+                    logging.error(
+                        "Website notify: Telegram API rejected message for admin %s: %s",
+                        admin_id,
+                        payload.get("description"),
+                    )
             except Exception:
                 logging.exception("Website notify: failed to send web payment to admin %s", admin_id)
 

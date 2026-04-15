@@ -2126,7 +2126,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
 
                 target_expire = int(target_user.get("expire") or 0)
                 target_limit = int(target_user.get("data_limit") or 0)
-                patch: dict[str, Any] = {}
+                patch: dict[str, Any] = {"status": "active"}
                 if source_expire > target_expire:
                     patch["expire"] = source_expire
                 if source_limit > target_limit:
