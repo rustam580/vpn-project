@@ -194,6 +194,66 @@ async def test_device_add_gives_new_slot_its_own_term(repo, monkeypatch) -> None
     assert second_expire > primary_expire
 
 
+async def test_device_add_ignores_long_primary_expire_for_new_slot(repo, monkeypatch) -> None:
+    tg_id = 9132
+    external_id = "inv-device-add-long-primary"
+    primary_username = f"tg_{tg_id}"
+    second_username = f"tg_{tg_id}_d2"
+
+    marzban = FakeMarzban()
+    now = int(time.time())
+    primary_expire = now + 80 * 24 * 3600
+    await marzban.create_user(username=primary_username, expire=primary_expire, data_limit=0)
+    await repo.upsert_user(tg_id, primary_username)
+
+    await repo.upsert_payment(
+        provider="crypto",
+        external_id=external_id,
+        telegram_id=tg_id,
+        days=30,
+        gb=0,
+        amount_rub=99,
+        pay_url="https://pay.local/inv-device-add-long-primary",
+        status="pending",
+        purpose="device_add",
+        device_slot=2,
+    )
+
+    async def fake_crypto_status(_settings, _external_id):
+        return "paid"
+
+    monkeypatch.setattr(bot, "cryptobot_check_invoice", fake_crypto_status)
+
+    settings = SimpleNamespace(
+        payment_processing_requeue_seconds=120,
+        device_limit=5,
+        trial_days=1,
+        trial_gb=0,
+    )
+
+    started_at = int(time.time())
+    result, _updated = await bot.check_and_apply_payment(
+        provider="crypto",
+        external_id=external_id,
+        telegram_id=tg_id,
+        repo=repo,
+        marzban=marzban,
+        settings=settings,
+        bot=None,
+    )
+    finished_at = int(time.time())
+
+    assert "срок нового устройства" in result
+    second_after = await marzban.get_user(second_username)
+    assert second_after is not None
+
+    lower_bound = started_at + 30 * 24 * 3600
+    upper_bound = finished_at + 30 * 24 * 3600
+    second_expire = int(second_after["expire"])
+    assert lower_bound <= second_expire <= upper_bound
+    assert second_expire < primary_expire
+
+
 async def test_sync_expire_across_devices_aligns_to_max(repo) -> None:
     tg_id = 8118
     username1 = f"tg_{tg_id}"

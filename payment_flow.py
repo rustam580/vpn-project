@@ -33,7 +33,7 @@ async def apply_paid_payment(
             await repo.set_payment_status(provider, external_id, "failed")
             return {}, purpose, "❌ Некорректный слот устройства."
         if slot > 0:
-            username, updated_user, _ = await ensure_device_fn(
+            username, updated_user, created_new_slot = await ensure_device_fn(
                 telegram_id=int(payment["telegram_id"]),
                 device_id=slot,
                 repo=repo,
@@ -48,7 +48,13 @@ async def apply_paid_payment(
             if days > 0 or gb != 0:
                 now = int(time.time())
                 current_expire = int((updated.get("expire") or 0))
-                target_expire = max(current_expire, now + days * 24 * 3600) if days > 0 else current_expire
+                if days > 0:
+                    # For a newly purchased additional slot we start its own term from "now",
+                    # even if Marzban created it by copying the primary profile's longer expiry.
+                    expire_base = now if created_new_slot else max(now, current_expire)
+                    target_expire = expire_base + days * 24 * 3600
+                else:
+                    target_expire = current_expire
 
                 current_limit = int((updated.get("data_limit") or 0))
                 if gb <= 0:
