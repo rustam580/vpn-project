@@ -505,6 +505,20 @@ select.field-input {
   gap: 10px;
 }
 
+.tg-bind-box {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(111, 193, 255, 0.32);
+  background: rgba(9, 20, 36, 0.74);
+}
+
+.tg-bind-note {
+  margin: 10px 0 0;
+  color: #9eb8d7;
+  font-size: 0.9rem;
+}
+
 .msg {
   margin: 12px 0 0;
   color: #a9c3df;
@@ -572,6 +586,38 @@ select.field-input {
   color: var(--muted);
 }
 
+.policy-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.policy-card {
+  padding: 18px;
+}
+
+.policy-card h3 {
+  margin: 0 0 10px;
+  font-family: "Sora", "Manrope", sans-serif;
+  font-size: 1.06rem;
+}
+
+.policy-card p {
+  margin: 0 0 10px;
+  color: var(--muted);
+}
+
+.policy-card ul,
+.policy-card ol {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.policy-card li + li {
+  margin-top: 6px;
+}
+
 .faq-list {
   display: grid;
   gap: 10px;
@@ -630,6 +676,10 @@ select.field-input {
 
   .instructions-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .policy-grid {
+    grid-template-columns: 1fr;
   }
 }
 

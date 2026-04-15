@@ -1,4 +1,4 @@
-const byId = (id) => document.getElementById(id);
+﻿const byId = (id) => document.getElementById(id);
 
 const els = {
   year: byId("year"),
@@ -12,6 +12,8 @@ const els = {
   payLink: byId("pay-link"),
   checkBtn: byId("check-btn"),
   orderMessage: byId("order-message"),
+  tgBindBox: byId("tg-bind-box"),
+  tgBindLink: byId("tg-bind-link"),
   deliveryBox: byId("delivery-box"),
   subUrl: byId("sub-url"),
   copySubUrl: byId("copy-sub-url"),
@@ -103,10 +105,23 @@ function renderProviders(providers) {
   }
 }
 
+function setTelegramBind(bindUrl = "") {
+  if (!els.tgBindBox || !els.tgBindLink) return;
+  const cleanUrl = String(bindUrl || "").trim();
+  if (!cleanUrl) {
+    els.tgBindBox.hidden = true;
+    els.tgBindLink.href = "#";
+    return;
+  }
+  els.tgBindLink.href = cleanUrl;
+  els.tgBindBox.hidden = false;
+}
+
 function setOrderData({ orderId = "", status = "—", paymentUrl = "" }) {
   state.orderId = orderId;
   setText(els.orderId, orderId || "—");
   setText(els.orderStatus, status || "—");
+  setTelegramBind("");
 
   if (els.payLink) {
     if (paymentUrl) {
@@ -123,15 +138,10 @@ function setOrderData({ orderId = "", status = "—", paymentUrl = "" }) {
   }
 }
 
-function showDelivery(subscriptionUrl, directLinks = []) {
+function showDelivery(subscriptionUrl) {
   if (!els.deliveryBox || !els.subUrl) return;
   els.deliveryBox.hidden = false;
   els.subUrl.value = subscriptionUrl || "";
-
-  if (directLinks.length > 0) {
-    const directInfo = `\n\nРезервные прямые ссылки:\n${directLinks.join("\n")}`;
-    els.subUrl.value += directInfo;
-  }
 }
 
 async function loadPlansAndProviders() {
@@ -214,11 +224,9 @@ async function checkOrderStatus() {
         setOrderMessage("Оплата подтверждена, но не удалось получить ссылку подписки. Напишите в поддержку.", true);
         return;
       }
-      showDelivery(subUrl, payload.direct_links || []);
-      const bindHint = payload.tg_bind_url
-        ? `\n\nПривязать доступ к Telegram: ${payload.tg_bind_url}`
-        : "";
-      setOrderMessage(`Оплата подтверждена. Скопируйте ссылку подписки и импортируйте её в клиент.${bindHint}`, false);
+      showDelivery(subUrl);
+      setTelegramBind(payload.tg_bind_url || "");
+      setOrderMessage("Оплата подтверждена. Скопируйте ссылку подписки и импортируйте ее в клиент.", false);
       return;
     }
 
