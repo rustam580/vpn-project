@@ -109,3 +109,38 @@ def test_build_delivery_payload_dedupes_links_and_uses_supported_signature(monke
     ]
     assert payload["subscription_url"] == "https://sub.example.com/sub/token-a"
     assert payload["direct_links"] == ["vless://one", "vless://two"]
+
+
+def test_extract_subscription_token_from_url_and_raw_token() -> None:
+    assert (
+        website_api._extract_subscription_token(
+            "https://sub.rootvpn.tech:8443/sub/d2ViX2FiYw==?foo=1"
+        )
+        == "d2ViX2FiYw=="
+    )
+    assert website_api._extract_subscription_token("d2ViX2FiYw==") == "d2ViX2FiYw=="
+    assert website_api._extract_subscription_token("https://example.com/other/path") == ""
+
+
+def test_build_extend_payload_from_user_extends_from_current_expire() -> None:
+    now = 1_700_000_000
+
+    class _FakeTime:
+        @staticmethod
+        def time() -> int:
+            return now
+
+    original_time = website_api.time.time
+    website_api.time.time = _FakeTime.time  # type: ignore[assignment]
+    try:
+        payload = website_api._build_extend_payload_from_user(
+            user={"expire": now + 5 * 86400, "data_limit": 0},
+            days=30,
+            gb=0,
+        )
+    finally:
+        website_api.time.time = original_time  # type: ignore[assignment]
+
+    assert payload["expire"] == now + 35 * 86400
+    assert payload["data_limit"] == 0
+    assert payload["status"] == "active"

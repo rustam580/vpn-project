@@ -4,9 +4,11 @@ import asyncio
 import html
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 import httpx
@@ -61,6 +63,95 @@ def _json_error(message: str, *, status: int = 400) -> web.Response:
 def _normalize_contact(raw: Any) -> str:
     value = str(raw or "").strip()
     return value[:160]
+
+
+def _normalize_subscription_url(raw: Any) -> str:
+    value = str(raw or "").strip()
+    return value[:1200]
+
+
+def _extract_subscription_token(raw: str) -> str:
+    value = str(raw or "").strip()
+    if not value:
+        return ""
+    is_url = value.startswith(("http://", "https://"))
+    if value.startswith(("http://", "https://")):
+        parsed = urlsplit(value)
+        path = parsed.path or ""
+    else:
+        path = value
+    marker = "/sub/"
+    if marker in path:
+        token = path.split(marker, 1)[1].strip()
+    else:
+        if is_url:
+            return ""
+        token = path.strip("/")
+    if "/" in token:
+        token = token.split("/", 1)[0].strip()
+    if not token:
+        return ""
+    if not re.fullmatch(r"[A-Za-z0-9_\-=]+", token):
+        return ""
+    return token
+
+
+def _extract_username_from_content_disposition(raw_header: str) -> str:
+    header = str(raw_header or "")
+    if not header:
+        return ""
+    match = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^\";]+)"?', header, re.IGNORECASE)
+    if not match:
+        return ""
+    return match.group(1).strip()
+
+
+def _build_extend_payload_from_user(*, user: dict[str, Any], days: int, gb: int) -> dict[str, Any]:
+    now = int(time.time())
+    current_expire = int(user.get("expire") or 0)
+    current_limit = int(user.get("data_limit") or 0)
+    target_expire = max(now, current_expire) + days * 86400 if days > 0 else current_expire
+    if gb <= 0:
+        target_limit = 0
+    else:
+        base_limit = gb * bot.BYTES_IN_GB
+        target_limit = max(current_limit, base_limit) if current_limit > 0 else base_limit
+    return {
+        "expire": target_expire,
+        "data_limit": target_limit,
+        "status": "active",
+    }
+
+
+async def _resolve_renewal_username(
+    *,
+    marzban: MarzbanClient,
+    raw_subscription_url: str,
+) -> tuple[str | None, str | None]:
+    token = _extract_subscription_token(raw_subscription_url)
+    if not token:
+        return None, "Укажите корректную ссылку подписки RootVPN для продления."
+    try:
+        response = await marzban.client.get(
+            f"/sub/{token}",
+            headers={"accept": "*/*", "user-agent": "RootVPNWebsiteAPI/1.0"},
+        )
+    except Exception:
+        logging.exception("Website renewal resolve failed: token request error")
+        return None, "Не удалось проверить ссылку подписки. Повторите позже."
+    if response.status_code >= 400:
+        return None, "Ссылка подписки недействительна для продления."
+
+    username = _extract_username_from_content_disposition(
+        response.headers.get("content-disposition", "")
+    )
+    if not username:
+        return None, "Не удалось определить пользователя по ссылке подписки."
+
+    user = await marzban.get_user(username)
+    if not user:
+        return None, "Пользователь по ссылке подписки не найден в Marzban."
+    return username, None
 
 
 def _resolve_plan(settings: bot.Settings, plan_key: str) -> bot.Plan | None:
@@ -201,16 +292,37 @@ async def _ensure_web_access(
     marzban: MarzbanClient,
     order: dict[str, Any],
 ) -> dict[str, Any]:
+    order_id = str(order["order_id"])
+    days = int(order.get("days") or 0)
+    gb = int(order.get("gb") or 0)
     existing_username = str(order.get("marzban_username") or "").strip()
     if existing_username:
         existing_user = await marzban.get_user(existing_username)
         if existing_user:
+            if str(order.get("status") or "") != "paid_applied":
+                payload = _build_extend_payload_from_user(user=existing_user, days=days, gb=gb)
+                updated = await marzban.modify_user(existing_username, payload)
+                await repo.set_web_order_status(order_id, "paid_applied")
+                await repo.log_event(
+                    event_type="web_order_paid_applied",
+                    event_value=str(order.get("provider") or ""),
+                    event_meta={
+                        "order_id": order_id,
+                        "external_id": str(order.get("external_id") or ""),
+                        "plan_key": str(order.get("plan_key") or ""),
+                        "marzban_username": existing_username,
+                        "renewal": True,
+                    },
+                )
+                return {
+                    "username": existing_username,
+                    "user": updated,
+                }
             return {
                 "username": existing_username,
                 "user": existing_user,
             }
 
-    order_id = str(order["order_id"])
     username = _make_web_username(order_id)
     for i in range(0, 30):
         candidate = _make_web_username(order_id, suffix=i)
@@ -218,8 +330,6 @@ async def _ensure_web_access(
             username = candidate
             break
 
-    days = int(order.get("days") or 0)
-    gb = int(order.get("gb") or 0)
     expire = int(time.time()) + days * 86400 if days > 0 else 0
     data_limit = gb * bot.BYTES_IN_GB if gb > 0 else 0
 
@@ -238,6 +348,7 @@ async def _ensure_web_access(
             "external_id": str(order.get("external_id") or ""),
             "plan_key": str(order.get("plan_key") or ""),
             "marzban_username": username,
+            "renewal": False,
         },
     )
     return {
@@ -328,6 +439,15 @@ async def create_app() -> web.Application:
 
         order_id = uuid4().hex
         contact = _normalize_contact(payload.get("contact"))
+        renew_subscription_url = _normalize_subscription_url(payload.get("renew_subscription_url"))
+        renew_username = ""
+        if renew_subscription_url:
+            renew_username, renew_error = await _resolve_renewal_username(
+                marzban=marzban,
+                raw_subscription_url=renew_subscription_url,
+            )
+            if renew_error:
+                return _json_error(renew_error, status=400)
         description = f"RootVPN web: {_human_plan(plan)}"
 
         try:
@@ -363,6 +483,11 @@ async def create_app() -> web.Application:
                 customer_contact=contact,
                 pay_url=pay_url,
             )
+            if renew_username:
+                await repo.attach_web_order_access(
+                    order_id=order_id,
+                    marzban_username=renew_username,
+                )
             await repo.log_event(
                 event_type="web_order_created",
                 event_value=provider,
@@ -371,6 +496,8 @@ async def create_app() -> web.Application:
                     "external_id": external_id,
                     "plan_key": plan.key,
                     "amount_rub": plan.rub,
+                    "renewal": bool(renew_username),
+                    "renew_username": renew_username,
                 },
             )
         except Exception as exc:
@@ -391,6 +518,7 @@ async def create_app() -> web.Application:
                 "status": "pending",
                 "provider": provider,
                 "payment_url": pay_url,
+                "renewal": bool(renew_username),
             }
         )
 
@@ -458,6 +586,7 @@ async def create_app() -> web.Application:
                     "order_id": order_id,
                     "status": "paid_applied",
                     "marzban_username": issued["username"],
+                    "renewal": bool(order.get("marzban_username")),
                     "subscription_url": delivery["subscription_url"],
                     "subscription_links": delivery["subscription_links"],
                     "direct_links": delivery["direct_links"],
@@ -474,6 +603,7 @@ async def create_app() -> web.Application:
                 "status": status,
                 "provider": provider,
                 "payment_url": str(order.get("pay_url") or ""),
+                "renewal": bool(order.get("marzban_username")),
             }
         )
 

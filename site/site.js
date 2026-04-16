@@ -6,6 +6,7 @@ const els = {
   planSelect: byId("plan-select"),
   providerSelect: byId("provider-select"),
   contactInput: byId("contact-input"),
+  renewSubscriptionInput: byId("renew-subscription-input"),
   checkoutError: byId("checkout-error"),
   orderId: byId("order-id"),
   orderStatus: byId("order-status"),
@@ -162,6 +163,7 @@ async function createCheckoutOrder(event) {
   const planKey = els.planSelect?.value || "";
   const provider = els.providerSelect?.value || "";
   const contact = (els.contactInput?.value || "").trim();
+  const renewSubscriptionUrl = (els.renewSubscriptionInput?.value || "").trim();
 
   if (!planKey || !provider) {
     setError("Выберите тариф и способ оплаты");
@@ -176,6 +178,7 @@ async function createCheckoutOrder(event) {
         plan_key: planKey,
         provider,
         contact,
+        renew_subscription_url: renewSubscriptionUrl,
       }),
     });
 
@@ -184,7 +187,11 @@ async function createCheckoutOrder(event) {
       status: payload.status || "pending",
       paymentUrl: payload.payment_url || "",
     });
-    setOrderMessage("Заказ создан. Откройте оплату, затем нажмите «Проверить оплату».", false);
+    if (payload.renewal) {
+      setOrderMessage("Заказ на продление создан. Откройте оплату, затем нажмите «Проверить оплату».", false);
+    } else {
+      setOrderMessage("Заказ создан. Откройте оплату, затем нажмите «Проверить оплату».", false);
+    }
 
     const url = new URL(window.location.href);
     url.searchParams.set("order", payload.order_id);
@@ -226,7 +233,11 @@ async function checkOrderStatus() {
       }
       showDelivery(subUrl);
       setTelegramBind(payload.tg_bind_url || "");
-      setOrderMessage("Оплата подтверждена. Скопируйте ссылку подписки и импортируйте ее в клиент.", false);
+      if (payload.renewal) {
+        setOrderMessage("Оплата подтверждена. Доступ продлен, ссылка подписки остается рабочей.", false);
+      } else {
+        setOrderMessage("Оплата подтверждена. Скопируйте ссылку подписки и импортируйте ее в клиент.", false);
+      }
       return;
     }
 
