@@ -764,6 +764,54 @@ class Repo:
         )
         await self.conn.commit()
 
+    async def web_bind_conversion_stats(self, *, days: int = 7) -> dict[str, int | float]:
+        assert self.conn is not None
+        lookback_days = max(1, int(days))
+        since_ts = int(time.time()) - lookback_days * 86400
+
+        c = await self.conn.execute(
+            """
+            SELECT event_type, event_meta
+            FROM events
+            WHERE created_at >= ?
+              AND event_type IN ('web_order_paid_applied', 'web_order_bound')
+            """,
+            (since_ts,),
+        )
+        rows = await c.fetchall()
+        await c.close()
+
+        paid_ids: set[str] = set()
+        bound_ids: set[str] = set()
+        for row in rows:
+            event_type = str(row["event_type"] or "").strip()
+            raw_meta = str(row["event_meta"] or "").strip()
+            if not raw_meta:
+                continue
+            try:
+                meta = json.loads(raw_meta)
+            except Exception:
+                continue
+            order_id = str(meta.get("order_id") or "").strip()
+            if not order_id:
+                continue
+            if event_type == "web_order_paid_applied":
+                paid_ids.add(order_id)
+            elif event_type == "web_order_bound":
+                bound_ids.add(order_id)
+
+        bound_from_paid = len(paid_ids & bound_ids)
+        paid_total = len(paid_ids)
+        conversion_pct = (bound_from_paid / paid_total * 100.0) if paid_total > 0 else 0.0
+        return {
+            "days": lookback_days,
+            "paid_orders": paid_total,
+            "bound_orders": len(bound_ids),
+            "bound_from_paid": bound_from_paid,
+            "pending_bind": max(paid_total - bound_from_paid, 0),
+            "conversion_pct": conversion_pct,
+        }
+
     async def bind_referrer(self, invited_telegram_id: int, referrer_telegram_id: int) -> str:
         assert self.conn is not None
         if invited_telegram_id == referrer_telegram_id:

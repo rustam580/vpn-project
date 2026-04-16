@@ -95,6 +95,7 @@ async def build_admin_stats_text(repo: "Repo", marzban: "MarzbanClient") -> str:
     sub_pending_preview = ", ".join(
         f"tg:{int(row['telegram_id'])}" for row in sub_pending_rows
     ) or "нет"
+    web_bind = await repo.web_bind_conversion_stats(days=7)
 
     funnel_text = await build_funnel_24h_text(repo)
     db_tip = ""
@@ -121,6 +122,10 @@ async def build_admin_stats_text(repo: "Repo", marzban: "MarzbanClient") -> str:
         f"- Перешли на подписку: {sub_adoption['adopted_users']}/{sub_adoption['total_users']} ({sub_adoption['adoption_pct']:.1f}%)\n"
         f"- Еще не перешли: {sub_adoption['pending_users']}\n"
         f"- Примеры без перехода: {sub_pending_preview}\n\n"
+        "Сайт -> Telegram (за 7 дней):\n"
+        f"- Оплачено на сайте (paid_applied): {web_bind['paid_orders']}\n"
+        f"- Привязано к Telegram: {web_bind['bound_from_paid']} ({web_bind['conversion_pct']:.1f}%)\n"
+        f"- Еще не привязали: {web_bind['pending_bind']}\n\n"
         f"{funnel_text}"
         f"{db_tip}"
     )

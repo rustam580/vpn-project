@@ -15,19 +15,13 @@ Last updated: 2026-04-16
 - Next action: install `/usr/local/sbin/vpn-ops-smoke`, verify `vpn-ops-deploy` runs it and captures failures in deploy report.
 - Owner: ops/dev
 
-2. P1 - Website -> Telegram bind analytics
-- Status: pending
-- Problem: bind flow works, but no weekly conversion metric for `web paid_applied -> tg bind`.
-- Next action: add explicit conversion counters in admin/ops report.
-- Owner: product/dev
-
-3. P2 - Renewal worker scaling
+2. P2 - Renewal worker scaling
 - Status: pending
 - Problem: periodic full scan of users/devices can become expensive under growth.
 - Next action: batch processing or next-check schedule index.
 - Owner: dev
 
-4. P2 - Continue `bot.py` decomposition
+3. P2 - Continue `bot.py` decomposition
 - Status: pending
 - Problem: `bot.py` is still large (~2.9k lines), onboarding and safe edits stay expensive.
 - Next action: move remaining router/worker wiring and command handlers into dedicated modules.
@@ -51,3 +45,4 @@ Last updated: 2026-04-16
 - Added: `deploy/vpn-ops-smoke.sh` for post-deploy checks (services + local/public health endpoints).
 - Closed: published public legal pages (`terms`, `privacy`, `refund`, `autorenew`) and linked them in site navigation.
 - Closed: added frontend integrity tests for required checkout DOM ids and UTF-8 text safety in website files.
+- Closed: added weekly website->Telegram bind conversion metric in `/admin_stats` based on `web_order_paid_applied` and `web_order_bound`.

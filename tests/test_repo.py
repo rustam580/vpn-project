@@ -1,6 +1,7 @@
 import sqlite3
 import time
 
+import pytest
 import pytest_asyncio
 
 import bot
@@ -424,3 +425,58 @@ async def test_web_order_upsert_by_order_id(repo) -> None:
     assert row["status"] == "paid"
     assert row["plan_key"] == "m3"
     assert row["days"] == 90
+
+
+async def test_web_bind_conversion_stats_uses_event_order_ids_and_lookback(repo, repo_conn) -> None:
+    now = int(time.time())
+
+    await repo.log_event(
+        event_type="web_order_paid_applied",
+        event_meta={"order_id": "ord-a"},
+    )
+    await repo.log_event(
+        event_type="web_order_paid_applied",
+        event_meta={"order_id": "ord-b"},
+    )
+    await repo.log_event(
+        event_type="web_order_paid_applied",
+        event_meta={"order_id": "ord-c"},
+    )
+    await repo.log_event(
+        event_type="web_order_bound",
+        event_meta={"order_id": "ord-b"},
+    )
+    await repo.log_event(
+        event_type="web_order_bound",
+        event_meta={"order_id": "ord-c"},
+    )
+    await repo.log_event(
+        event_type="web_order_bound",
+        event_meta={"order_id": "ord-x"},
+    )
+
+    await repo.log_event(
+        event_type="web_order_paid_applied",
+        event_meta={"order_id": "ord-old"},
+    )
+    await repo.log_event(
+        event_type="web_order_bound",
+        event_meta={"order_id": "ord-old"},
+    )
+    await repo_conn.execute(
+        """
+        UPDATE events
+        SET created_at = ?
+        WHERE event_meta LIKE '%"order_id":"ord-old"%'
+        """,
+        (now - 10 * 86400,),
+    )
+    await repo_conn.commit()
+
+    stats = await repo.web_bind_conversion_stats(days=7)
+    assert stats["days"] == 7
+    assert stats["paid_orders"] == 3
+    assert stats["bound_orders"] == 3
+    assert stats["bound_from_paid"] == 2
+    assert stats["pending_bind"] == 1
+    assert stats["conversion_pct"] == pytest.approx(66.666, rel=1e-2)
