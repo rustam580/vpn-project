@@ -4,9 +4,62 @@ from types import SimpleNamespace
 import website_api
 
 
+REQUIRED_CHECKOUT_DOM_IDS = [
+    "year",
+    "checkout-form",
+    "plan-select",
+    "provider-select",
+    "contact-input",
+    "checkout-error",
+    "order-id",
+    "order-status",
+    "pay-link",
+    "check-btn",
+    "order-message",
+    "delivery-box",
+    "sub-url",
+    "copy-sub-url",
+    "copy-msg",
+]
+
+EXPECTED_RU_COPY_SNIPPETS = [
+    "Премиальный VPN",
+    "Покупка на сайте",
+    "Как импортировать подписку",
+    "Документы",
+    "Частые вопросы",
+]
+
+
 def test_site_js_has_no_broken_placeholder_text() -> None:
     text = Path("site/site.js").read_text(encoding="utf-8")
     assert "????" not in text
+
+
+def test_site_has_required_checkout_dom_ids() -> None:
+    html = Path("site/index.html").read_text(encoding="utf-8")
+    for dom_id in REQUIRED_CHECKOUT_DOM_IDS:
+        assert f'id="{dom_id}"' in html, f"Missing required DOM id: {dom_id}"
+
+
+def test_site_copy_contains_expected_russian_headlines() -> None:
+    html = Path("site/index.html").read_text(encoding="utf-8")
+    for phrase in EXPECTED_RU_COPY_SNIPPETS:
+        assert phrase in html, f"Missing expected UI phrase: {phrase}"
+
+
+def test_site_files_have_no_replacement_character() -> None:
+    site_files = [
+        Path("site/index.html"),
+        Path("site/site.js"),
+        Path("site/terms.html"),
+        Path("site/privacy.html"),
+        Path("site/refund.html"),
+        Path("site/autorenew.html"),
+    ]
+    for path in site_files:
+        text = path.read_text(encoding="utf-8")
+        assert "�" not in text, f"UTF-8 replacement character found in: {path}"
 
 
 def test_build_delivery_payload_dedupes_links_and_uses_supported_signature(monkeypatch) -> None:
