@@ -30,6 +30,24 @@ EXPECTED_RU_COPY_SNIPPETS = [
     "Частые вопросы",
 ]
 
+MOJIBAKE_CODEPOINTS = {
+    0x0403,  # Ѓ
+    0x0408,  # Ј
+    0x0409,  # Љ
+    0x040A,  # Њ
+    0x040B,  # Ћ
+    0x040C,  # Ќ
+    0x040F,  # Џ
+    0x0453,  # ѓ
+    0x0458,  # ј
+    0x0459,  # љ
+    0x045A,  # њ
+    0x045B,  # ћ
+    0x045C,  # ќ
+    0x045F,  # џ
+    0x0491,  # ґ
+}
+
 
 def test_site_js_has_no_broken_placeholder_text() -> None:
     text = Path("site/site.js").read_text(encoding="utf-8")
@@ -60,6 +78,12 @@ def test_site_files_have_no_replacement_character() -> None:
     for path in site_files:
         text = path.read_text(encoding="utf-8")
         assert "�" not in text, f"UTF-8 replacement character found in: {path}"
+
+
+def test_website_api_has_no_common_mojibake_codepoints() -> None:
+    text = Path("website_api.py").read_text(encoding="utf-8")
+    found = sorted({ord(ch) for ch in text if ord(ch) in MOJIBAKE_CODEPOINTS})
+    assert not found, f"Possible mojibake codepoints in website_api.py: {found}"
 
 
 def test_build_delivery_payload_dedupes_links_and_uses_supported_signature(monkeypatch) -> None:
