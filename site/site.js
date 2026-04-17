@@ -1,4 +1,4 @@
-﻿const byId = (id) => document.getElementById(id);
+const byId = (id) => document.getElementById(id);
 
 const els = {
   year: byId("year"),
@@ -19,10 +19,19 @@ const els = {
   subUrl: byId("sub-url"),
   copySubUrl: byId("copy-sub-url"),
   copyMsg: byId("copy-msg"),
+  navBurger: byId("nav-burger"),
+  mainNav: document.querySelector(".main-nav"),
 };
 
 const state = {
   orderId: "",
+  planKeys: [],
+};
+
+const PLAN_KEY_HINTS = {
+  starter: ["starter", "start", "m1"],
+  optimal: ["optimal", "optimum", "m3"],
+  annual: ["annual", "yearly", "y1"],
 };
 
 if (els.year) {
@@ -56,26 +65,91 @@ function setBusy(button, busyText) {
   };
 }
 
+function setCheckoutEnabled(enabled) {
+  const submitBtn = els.form?.querySelector("button[type='submit']");
+  if (submitBtn) {
+    submitBtn.disabled = !enabled;
+  }
+}
+
 async function api(path, options = {}) {
-  const response = await fetch(path, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
-    ...options,
-  });
-
-  let payload;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
   try {
-    payload = await response.json();
-  } catch {
-    payload = { ok: false, error: `HTTP ${response.status}` };
-  }
+    const response = await fetch(path, {
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
+      ...options,
+    });
 
-  if (!response.ok || payload.ok === false) {
-    throw new Error(payload.error || `HTTP ${response.status}`);
+    let payload;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = { ok: false, error: `HTTP ${response.status}` };
+    }
+
+    if (!response.ok || payload.ok === false) {
+      throw new Error(payload.error || `HTTP ${response.status}`);
+    }
+    return payload;
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      throw new Error("Запрос превысил время ожидания. Проверьте соединение.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-  return payload;
+}
+
+function normalizePlanKey(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function syncPlanCardButtons(plans) {
+  const planKeys = plans
+    .map((plan) => normalizePlanKey(plan?.key))
+    .filter(Boolean);
+  state.planKeys = planKeys;
+
+  const buttons = [...document.querySelectorAll(".plan-select-btn")];
+  buttons.forEach((btn, index) => {
+    const currentKey = normalizePlanKey(btn.dataset.planKey);
+    let resolved = "";
+
+    if (planKeys.includes(currentKey)) {
+      resolved = currentKey;
+    }
+
+    if (!resolved && PLAN_KEY_HINTS[currentKey]) {
+      resolved = PLAN_KEY_HINTS[currentKey].find((hint) => planKeys.includes(hint)) || "";
+    }
+
+    if (!resolved) {
+      resolved = planKeys[index] || planKeys[0] || currentKey;
+    }
+
+    if (resolved) {
+      btn.dataset.planKey = resolved;
+    }
+  });
+}
+
+function bindPlanCardButtons() {
+  document.querySelectorAll(".plan-select-btn").forEach((btn) => {
+    if (btn.dataset.bound === "1") return;
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", () => {
+      const key = normalizePlanKey(btn.dataset.planKey);
+      if (!els.planSelect || !key) return;
+      els.planSelect.value = key;
+      setError("");
+    });
+  });
 }
 
 function renderPlans(plans) {
@@ -145,14 +219,66 @@ function showDelivery(subscriptionUrl) {
   els.subUrl.value = subscriptionUrl || "";
 }
 
+function closeMobileNav() {
+  if (!els.mainNav || !els.navBurger) return;
+  els.mainNav.classList.remove("open");
+  els.navBurger.setAttribute("aria-expanded", "false");
+}
+
+function setupMobileNav() {
+  if (!els.navBurger || !els.mainNav) return;
+  els.navBurger.addEventListener("click", () => {
+    const open = els.mainNav.classList.toggle("open");
+    els.navBurger.setAttribute("aria-expanded", String(open));
+  });
+  els.mainNav.querySelectorAll("a").forEach((anchor) => {
+    anchor.addEventListener("click", () => {
+      closeMobileNav();
+    });
+  });
+  window.addEventListener("resize", () => {
+    if (window.innerWidth > 980) {
+      closeMobileNav();
+    }
+  });
+}
+
 async function loadPlansAndProviders() {
   const payload = await api("/api/plans", { method: "GET" });
-  renderPlans(payload.plans || []);
-  renderProviders(payload.providers || []);
-
-  if (!payload.providers || payload.providers.length === 0) {
-    throw new Error("Сейчас нет доступных способов оплаты");
+  const plans = Array.isArray(payload.plans) ? payload.plans : [];
+  if (plans.length === 0) {
+    if (els.planSelect) {
+      els.planSelect.innerHTML = "";
+      els.planSelect.disabled = true;
+    }
+    setCheckoutEnabled(false);
+    setError("Тарифы временно недоступны. Попробуйте позже или напишите в поддержку.");
+    return;
   }
+
+  renderPlans(plans);
+  if (els.planSelect) {
+    els.planSelect.disabled = false;
+  }
+  syncPlanCardButtons(plans);
+  bindPlanCardButtons();
+
+  const providers = Array.isArray(payload.providers) ? payload.providers : [];
+  renderProviders(providers);
+
+  if (providers.length === 0) {
+    if (els.providerSelect) {
+      els.providerSelect.disabled = true;
+    }
+    setCheckoutEnabled(false);
+    setError("Сейчас нет доступных способов оплаты");
+    return;
+  }
+
+  if (els.providerSelect) {
+    els.providerSelect.disabled = false;
+  }
+  setCheckoutEnabled(true);
 }
 
 async function createCheckoutOrder(event) {
@@ -252,7 +378,7 @@ async function checkOrderStatus() {
     };
     setOrderMessage(humanStatus[status] || `Текущий статус: ${status}`);
   } catch (err) {
-    setOrderMessage(err.message || "Ошибка проверки статуса", true);
+    setOrderMessage(String(err?.message || "Ошибка проверки статуса"), true);
   }
 }
 
@@ -264,7 +390,23 @@ async function copySubscriptionUrl() {
   }
 
   try {
-    await navigator.clipboard.writeText(value);
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+    } else {
+      const helper = document.createElement("textarea");
+      helper.value = value;
+      helper.setAttribute("readonly", "");
+      helper.style.position = "fixed";
+      helper.style.opacity = "0";
+      document.body.appendChild(helper);
+      helper.focus();
+      helper.select();
+      const copied = document.execCommand("copy");
+      document.body.removeChild(helper);
+      if (!copied) {
+        throw new Error("copy_failed");
+      }
+    }
     setText(els.copyMsg, "Скопировано");
   } catch {
     if (els.subUrl) {
@@ -276,10 +418,14 @@ async function copySubscriptionUrl() {
 }
 
 async function init() {
+  setupMobileNav();
+  bindPlanCardButtons();
+
   try {
     await loadPlansAndProviders();
   } catch (err) {
-    setError(err.message || "Не удалось загрузить тарифы");
+    setCheckoutEnabled(false);
+    setError(String(err?.message || "Не удалось загрузить тарифы"));
   }
 
   if (els.form) {

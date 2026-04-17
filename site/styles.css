@@ -140,6 +140,7 @@ a:hover {
 }
 
 .header-inner {
+  position: relative;
   min-height: 78px;
   display: flex;
   align-items: center;
@@ -190,6 +191,25 @@ a:hover {
 
 .main-nav a:hover {
   color: #eaf4ff;
+}
+
+.nav-burger {
+  display: none;
+  flex-direction: column;
+  gap: 5px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+}
+
+.nav-burger span {
+  display: block;
+  width: 22px;
+  height: 2px;
+  background: var(--text);
+  border-radius: 2px;
+  transition: transform 0.2s;
 }
 
 .btn {
@@ -277,6 +297,13 @@ a:hover {
   flex-wrap: wrap;
   gap: 12px;
   margin-top: 24px;
+}
+
+.trust-micro {
+  margin: 16px 0 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+  letter-spacing: 0.01em;
 }
 
 .trust-list {
@@ -461,6 +488,25 @@ a:hover {
   outline: none;
   border-color: rgba(67, 214, 255, 0.8);
   box-shadow: 0 0 0 3px rgba(67, 214, 255, 0.22);
+}
+
+.renew-details {
+  margin: 4px 0 10px;
+}
+
+.renew-details > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.renew-details > summary::marker {
+  display: none;
+}
+
+.renew-note {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: -2px 0 8px;
 }
 
 select.field-input {
@@ -690,8 +736,26 @@ select.field-input {
     grid-template-columns: 1fr;
   }
 
+  .nav-burger {
+    display: flex;
+  }
+
   .main-nav {
     display: none;
+    position: absolute;
+    top: 78px;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    padding: 16px;
+    gap: 14px;
+    background: rgba(4, 10, 19, 0.96);
+    border-bottom: 1px solid rgba(112, 161, 238, 0.18);
+    z-index: 100;
+  }
+
+  .main-nav.open {
+    display: flex;
   }
 
   .hero {
