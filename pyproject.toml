@@ -10,3 +10,20 @@ line-length = 120
 
 [tool.ruff.lint]
 select = ["E9", "F63", "F7", "F82"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+exclude = "(^tests/|^test_tmp/|^site/)"
+
+[[tool.mypy.overrides]]
+module = [
+  "bot",
+  "website_api",
+  "subscription_gateway",
+  "src.vpnbot.bot_runtime",
+  "src.vpnbot.bot_ops",
+  "src.vpnbot.bot_router_helpers",
+  "src.vpnbot.handlers.*",
+]
+ignore_errors = true
