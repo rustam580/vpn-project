@@ -1,26 +1,26 @@
-﻿# РЎР°Р№С‚ RootVPN
+# Сайт RootVPN
 
-РЎР°Р№С‚ РІ РїР°РїРєРµ `site/` С‚РµРїРµСЂСЊ СЂР°Р±РѕС‚Р°РµС‚ РєР°Рє РѕС‚РґРµР»СЊРЅР°СЏ С‚РѕС‡РєР° РїСЂРѕРґР°Р¶:
-- РїРѕР»СЊР·РѕРІР°С‚РµР»СЊ РѕРїР»Р°С‡РёРІР°РµС‚ РЅР° СЃР°Р№С‚Рµ,
-- СЃР°Р№С‚ РїСЂРѕРІРµСЂСЏРµС‚ РѕРїР»Р°С‚Сѓ,
-- РІС‹РґР°РµС‚ СЃСЃС‹Р»РєСѓ РїРѕРґРїРёСЃРєРё Р±РµР· Telegram.
+Сайт в папке `site/` теперь работает как отдельная точка продаж:
+- пользователь оплачивает на сайте,
+- сайт проверяет оплату,
+- выдает ссылку подписки без Telegram.
 
-## Р§С‚Рѕ СѓР¶Рµ РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ
+## Что уже должно быть
 
-- Р‘РѕС‚ СЂР°Р·РІРµСЂРЅСѓС‚ РІ `/opt/vpn-bot`
-- `sub.rootvpn.tech:8443` СѓР¶Рµ РїСЂРѕРєСЃРёСЂСѓРµС‚ РЅР° `127.0.0.1:8010` (subscription gateway)
-- Р”РѕРјРµРЅ `rootvpn.tech` РЅР°РїСЂР°РІР»РµРЅ РЅР° СЃРµСЂРІРµСЂ
+- Бот развернут в `/opt/vpn-bot`
+- `sub.rootvpn.tech:8443` уже проксирует на `127.0.0.1:8010` (subscription gateway)
+- Домен `rootvpn.tech` направлен на сервер
 
-## 1. РћР±РЅРѕРІРёС‚СЊ РєРѕРґ РЅР° СЃРµСЂРІРµСЂРµ
+## 1. Обновить код на сервере
 
 ```bash
 cd /opt/vpn-bot
 git pull --ff-only
 ```
 
-## 2. РџСЂРѕРІРµСЂРёС‚СЊ `.env`
+## 2. Проверить `.env`
 
-Р”РѕР±Р°РІСЊС‚Рµ/РїСЂРѕРІРµСЂСЊС‚Рµ:
+Добавьте/проверьте:
 
 ```env
 WEBSITE_API_HOST=127.0.0.1
@@ -30,7 +30,7 @@ WEBSITE_SUPPORT_URL=https://t.me/RootVPN_support_1
 WEBSITE_ENABLE_CRYPTO=true
 ```
 
-## 3. РџРѕРґРЅСЏС‚СЊ API СЃР°Р№С‚Р° РєР°Рє СЃРµСЂРІРёСЃ
+## 3. Поднять API сайта как сервис
 
 ```bash
 cp /opt/vpn-bot/deploy/vpn-site-api.service.example /etc/systemd/system/vpn-site-api.service
@@ -39,15 +39,15 @@ systemctl enable --now vpn-site-api
 systemctl status vpn-site-api --no-pager
 ```
 
-## 4. РќР°СЃС‚СЂРѕРёС‚СЊ Caddy
+## 4. Настроить Caddy
 
-РћС‚РєСЂРѕР№С‚Рµ:
+Откройте:
 
 ```bash
 nano /etc/caddy/Caddyfile
 ```
 
-РџСЂРёРјРµСЂ СЂР°Р±РѕС‡РµРіРѕ РєРѕРЅС„РёРіР° (РІР°Р¶РЅРѕ: Р±Р»РѕРє `sub.rootvpn.tech:8443` РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ С‚РѕР»СЊРєРѕ РѕРґРёРЅ СЂР°Р·):
+Пример рабочего конфига (важно: блок `sub.rootvpn.tech:8443` должен быть только один раз):
 
 ```caddyfile
 rootvpn.tech, www.rootvpn.tech {
@@ -69,7 +69,7 @@ sub.rootvpn.tech:8443 {
 }
 ```
 
-РџСЂРѕРІРµСЂРєР° Рё РїСЂРёРјРµРЅРµРЅРёРµ:
+Проверка и применение:
 
 ```bash
 caddy validate --config /etc/caddy/Caddyfile
@@ -77,7 +77,7 @@ systemctl reload caddy
 systemctl status caddy --no-pager
 ```
 
-## 5. РџСЂРѕРІРµСЂРєР°
+## 5. Проверка
 
 ```bash
 curl -I https://rootvpn.tech
@@ -86,33 +86,33 @@ curl -I https://rootvpn.tech/api/health
 curl -I https://sub.rootvpn.tech:8443/health
 ```
 
-РћР¶РёРґР°РµРјРѕ:
+Ожидаемо:
 - `rootvpn.tech` -> `200`
 - `/api/health` -> JSON `{"ok": true}`
 - `sub...:8443/health` -> `200`
 
-## 6. РћР±РЅРѕРІР»РµРЅРёРµ РєРѕРЅС‚РµРЅС‚Р° СЃР°Р№С‚Р°
+## 6. Обновление контента сайта
 
-Р•СЃР»Рё РјРµРЅСЏРµС‚Рµ С†РµРЅС‹/С‚РµРєСЃС‚С‹/РєРЅРѕРїРєРё РІ `site/index.html`, `site/styles.css`, `site/site.js`:
+Если меняете цены/тексты/кнопки в `site/index.html`, `site/styles.css`, `site/site.js`:
 
 ```bash
 cd /opt/vpn-bot
 git pull --ff-only
 ```
 
-РџРµСЂРµР·Р°РїСѓСЃРє `vpn-bot` РґР»СЏ СЌС‚РѕРіРѕ РЅРµ РЅСѓР¶РµРЅ. Р”РѕСЃС‚Р°С‚РѕС‡РЅРѕ `git pull` (Рё РїСЂРё РёР·РјРµРЅРµРЅРёРё Caddy вЂ” `systemctl reload caddy`).
+Перезапуск `vpn-bot` для этого не нужен. Достаточно `git pull` (и при изменении Caddy — `systemctl reload caddy`).
 
-## Р§Р°СЃС‚С‹Рµ РїСЂРѕР±Р»РµРјС‹
+## Частые проблемы
 
 1. `ambiguous site definition: sub.rootvpn.tech:8443`
-- Р’ `Caddyfile` РґРІР° РѕРґРёРЅР°РєРѕРІС‹С… Р±Р»РѕРєР° `sub.rootvpn.tech:8443`.
-- РћСЃС‚Р°РІСЊС‚Рµ С‚РѕР»СЊРєРѕ РѕРґРёРЅ.
+- В `Caddyfile` два одинаковых блока `sub.rootvpn.tech:8443`.
+- Оставьте только один.
 
-2. `www.rootvpn.tech` РЅРµ РѕС‚РєСЂС‹РІР°РµС‚СЃСЏ
-- Р”РѕР±Р°РІСЊС‚Рµ DNS-Р·Р°РїРёСЃСЊ `A` РґР»СЏ `www` РЅР° IP СЃРµСЂРІРµСЂР°.
+2. `www.rootvpn.tech` не открывается
+- Добавьте DNS-запись `A` для `www` на IP сервера.
 
-3. API РЅРµ РѕС‚РІРµС‡Р°РµС‚
-- РџСЂРѕРІРµСЂСЊС‚Рµ СЃРµСЂРІРёСЃ:
+3. API не отвечает
+- Проверьте сервис:
 ```bash
 systemctl status vpn-site-api --no-pager
 journalctl -u vpn-site-api -n 100 --no-pager
