@@ -1,6 +1,6 @@
 ﻿# Open Issues
 
-Last updated: 2026-04-16
+Last updated: 2026-05-06
 
 ## Priority Legend
 - P0: blocks sales or legal-safe launch
@@ -28,6 +28,7 @@ Last updated: 2026-04-16
 - Owner: dev
 
 ## Recently Closed
+- Fixed UTF-8 mojibake in `README.md`, `docs/website.md`, and `.env.example` (PLANS_JSON example).
 - Database migration framework added:
   - `schema_version` table
   - ordered SQL migrations in `db/migrations/`
