@@ -24,6 +24,8 @@ from app_texts import (
     build_user_faq_text,
 )
 from src.vpnbot.payment_helpers import (
+    apply_paid_payment,
+    apply_referral_bonus_if_needed,
     cryptobot_check_invoice,
     cryptobot_create_invoice,
     yookassa_check_payment,
@@ -44,7 +46,6 @@ from config import (
 )
 from models import MarzbanUser, Plan
 from src.vpnbot.services.payment_flow import (
-    apply_paid_payment as pf_apply_paid_payment,
     check_and_apply_payment as pf_check_and_apply_payment,
 )
 from src.vpnbot.bot_formatters import (
@@ -137,9 +138,6 @@ from src.vpnbot.bot_access import (
     extend_access_device,
     set_permanent_access,
     sync_expire_across_devices,
-)
-from src.vpnbot.bot_access import (
-    apply_referral_bonus_if_needed as _apply_referral_bonus_if_needed,
 )
 from src.vpnbot.services.bot_marzban import MarzbanClient
 from src.vpnbot.bot_network import _parse_sar_dev_output
@@ -500,52 +498,6 @@ def _device_replace_confirm_keyboard(device_id: int) -> InlineKeyboardMarkup:
                 ),
             ]
         ]
-    )
-
-
-async def apply_referral_bonus_if_needed(
-    *,
-    paid_telegram_id: int,
-    repo: Repo,
-    marzban: MarzbanClient,
-    settings: Settings,
-    bot: Bot | None = None,
-) -> None:
-    await _apply_referral_bonus_if_needed(
-        paid_telegram_id=paid_telegram_id,
-        repo=repo,
-        marzban=marzban,
-        settings=settings,
-        bot=bot,
-        notify_access_updated_fn=notify_access_updated,
-    )
-
-
-async def apply_paid_payment(
-    *,
-    provider: str,
-    external_id: str,
-    payment: dict[str, Any],
-    repo: Repo,
-    marzban: MarzbanClient,
-    settings: Settings,
-    bot: Bot | None,
-    strict_device_slot: bool,
-) -> tuple[dict[str, Any], str, str | None]:
-    return await pf_apply_paid_payment(
-        provider=provider,
-        external_id=external_id,
-        payment=payment,
-        repo=repo,
-        marzban=marzban,
-        settings=settings,
-        bot=bot,
-        strict_device_slot=strict_device_slot,
-        ensure_device_fn=ensure_device,
-        extend_access_device_fn=extend_access_device,
-        extend_access_all_devices_fn=extend_access_all_devices,
-        apply_referral_bonus_if_needed_fn=apply_referral_bonus_if_needed,
-        notify_admin_payment_fn=notify_admin_payment,
     )
 
 
