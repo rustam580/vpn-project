@@ -8,6 +8,7 @@ import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -289,6 +290,201 @@ def _preset_plans(preset_key: str) -> tuple[Plan, ...] | None:
     return None
 
 
+def _validate_required_env() -> None:
+    if not os.getenv("BOT_TOKEN", "").strip():
+        raise ValueError("BOT_TOKEN is required")
+    if not os.getenv("BOT_ADMIN_IDS", "").strip():
+        raise ValueError("BOT_ADMIN_IDS is required")
+    if not os.getenv("MARZBAN_BASE_URL", "").strip():
+        raise ValueError("MARZBAN_BASE_URL is required")
+    if not os.getenv("MARZBAN_USERNAME", "").strip() or not os.getenv("MARZBAN_PASSWORD", "").strip():
+        raise ValueError("MARZBAN_USERNAME and MARZBAN_PASSWORD are required")
+
+
+def _load_required_block() -> dict[str, Any]:
+    return {
+        "bot_token": os.getenv("BOT_TOKEN", "").strip(),
+        "admin_ids": parse_admin_ids(os.getenv("BOT_ADMIN_IDS", "").strip()),
+    }
+
+
+def _load_marzban_block() -> dict[str, Any]:
+    return {
+        "marzban_base_url": os.getenv("MARZBAN_BASE_URL", "").strip().rstrip("/"),
+        "marzban_username": os.getenv("MARZBAN_USERNAME", "").strip(),
+        "marzban_password": os.getenv("MARZBAN_PASSWORD", "").strip(),
+        "marzban_verify_ssl": env_bool("MARZBAN_VERIFY_SSL", True),
+        "marzban_proxy_protocol": os.getenv("MARZBAN_PROXY_PROTOCOL", "vless").strip().lower(),
+        "config_delivery_mode": normalize_config_delivery_mode(
+            os.getenv("CONFIG_DELIVERY_MODE", "direct")
+        ),
+        "subscription_public_base_url": normalize_public_base_url(
+            os.getenv("SUBSCRIPTION_PUBLIC_BASE_URL", "")
+        ),
+    }
+
+
+def _load_network_block() -> dict[str, Any]:
+    iface = _resolve_net_iface(os.getenv("NET_IFACE", "").strip())
+    return {
+        "net_iface": iface,
+        "port_speed_mbps": _resolve_port_speed_mbps(
+            os.getenv("PORT_SPEED_Mbps", "auto").strip(),
+            iface,
+        ),
+        "port_utilization": float(os.getenv("PORT_UTILIZATION", "0.8")),
+        "concurrency_ratio": float(os.getenv("CONCURRENCY_RATIO", "0.05")),
+    }
+
+
+def _load_trial_block() -> dict[str, Any]:
+    return {
+        "trial_days": int(os.getenv("TRIAL_DAYS", "1")),
+        "trial_gb": int(os.getenv("TRIAL_GB", "0")),
+    }
+
+
+def _load_plans_block() -> dict[str, Any]:
+    default_pay_days = int(os.getenv("PAY_DAYS", "30"))
+    default_pay_gb = int(os.getenv("PAY_GB", "0"))
+    default_pay_rub = float(os.getenv("PAY_RUB", "99"))
+    plans_raw = os.getenv("PLANS_JSON", "")
+    try:
+        plans = _parse_plans_json(
+            plans_raw,
+            default_days=default_pay_days,
+            default_gb=default_pay_gb,
+            default_rub=default_pay_rub,
+        )
+    except ValueError as exc:
+        logging.warning("Invalid PLANS_JSON, fallback to PAY_* defaults: %s", exc)
+        plans = _default_plan(days=default_pay_days, gb=default_pay_gb, rub=default_pay_rub)
+    base = plans[0]
+    return {
+        "plans": plans,
+        "pay_days": base.days,
+        "pay_gb": base.gb,
+        "pay_rub": base.rub,
+    }
+
+
+def _load_cryptobot_block() -> dict[str, Any]:
+    return {
+        "cryptobot_token": os.getenv("CRYPTOBOT_TOKEN", "").strip(),
+        "cryptobot_testnet": env_bool("CRYPTOBOT_TESTNET", False),
+        "cryptobot_fiat": os.getenv("CRYPTOBOT_FIAT", "RUB").strip().upper(),
+        "cryptobot_accepted_assets": os.getenv("CRYPTOBOT_ACCEPTED_ASSETS", "USDT,TON").strip(),
+        "cryptobot_expires_in": int(os.getenv("CRYPTOBOT_EXPIRES_IN", "3600")),
+        "cryptobot_poll_seconds": int(os.getenv("CRYPTOBOT_POLL_SECONDS", "45")),
+    }
+
+
+def _load_yookassa_block() -> dict[str, Any]:
+    return {
+        "yookassa_shop_id": os.getenv("YOOKASSA_SHOP_ID", "").strip(),
+        "yookassa_secret_key": os.getenv("YOOKASSA_SECRET_KEY", "").strip(),
+        "yookassa_return_url": os.getenv("YOOKASSA_RETURN_URL", "https://t.me").strip(),
+        "yookassa_poll_seconds": int(os.getenv("YOOKASSA_POLL_SECONDS", "60")),
+        "payment_processing_requeue_seconds": max(
+            60, int(os.getenv("PAYMENT_PROCESSING_REQUEUE_SECONDS", "600"))
+        ),
+    }
+
+
+def _load_rate_limit_block() -> dict[str, Any]:
+    return {
+        "user_rate_limit_count": int(os.getenv("USER_RATE_LIMIT_COUNT", "12")),
+        "user_rate_limit_window_sec": int(os.getenv("USER_RATE_LIMIT_WINDOW_SEC", "30")),
+        "callback_rate_limit_count": int(os.getenv("CALLBACK_RATE_LIMIT_COUNT", "20")),
+        "callback_rate_limit_window_sec": int(os.getenv("CALLBACK_RATE_LIMIT_WINDOW_SEC", "30")),
+    }
+
+
+def _load_misc_block() -> dict[str, Any]:
+    return {
+        "support_username": os.getenv("SUPPORT_USERNAME", "").strip().lstrip("@"),
+        "support_text": os.getenv(
+            "SUPPORT_TEXT", "Напишите нам, поможем с подключением и оплатой."
+        ).strip(),
+        "channel_url": os.getenv("CHANNEL_URL", "").strip(),
+        "referral_bonus_days": int(os.getenv("REFERRAL_BONUS_DAYS", "3")),
+        "device_limit": int(os.getenv("DEVICE_LIMIT", "1")),
+        "device_add_rub": float(os.getenv("DEVICE_ADD_RUB", "99")),
+        "deploy_broadcast_users": env_bool("DEPLOY_BROADCAST_USERS", False),
+        "db_path": os.getenv("DB_PATH", "./data/bot.sqlite3").strip(),
+    }
+
+
+def _load_ops_report_block() -> dict[str, Any]:
+    return {
+        "ops_report_enabled": env_bool("OPS_REPORT_ENABLED", True),
+        "ops_report_hour": max(0, min(23, int(os.getenv("OPS_REPORT_HOUR", "9")))),
+        "ops_report_minute": max(0, min(59, int(os.getenv("OPS_REPORT_MINUTE", "0")))),
+    }
+
+
+def _load_renewal_block() -> dict[str, Any]:
+    return {
+        "renewal_alerts_enabled": env_bool("RENEWAL_ALERTS_ENABLED", True),
+        "renewal_alert_interval_sec": max(
+            60, int(os.getenv("RENEWAL_ALERT_INTERVAL_SEC", "300"))
+        ),
+        "renewal_reminder_hours": parse_int_csv(
+            os.getenv("RENEWAL_REMINDER_HOURS", "72,24,6"),
+            default=(6, 24, 72),
+        ),
+        "renewal_expired_alert_enabled": env_bool("RENEWAL_EXPIRED_ALERT_ENABLED", True),
+    }
+
+
+def _load_admin_alerts_block() -> dict[str, Any]:
+    return {
+        "admin_alerts_enabled": env_bool("ADMIN_ALERTS_ENABLED", True),
+        "admin_alert_cooldown_sec": max(
+            0, int(os.getenv("ADMIN_ALERT_COOLDOWN_SEC", "900"))
+        ),
+    }
+
+
+def _load_auto_renew_block() -> dict[str, Any]:
+    auto_provider = os.getenv("AUTO_RENEW_INVOICE_PROVIDER", "card").strip().lower()
+    if auto_provider not in {"card", "crypto"}:
+        auto_provider = "card"
+    auto_target = os.getenv("AUTO_RENEW_INVOICE_TARGET", "all").strip().lower()
+    if auto_target not in {"all", "slot"}:
+        auto_target = "all"
+    return {
+        "auto_renew_invoice_enabled": env_bool("AUTO_RENEW_INVOICE_ENABLED", False),
+        "auto_renew_invoice_hours_before": max(
+            1, int(os.getenv("AUTO_RENEW_INVOICE_HOURS_BEFORE", "12"))
+        ),
+        "auto_renew_invoice_provider": auto_provider,
+        "auto_renew_invoice_plan_key": os.getenv("AUTO_RENEW_INVOICE_PLAN_KEY", "").strip(),
+        "auto_renew_invoice_target": auto_target,
+    }
+
+
+def _load_sub_migration_block() -> dict[str, Any]:
+    return {
+        "sub_migration_reminder_enabled": env_bool("SUB_MIGRATION_REMINDER_ENABLED", False),
+        "sub_migration_reminder_interval_sec": max(
+            300, int(os.getenv("SUB_MIGRATION_REMINDER_INTERVAL_SEC", "900"))
+        ),
+        "sub_migration_reminder_lookback_days": max(
+            1, int(os.getenv("SUB_MIGRATION_REMINDER_LOOKBACK_DAYS", "7"))
+        ),
+        "sub_migration_reminder_cooldown_hours": max(
+            1, int(os.getenv("SUB_MIGRATION_REMINDER_COOLDOWN_HOURS", "24"))
+        ),
+        "sub_migration_reminder_batch": max(
+            1, min(200, int(os.getenv("SUB_MIGRATION_REMINDER_BATCH", "20")))
+        ),
+        "subscription_hits_retention_days": max(
+            7, int(os.getenv("SUBSCRIPTION_HITS_RETENTION_DAYS", "60"))
+        ),
+    }
+
+
 @dataclass(frozen=True)
 class Settings:
     bot_token: str
@@ -357,133 +553,23 @@ class Settings:
     @staticmethod
     def load() -> "Settings":
         load_dotenv()
-        bot_token = os.getenv("BOT_TOKEN", "").strip()
-        admin_raw = os.getenv("BOT_ADMIN_IDS", "").strip()
-        marzban_base_url = os.getenv("MARZBAN_BASE_URL", "").strip().rstrip("/")
-        marzban_username = os.getenv("MARZBAN_USERNAME", "").strip()
-        marzban_password = os.getenv("MARZBAN_PASSWORD", "").strip()
-        net_iface = _resolve_net_iface(os.getenv("NET_IFACE", "").strip())
-        port_speed_mbps = _resolve_port_speed_mbps(
-            os.getenv("PORT_SPEED_Mbps", "auto").strip(),
-            net_iface,
-        )
-
-        if not bot_token:
-            raise ValueError("BOT_TOKEN is required")
-        if not admin_raw:
-            raise ValueError("BOT_ADMIN_IDS is required")
-        if not marzban_base_url:
-            raise ValueError("MARZBAN_BASE_URL is required")
-        if not marzban_username or not marzban_password:
-            raise ValueError("MARZBAN_USERNAME and MARZBAN_PASSWORD are required")
-        default_pay_days = int(os.getenv("PAY_DAYS", "30"))
-        default_pay_gb = int(os.getenv("PAY_GB", "0"))
-        default_pay_rub = float(os.getenv("PAY_RUB", "99"))
-        plans_raw = os.getenv("PLANS_JSON", "")
-        try:
-            plans = _parse_plans_json(
-                plans_raw,
-                default_days=default_pay_days,
-                default_gb=default_pay_gb,
-                default_rub=default_pay_rub,
-            )
-        except ValueError as exc:
-            logging.warning("Invalid PLANS_JSON, fallback to PAY_* defaults: %s", exc)
-            plans = _default_plan(days=default_pay_days, gb=default_pay_gb, rub=default_pay_rub)
-        base_plan = plans[0]
-        reminder_hours = parse_int_csv(
-            os.getenv("RENEWAL_REMINDER_HOURS", "72,24,6"),
-            default=(6, 24, 72),
-        )
-        auto_provider = os.getenv("AUTO_RENEW_INVOICE_PROVIDER", "card").strip().lower()
-        if auto_provider not in {"card", "crypto"}:
-            auto_provider = "card"
-        auto_target = os.getenv("AUTO_RENEW_INVOICE_TARGET", "all").strip().lower()
-        if auto_target not in {"all", "slot"}:
-            auto_target = "all"
-
-        return Settings(
-            bot_token=bot_token,
-            admin_ids=parse_admin_ids(admin_raw),
-            marzban_base_url=marzban_base_url,
-            marzban_username=marzban_username,
-            marzban_password=marzban_password,
-            marzban_verify_ssl=env_bool("MARZBAN_VERIFY_SSL", True),
-            marzban_proxy_protocol=os.getenv("MARZBAN_PROXY_PROTOCOL", "vless").strip().lower(),
-            config_delivery_mode=normalize_config_delivery_mode(
-                os.getenv("CONFIG_DELIVERY_MODE", "direct")
-            ),
-            subscription_public_base_url=normalize_public_base_url(
-                os.getenv("SUBSCRIPTION_PUBLIC_BASE_URL", "")
-            ),
-            trial_days=int(os.getenv("TRIAL_DAYS", "1")),
-            trial_gb=int(os.getenv("TRIAL_GB", "0")),
-            plans=plans,
-            pay_days=base_plan.days,
-            pay_gb=base_plan.gb,
-            pay_rub=base_plan.rub,
-            cryptobot_token=os.getenv("CRYPTOBOT_TOKEN", "").strip(),
-            cryptobot_testnet=env_bool("CRYPTOBOT_TESTNET", False),
-            cryptobot_fiat=os.getenv("CRYPTOBOT_FIAT", "RUB").strip().upper(),
-            cryptobot_accepted_assets=os.getenv("CRYPTOBOT_ACCEPTED_ASSETS", "USDT,TON").strip(),
-            cryptobot_expires_in=int(os.getenv("CRYPTOBOT_EXPIRES_IN", "3600")),
-            cryptobot_poll_seconds=int(os.getenv("CRYPTOBOT_POLL_SECONDS", "45")),
-            yookassa_shop_id=os.getenv("YOOKASSA_SHOP_ID", "").strip(),
-            yookassa_secret_key=os.getenv("YOOKASSA_SECRET_KEY", "").strip(),
-            yookassa_return_url=os.getenv("YOOKASSA_RETURN_URL", "https://t.me").strip(),
-            yookassa_poll_seconds=int(os.getenv("YOOKASSA_POLL_SECONDS", "60")),
-            payment_processing_requeue_seconds=max(
-                60, int(os.getenv("PAYMENT_PROCESSING_REQUEUE_SECONDS", "600"))
-            ),
-            user_rate_limit_count=int(os.getenv("USER_RATE_LIMIT_COUNT", "12")),
-            user_rate_limit_window_sec=int(os.getenv("USER_RATE_LIMIT_WINDOW_SEC", "30")),
-            callback_rate_limit_count=int(os.getenv("CALLBACK_RATE_LIMIT_COUNT", "20")),
-            callback_rate_limit_window_sec=int(os.getenv("CALLBACK_RATE_LIMIT_WINDOW_SEC", "30")),
-            support_username=os.getenv("SUPPORT_USERNAME", "").strip().lstrip("@"),
-            support_text=os.getenv("SUPPORT_TEXT", "Напишите нам, поможем с подключением и оплатой.").strip(),
-            channel_url=os.getenv("CHANNEL_URL", "").strip(),
-            referral_bonus_days=int(os.getenv("REFERRAL_BONUS_DAYS", "3")),
-            device_limit=int(os.getenv("DEVICE_LIMIT", "1")),
-            device_add_rub=float(os.getenv("DEVICE_ADD_RUB", "99")),
-            deploy_broadcast_users=env_bool("DEPLOY_BROADCAST_USERS", False),
-            db_path=os.getenv("DB_PATH", "./data/bot.sqlite3").strip(),
-            ops_report_enabled=env_bool("OPS_REPORT_ENABLED", True),
-            ops_report_hour=max(0, min(23, int(os.getenv("OPS_REPORT_HOUR", "9")))),
-            ops_report_minute=max(0, min(59, int(os.getenv("OPS_REPORT_MINUTE", "0")))),
-            net_iface=net_iface,
-            port_speed_mbps=port_speed_mbps,
-            port_utilization=float(os.getenv("PORT_UTILIZATION", "0.8")),
-            concurrency_ratio=float(os.getenv("CONCURRENCY_RATIO", "0.05")),
-            renewal_alerts_enabled=env_bool("RENEWAL_ALERTS_ENABLED", True),
-            renewal_alert_interval_sec=max(60, int(os.getenv("RENEWAL_ALERT_INTERVAL_SEC", "300"))),
-            renewal_reminder_hours=reminder_hours,
-            renewal_expired_alert_enabled=env_bool("RENEWAL_EXPIRED_ALERT_ENABLED", True),
-            admin_alerts_enabled=env_bool("ADMIN_ALERTS_ENABLED", True),
-            admin_alert_cooldown_sec=max(0, int(os.getenv("ADMIN_ALERT_COOLDOWN_SEC", "900"))),
-            auto_renew_invoice_enabled=env_bool("AUTO_RENEW_INVOICE_ENABLED", False),
-            auto_renew_invoice_hours_before=max(
-                1, int(os.getenv("AUTO_RENEW_INVOICE_HOURS_BEFORE", "12"))
-            ),
-            auto_renew_invoice_provider=auto_provider,
-            auto_renew_invoice_plan_key=os.getenv("AUTO_RENEW_INVOICE_PLAN_KEY", "").strip(),
-            auto_renew_invoice_target=auto_target,
-            sub_migration_reminder_enabled=env_bool("SUB_MIGRATION_REMINDER_ENABLED", False),
-            sub_migration_reminder_interval_sec=max(
-                300, int(os.getenv("SUB_MIGRATION_REMINDER_INTERVAL_SEC", "900"))
-            ),
-            sub_migration_reminder_lookback_days=max(
-                1, int(os.getenv("SUB_MIGRATION_REMINDER_LOOKBACK_DAYS", "7"))
-            ),
-            sub_migration_reminder_cooldown_hours=max(
-                1, int(os.getenv("SUB_MIGRATION_REMINDER_COOLDOWN_HOURS", "24"))
-            ),
-            sub_migration_reminder_batch=max(
-                1, min(200, int(os.getenv("SUB_MIGRATION_REMINDER_BATCH", "20")))
-            ),
-            subscription_hits_retention_days=max(
-                7, int(os.getenv("SUBSCRIPTION_HITS_RETENTION_DAYS", "60"))
-            ),
-        )
+        _validate_required_env()
+        fields: dict[str, Any] = {}
+        fields.update(_load_required_block())
+        fields.update(_load_marzban_block())
+        fields.update(_load_network_block())
+        fields.update(_load_trial_block())
+        fields.update(_load_plans_block())
+        fields.update(_load_cryptobot_block())
+        fields.update(_load_yookassa_block())
+        fields.update(_load_rate_limit_block())
+        fields.update(_load_misc_block())
+        fields.update(_load_ops_report_block())
+        fields.update(_load_renewal_block())
+        fields.update(_load_admin_alerts_block())
+        fields.update(_load_auto_renew_block())
+        fields.update(_load_sub_migration_block())
+        return Settings(**fields)
 
     def cryptobot_enabled(self) -> bool:
         return bool(self.cryptobot_token)
