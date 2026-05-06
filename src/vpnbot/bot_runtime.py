@@ -23,11 +23,11 @@ from app_texts import (
     build_support_templates_text,
     build_user_faq_text,
 )
-from src.vpnbot.services.payments_service import (
-    cryptobot_check_invoice as ps_cryptobot_check_invoice,
-    cryptobot_create_invoice as ps_cryptobot_create_invoice,
-    yookassa_check_payment as ps_yookassa_check_payment,
-    yookassa_create_payment as ps_yookassa_create_payment,
+from src.vpnbot.payment_helpers import (
+    cryptobot_check_invoice,
+    cryptobot_create_invoice,
+    yookassa_check_payment,
+    yookassa_create_payment,
 )
 from config import (
     _absolutize_subscription_link,
@@ -677,45 +677,6 @@ async def apply_referral_bonus_if_needed(
         bot=bot,
         notify_access_updated_fn=notify_access_updated,
     )
-
-async def cryptobot_create_invoice(
-    settings: Settings,
-    telegram_id: int,
-    *,
-    amount_rub: float | None = None,
-    description: str | None = None,
-) -> tuple[str, str]:
-    return await ps_cryptobot_create_invoice(
-        settings,
-        telegram_id,
-        amount_rub=amount_rub,
-        description=description,
-    )
-
-
-async def cryptobot_check_invoice(settings: Settings, external_id: str) -> str:
-    return await ps_cryptobot_check_invoice(settings, external_id)
-
-
-async def yookassa_create_payment(
-    settings: Settings,
-    telegram_id: int,
-    *,
-    amount_rub: float | None = None,
-    description: str | None = None,
-    return_url: str | None = None,
-) -> tuple[str, str]:
-    return await ps_yookassa_create_payment(
-        settings,
-        telegram_id,
-        amount_rub=amount_rub,
-        description=description,
-        return_url=return_url,
-    )
-
-
-async def yookassa_check_payment(settings: Settings, external_id: str) -> str:
-    return await ps_yookassa_check_payment(settings, external_id)
 
 
 async def apply_paid_payment(
