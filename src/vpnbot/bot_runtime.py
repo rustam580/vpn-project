@@ -19,8 +19,6 @@ from aiogram.types import (
     Message,
 )
 from app_texts import (
-    build_config_import_hint_text,
-    build_quick_connect_guide_text,
     build_start_text,
     build_support_templates_text,
     build_user_faq_text,
@@ -71,6 +69,11 @@ from src.vpnbot.env_utils import (
     coerce_env_value,
     normalize_channel_url,
     update_env_file,
+)
+from src.vpnbot.message_utils import (
+    config_import_hint_text,
+    quick_connect_guide_text,
+    split_message,
 )
 from src.vpnbot.handlers.bot_handlers_admin import (
     AdminMessageDeps,
@@ -434,31 +437,6 @@ ENV_EDITABLE_KEYS: dict[str, str] = {
     "SUB_MIGRATION_REMINDER_BATCH": "int",
     "SUBSCRIPTION_HITS_RETENTION_DAYS": "int",
 }
-
-
-def split_message(text: str, limit: int = 3500) -> list[str]:
-    if len(text) <= limit:
-        return [text]
-    parts: list[str] = []
-    current = ""
-    for line in text.splitlines():
-        candidate = line if not current else f"{current}\n{line}"
-        if len(candidate) > limit and current:
-            parts.append(current)
-            current = line
-        else:
-            current = candidate
-    if current:
-        parts.append(current)
-    return parts
-
-
-def quick_connect_guide_text() -> str:
-    return build_quick_connect_guide_text()
-
-
-def config_import_hint_text() -> str:
-    return build_config_import_hint_text()
 
 
 def _configs_keyboard(items: list[tuple[int, str]]) -> InlineKeyboardMarkup | None:
