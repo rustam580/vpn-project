@@ -10,19 +10,7 @@ from aiogram.types import (
 )
 
 from bot_formatters import plan_title
-
-
-def _device_label(device_id: int, device_name: str | None) -> str:
-    name = (device_name or "").strip()
-    if name:
-        return name
-    return f"Устройство {device_id}"
-
-
-def _short_label(label: str, limit: int = 18) -> str:
-    if len(label) <= limit:
-        return label
-    return f"{label[:limit - 1]}…"
+from src.vpnbot.device_utils import _device_label, _short_label
 
 
 def keyboard_for_user(*, is_admin: bool) -> ReplyKeyboardMarkup:
