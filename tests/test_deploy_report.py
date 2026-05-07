@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 import bot
+from src.vpnbot import deploy_reports
 
 
 class FakeBot:
@@ -16,7 +17,7 @@ class FakeBot:
 @pytest.mark.asyncio
 async def test_send_deploy_report_waits_until_exit_marker(local_tmp_path, monkeypatch) -> None:
     log_path = local_tmp_path / "last-deploy.log"
-    monkeypatch.setattr(bot, "DEPLOY_REPORT_PATH", log_path)
+    monkeypatch.setattr(deploy_reports, "DEPLOY_REPORT_PATH", log_path)
 
     fake_bot = FakeBot()
     settings = SimpleNamespace(admin_ids=[123], deploy_broadcast_users=False)
