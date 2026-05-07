@@ -33,7 +33,6 @@ from src.vpnbot.payment_helpers import (
 )
 from config import (
     _absolutize_subscription_link,
-    _normalize_plan_key,
     _parse_plans_json,
     _plans_to_json,
     _preset_plans,
@@ -44,7 +43,7 @@ from config import (
     parse_int_csv,
     Settings,
 )
-from models import MarzbanUser, Plan
+from models import MarzbanUser
 from src.vpnbot.services.payment_flow import (
     check_and_apply_payment as pf_check_and_apply_payment,
 )
@@ -92,6 +91,17 @@ from src.vpnbot.notifications import (
     notify_admin_payment,
     notify_admin_requeued_processing,
     notify_admin_worker_alert,
+)
+from src.vpnbot.worker_runtime import (
+    auto_renew_plan,
+    auto_renew_provider,
+    cryptobot_auto_worker,
+    daily_ops_report_worker,
+    find_plan,
+    send_daily_report,
+    subscription_migration_worker,
+    subscription_renewal_worker,
+    yookassa_auto_worker,
 )
 from src.vpnbot.handlers.bot_handlers_admin import (
     AdminMessageDeps,
@@ -144,7 +154,6 @@ from src.vpnbot.bot_network import _parse_sar_dev_output
 from src.vpnbot.bot_ops import (
     build_admin_stats_text,
     build_ops_report_text,
-    build_payments_summary,
     build_ref_top_text,
 )
 from src.vpnbot.bot_rate_limit import InMemoryRateLimiter
@@ -154,14 +163,6 @@ from src.vpnbot.bot_router_helpers import (
     UserLookupContext,
     send_broadcast_preview as send_broadcast_preview_impl,
     send_user_lookup as send_user_lookup_impl,
-)
-from src.vpnbot.bot_workers import (
-    auto_renew_plan as _auto_renew_plan,
-    auto_renew_provider as _auto_renew_provider,
-    cryptobot_auto_worker as _cryptobot_auto_worker,
-    subscription_migration_worker as _subscription_migration_worker,
-    subscription_renewal_worker as _subscription_renewal_worker,
-    yookassa_auto_worker as _yookassa_auto_worker,
 )
 from utils import (
     build_device_username,
@@ -348,14 +349,6 @@ def is_admin(telegram_id: int | None, settings: Settings) -> bool:
     return telegram_id is not None and telegram_id in settings.admin_ids
 
 
-def find_plan(settings: Settings, key: str) -> Plan | None:
-    normalized = _normalize_plan_key(key, settings.pay_days)
-    for plan in settings.plans:
-        if plan.key == normalized:
-            return plan
-    return None
-
-
 def enabled_payment_providers(settings: Settings) -> list[str]:
     providers: list[str] = []
     if settings.cryptobot_enabled():
@@ -525,77 +518,6 @@ async def check_and_apply_payment(
     )
 
 
-async def send_daily_report(
-    *,
-    settings: Settings,
-    repo: Repo,
-    marzban: MarzbanClient,
-    bot: Bot,
-) -> None:
-    try:
-        ops_text = await asyncio.wait_for(
-            build_ops_report_text(settings, marzban, sar_seconds=60),
-            timeout=75,
-        )
-    except Exception:
-        logging.exception("Daily report: ops text failed")
-        ops_text = "Ops отчет: ошибка формирования"
-    try:
-        payments_text = await asyncio.wait_for(build_payments_summary(repo), timeout=5)
-    except Exception:
-        logging.exception("Daily report: payments text failed")
-        payments_text = "Платежи: ошибка формирования"
-    try:
-        stats_text = await asyncio.wait_for(build_admin_stats_text(repo, marzban), timeout=20)
-    except Exception:
-        logging.exception("Daily report: stats text failed")
-        stats_text = "Статистика: ошибка формирования"
-    header = f"📅 Ежедневный отчет ({datetime.now().strftime('%d.%m.%Y %H:%M')})"
-    full = f"{header}\n\n{ops_text}\n\n{payments_text}\n\n{stats_text}"
-    for chunk in split_message(full, limit=3500):
-        for admin_id in settings.admin_ids:
-            try:
-                await bot.send_message(int(admin_id), chunk)
-            except Exception:
-                logging.exception("Daily report: failed to send to admin %s", admin_id)
-
-
-async def daily_ops_report_worker(
-    *,
-    settings: Settings,
-    repo: Repo,
-    marzban: MarzbanClient,
-    bot: Bot,
-    stop_event: asyncio.Event,
-) -> None:
-    if not settings.ops_report_enabled:
-        return
-    last_sent: datetime.date | None = None
-    while not stop_event.is_set():
-        now = datetime.now()
-        target = now.replace(
-            hour=settings.ops_report_hour,
-            minute=settings.ops_report_minute,
-            second=0,
-            microsecond=0,
-        )
-        if now >= target and (last_sent is None or last_sent != now.date()):
-            try:
-                await send_daily_report(settings=settings, repo=repo, marzban=marzban, bot=bot)
-                last_sent = now.date()
-            except Exception:
-                logging.exception("Daily report: failed")
-            # wait until next day target
-            target = target + timedelta(days=1)
-        elif now >= target:
-            target = target + timedelta(days=1)
-        wait_seconds = max(30, int((target - now).total_seconds()))
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=wait_seconds)
-        except asyncio.TimeoutError:
-            continue
-
-
 async def deploy_report_worker(
     *,
     settings: Settings,
@@ -613,102 +535,6 @@ async def deploy_report_worker(
             await asyncio.wait_for(stop_event.wait(), timeout=interval)
         except asyncio.TimeoutError:
             pass
-
-
-async def cryptobot_auto_worker(
-    *,
-    settings: Settings,
-    repo: Repo,
-    marzban: MarzbanClient,
-    bot: Bot,
-    stop_event: asyncio.Event,
-) -> None:
-    await _cryptobot_auto_worker(
-        settings=settings,
-        repo=repo,
-        marzban=marzban,
-        bot=bot,
-        stop_event=stop_event,
-        notify_admin_requeued_processing_fn=notify_admin_requeued_processing,
-        notify_admin_worker_alert_fn=notify_admin_worker_alert,
-        cryptobot_check_invoice_fn=cryptobot_check_invoice,
-        apply_paid_payment_fn=apply_paid_payment,
-        notify_access_updated_fn=notify_access_updated,
-    )
-
-
-def auto_renew_plan(settings: Settings) -> Plan:
-    return _auto_renew_plan(settings, find_plan_fn=find_plan)
-
-
-def auto_renew_provider(settings: Settings) -> str | None:
-    return _auto_renew_provider(settings)
-
-
-async def yookassa_auto_worker(
-    *,
-    settings: Settings,
-    repo: Repo,
-    marzban: MarzbanClient,
-    bot: Bot,
-    stop_event: asyncio.Event,
-) -> None:
-    await _yookassa_auto_worker(
-        settings=settings,
-        repo=repo,
-        marzban=marzban,
-        bot=bot,
-        stop_event=stop_event,
-        notify_admin_requeued_processing_fn=notify_admin_requeued_processing,
-        notify_admin_worker_alert_fn=notify_admin_worker_alert,
-        yookassa_check_payment_fn=yookassa_check_payment,
-        apply_paid_payment_fn=apply_paid_payment,
-        notify_access_updated_fn=notify_access_updated,
-    )
-
-
-async def subscription_renewal_worker(
-    *,
-    settings: Settings,
-    repo: Repo,
-    marzban: MarzbanClient,
-    bot: Bot,
-    stop_event: asyncio.Event,
-) -> None:
-    await _subscription_renewal_worker(
-        settings=settings,
-        repo=repo,
-        marzban=marzban,
-        bot=bot,
-        stop_event=stop_event,
-        auto_renew_provider_fn=auto_renew_provider,
-        auto_renew_plan_fn=auto_renew_plan,
-        device_label_fn=_device_label,
-        format_expire_fn=format_expire,
-        format_time_left_fn=format_time_left,
-        renewal_actions_keyboard_fn=renewal_actions_keyboard,
-        plan_title_fn=plan_title,
-        yookassa_create_payment_fn=yookassa_create_payment,
-        cryptobot_create_invoice_fn=cryptobot_create_invoice,
-        pay_action_keyboard_fn=pay_action_keyboard,
-        notify_admin_worker_alert_fn=notify_admin_worker_alert,
-    )
-
-
-async def subscription_migration_worker(
-    *,
-    settings: Settings,
-    repo: Repo,
-    bot: Bot,
-    stop_event: asyncio.Event,
-) -> None:
-    await _subscription_migration_worker(
-        settings=settings,
-        repo=repo,
-        bot=bot,
-        stop_event=stop_event,
-        notify_admin_worker_alert_fn=notify_admin_worker_alert,
-    )
 
 
 def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Router:
