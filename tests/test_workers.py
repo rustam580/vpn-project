@@ -1,4 +1,4 @@
-from bot_workers import subscription_migration_mark_bucket
+from src.vpnbot.bot_workers import subscription_migration_mark_bucket
 
 
 def test_subscription_migration_mark_bucket_rounds_by_hours() -> None:

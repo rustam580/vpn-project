@@ -4,14 +4,14 @@ import time
 import pytest
 import pytest_asyncio
 
-import bot
-import bot_repo
+from src.vpnbot.db import bot_repo
+from src.vpnbot.db.bot_repo import Repo
 
 
 @pytest_asyncio.fixture
 async def repo(local_tmp_path):
     db_path = local_tmp_path / "bot.sqlite3"
-    repo = bot.Repo(str(db_path))
+    repo = Repo(str(db_path))
     await repo.open()
     try:
         yield repo
@@ -338,7 +338,7 @@ async def test_repo_migrates_legacy_db(local_tmp_path) -> None:
     finally:
         conn.close()
 
-    migrated_repo = bot.Repo(str(db_path))
+    migrated_repo = Repo(str(db_path))
     await migrated_repo.open()
     try:
         assert migrated_repo.conn is not None

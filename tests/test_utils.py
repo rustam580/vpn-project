@@ -1,6 +1,6 @@
 import re
 
-from bot_formatters import format_last_online
+from src.vpnbot.bot_formatters import format_last_online
 from config import normalize_config_delivery_mode, parse_int_csv
 from src.vpnbot.bot_network import _parse_sar_dev_output
 from src.vpnbot.device_utils import next_device_slot, normalize_device_name

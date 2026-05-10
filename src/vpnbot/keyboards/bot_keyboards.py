@@ -9,7 +9,7 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
 )
 
-from bot_formatters import plan_title
+from src.vpnbot.bot_formatters import plan_title
 from src.vpnbot.device_utils import _device_label, _short_label
 
 

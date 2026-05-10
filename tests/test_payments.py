@@ -3,7 +3,9 @@ from types import SimpleNamespace
 
 import pytest_asyncio
 
-import bot
+from src.vpnbot import bot_runtime as bot
+from src.vpnbot.bot_access import sync_expire_across_devices
+from src.vpnbot.db.bot_repo import Repo
 
 
 class FakeMarzban:
@@ -36,7 +38,7 @@ class FakeMarzban:
 @pytest_asyncio.fixture
 async def repo(local_tmp_path):
     db_path = local_tmp_path / "bot.sqlite3"
-    repo = bot.Repo(str(db_path))
+    repo = Repo(str(db_path))
     await repo.open()
     try:
         yield repo
@@ -267,7 +269,7 @@ async def test_sync_expire_across_devices_aligns_to_max(repo) -> None:
     await repo.upsert_device(tg_id, 1, username1)
     await repo.upsert_device(tg_id, 2, username2)
 
-    target_expire, changed, found_count, missing_count = await bot.sync_expire_across_devices(
+    target_expire, changed, found_count, missing_count = await sync_expire_across_devices(
         telegram_id=tg_id,
         repo=repo,
         marzban=marzban,
@@ -294,7 +296,7 @@ async def test_sync_expire_across_devices_aligns_to_min(repo) -> None:
     await repo.upsert_device(tg_id, 1, username1)
     await repo.upsert_device(tg_id, 2, username2)
 
-    target_expire, changed, found_count, missing_count = await bot.sync_expire_across_devices(
+    target_expire, changed, found_count, missing_count = await sync_expire_across_devices(
         telegram_id=tg_id,
         repo=repo,
         marzban=marzban,
@@ -325,7 +327,7 @@ async def test_sync_expire_across_devices_aligns_to_source_slot(repo) -> None:
     await repo.upsert_device(tg_id, 2, username2)
     await repo.upsert_device(tg_id, 3, username3)
 
-    target_expire, changed, found_count, missing_count = await bot.sync_expire_across_devices(
+    target_expire, changed, found_count, missing_count = await sync_expire_across_devices(
         telegram_id=tg_id,
         repo=repo,
         marzban=marzban,

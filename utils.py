@@ -6,7 +6,7 @@ import re
 from typing import Any, Mapping
 from uuid import uuid4
 
-from bot_formatters import format_expire, format_limit, format_time_left, format_used
+from src.vpnbot.bot_formatters import format_expire, format_limit, format_time_left, format_used
 from config import _absolutize_subscription_link, normalize_config_delivery_mode
 from models import MarzbanUser
 

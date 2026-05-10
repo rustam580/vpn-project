@@ -11,7 +11,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-from bot_formatters import plan_title
+from src.vpnbot.bot_formatters import plan_title
 from models import Plan
 
 

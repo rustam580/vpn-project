@@ -5,7 +5,8 @@ from types import SimpleNamespace
 import pytest
 import pytest_asyncio
 
-import bot
+from src.vpnbot import bot_runtime as bot
+from src.vpnbot.db.bot_repo import Repo
 from src.vpnbot.services import payment_flow as payment_flow_service
 from src.vpnbot.services.payment_flow import MarzbanUnavailableError
 
@@ -81,7 +82,7 @@ async def test_apply_paid_payment_retries_marzban_calls() -> None:
 @pytest_asyncio.fixture
 async def repo(local_tmp_path):
     db_path = local_tmp_path / "bot.sqlite3"
-    repo = bot.Repo(str(db_path))
+    repo = Repo(str(db_path))
     await repo.open()
     try:
         yield repo

@@ -10,11 +10,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from bot_network import measure_iface_mbps, measure_iface_mbps_sar
+from src.vpnbot.bot_network import measure_iface_mbps, measure_iface_mbps_sar
 
 if TYPE_CHECKING:
-    from bot_marzban import MarzbanClient
-    from bot_repo import Repo
+    from src.vpnbot.db.bot_repo import Repo
+    from src.vpnbot.services.bot_marzban import MarzbanClient
 
 
 class SettingsLike(Protocol):

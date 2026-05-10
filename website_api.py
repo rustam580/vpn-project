@@ -14,17 +14,18 @@ from uuid import uuid4
 import httpx
 from aiohttp import web
 
-import bot
-from bot_marzban import MarzbanClient
-from bot_repo import Repo
-from payments_service import (
+from config import Settings, _absolutize_subscription_link
+from models import Plan
+from src.vpnbot.bot_formatters import BYTES_IN_GB
+from src.vpnbot.db.bot_repo import Repo
+from src.vpnbot.services.bot_marzban import MarzbanClient
+from src.vpnbot.services.payments_service import (
     cryptobot_check_invoice,
     cryptobot_create_invoice,
     yookassa_check_payment,
     yookassa_create_payment,
 )
-from bot_formatters import BYTES_IN_GB
-from config import _absolutize_subscription_link
+from src.vpnbot.worker_runtime import find_plan
 from utils import (
     build_web_bind_payload,
     extract_links,
@@ -42,7 +43,7 @@ class WebsiteRuntime:
     bot_username: str
 
     @staticmethod
-    def load(settings: bot.Settings) -> "WebsiteRuntime":
+    def load(settings: Settings) -> "WebsiteRuntime":
         host = str(os.getenv("WEBSITE_API_HOST", "127.0.0.1")).strip()
         port = int(os.getenv("WEBSITE_API_PORT", "8011"))
         public_url = str(os.getenv("WEBSITE_PUBLIC_URL", "http://rootvpn.tech")).strip().rstrip("/")
@@ -161,11 +162,11 @@ async def _resolve_renewal_username(
     return username, None
 
 
-def _resolve_plan(settings: bot.Settings, plan_key: str) -> bot.Plan | None:
+def _resolve_plan(settings: Settings, plan_key: str) -> Plan | None:
     key = str(plan_key or "").strip().lower()
     if not key:
         return None
-    return bot.find_plan(settings, key)
+    return find_plan(settings, key)
 
 
 def _is_provider_paid(provider: str, status: str) -> bool:
@@ -176,7 +177,7 @@ def _is_provider_paid(provider: str, status: str) -> bool:
     return False
 
 
-def _human_plan(plan: bot.Plan) -> str:
+def _human_plan(plan: Plan) -> str:
     return f"{plan.title} ({plan.rub:.0f} RUB)"
 
 
@@ -187,7 +188,7 @@ def _make_web_username(order_id: str, suffix: int = 0) -> str:
     return f"{base}_{suffix}"
 
 
-def _absolutize_delivery_link(settings: bot.Settings, link: str) -> str:
+def _absolutize_delivery_link(settings: Settings, link: str) -> str:
     if not link:
         return ""
     if link.startswith(("http://", "https://", "sub://")):
@@ -210,7 +211,7 @@ def _uniq(items: list[str]) -> list[str]:
     return result
 
 
-def _build_delivery_payload(settings: bot.Settings, user: dict[str, Any]) -> dict[str, Any]:
+def _build_delivery_payload(settings: Settings, user: dict[str, Any]) -> dict[str, Any]:
     subscription_candidates = [
         _absolutize_delivery_link(settings, x)
         for x in extract_subscription_links(
@@ -229,7 +230,7 @@ def _build_delivery_payload(settings: bot.Settings, user: dict[str, Any]) -> dic
 
 async def _notify_admin_web_order_paid(
     *,
-    settings: bot.Settings,
+    settings: Settings,
     order: dict[str, Any],
     marzban_username: str,
 ) -> None:
@@ -294,7 +295,7 @@ async def _notify_admin_web_order_paid(
 
 async def _ensure_web_access(
     *,
-    settings: bot.Settings,
+    settings: Settings,
     repo: Repo,
     marzban: MarzbanClient,
     order: dict[str, Any],
@@ -365,7 +366,7 @@ async def _ensure_web_access(
 
 
 async def create_app() -> web.Application:
-    settings = bot.Settings.load()
+    settings = Settings.load()
     runtime = WebsiteRuntime.load(settings)
     repo = Repo(settings.db_path)
     await repo.open()
@@ -630,7 +631,7 @@ async def create_app() -> web.Application:
 
 
 async def _run() -> None:
-    settings = bot.Settings.load()
+    settings = Settings.load()
     runtime = WebsiteRuntime.load(settings)
     app = await create_app()
     runner = web.AppRunner(app)

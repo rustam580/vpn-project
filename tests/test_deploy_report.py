@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import bot
 from src.vpnbot import deploy_reports
+from src.vpnbot.deploy_reports import send_deploy_report_if_any
 
 
 class FakeBot:
@@ -28,7 +28,7 @@ async def test_send_deploy_report_waits_until_exit_marker(local_tmp_path, monkey
         encoding="utf-8",
     )
 
-    await bot.send_deploy_report_if_any(fake_bot, settings, repo=None)
+    await send_deploy_report_if_any(fake_bot, settings, repo=None)
     assert fake_bot.messages == []
     assert log_path.exists()
 
@@ -40,7 +40,7 @@ async def test_send_deploy_report_waits_until_exit_marker(local_tmp_path, monkey
         encoding="utf-8",
     )
 
-    await bot.send_deploy_report_if_any(fake_bot, settings, repo=None)
+    await send_deploy_report_if_any(fake_bot, settings, repo=None)
     assert len(fake_bot.messages) == 1
     assert fake_bot.messages[0][0] == 123
     assert "Deploy: OK" in fake_bot.messages[0][1]
