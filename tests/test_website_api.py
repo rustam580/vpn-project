@@ -23,11 +23,11 @@ REQUIRED_CHECKOUT_DOM_IDS = [
 ]
 
 EXPECTED_RU_COPY_SNIPPETS = [
-    "Премиальный VPN",
+    "VLESS-Reality",
     "Покупка на сайте",
-    "Как импортировать подписку",
-    "Документы",
+    "Импорт подписки",
     "Частые вопросы",
+    "Готовы начать",
 ]
 
 MOJIBAKE_CODEPOINTS = {
