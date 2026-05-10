@@ -11,6 +11,8 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
+from src.vpnbot.background_tasks import spawn as _spawn_bg
+
 
 @dataclass
 class AdminMessageDeps:
@@ -454,7 +456,7 @@ def register_admin_message_handlers(*, router: Router, deps: AdminMessageDeps) -
         await message.answer("🚀 Запускаю deploy...")
         if start_deploy(script):
             await message.answer("Deploy запущен. Результат пришлю после перезапуска.")
-            asyncio.create_task(schedule_deploy_report(message.bot))
+            _spawn_bg(schedule_deploy_report(message.bot), name="schedule_deploy_report")
         else:
             await message.answer("Не удалось запустить deploy.")
 

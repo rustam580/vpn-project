@@ -23,6 +23,13 @@ from payments_service import (
     yookassa_check_payment,
     yookassa_create_payment,
 )
+from bot_formatters import BYTES_IN_GB
+from config import _absolutize_subscription_link
+from utils import (
+    build_web_bind_payload,
+    extract_links,
+    extract_subscription_links,
+)
 
 
 @dataclass(frozen=True)
@@ -114,7 +121,7 @@ def _build_extend_payload_from_user(*, user: dict[str, Any], days: int, gb: int)
     if gb <= 0:
         target_limit = 0
     else:
-        base_limit = gb * bot.BYTES_IN_GB
+        base_limit = gb * BYTES_IN_GB
         target_limit = max(current_limit, base_limit) if current_limit > 0 else base_limit
     return {
         "expire": target_expire,
@@ -186,7 +193,7 @@ def _absolutize_delivery_link(settings: bot.Settings, link: str) -> str:
     if link.startswith(("http://", "https://", "sub://")):
         return link
     if link.startswith("/"):
-        resolved = bot._absolutize_subscription_link(link, settings.subscription_public_base_url)
+        resolved = _absolutize_subscription_link(link, settings.subscription_public_base_url)
         return resolved or link
     return link
 
@@ -206,13 +213,13 @@ def _uniq(items: list[str]) -> list[str]:
 def _build_delivery_payload(settings: bot.Settings, user: dict[str, Any]) -> dict[str, Any]:
     subscription_candidates = [
         _absolutize_delivery_link(settings, x)
-        for x in bot.extract_subscription_links(
+        for x in extract_subscription_links(
             user,
             public_base_url=settings.subscription_public_base_url,
         )
     ]
     subscription_links = _uniq(subscription_candidates)
-    direct_links = _uniq([x for x in bot.extract_links(user) if x])
+    direct_links = _uniq([x for x in extract_links(user) if x])
     return {
         "subscription_url": subscription_links[0] if subscription_links else "",
         "subscription_links": subscription_links,
@@ -331,7 +338,7 @@ async def _ensure_web_access(
             break
 
     expire = int(time.time()) + days * 86400 if days > 0 else 0
-    data_limit = gb * bot.BYTES_IN_GB if gb > 0 else 0
+    data_limit = gb * BYTES_IN_GB if gb > 0 else 0
 
     created = await marzban.create_user(
         username=username,
@@ -574,7 +581,7 @@ async def create_app() -> web.Application:
                     logging.exception("Website notify: failed for order %s", order_id)
 
             delivery = _build_delivery_payload(settings, issued["user"])
-            tg_bind_payload = bot.build_web_bind_payload(order_id, bot_token=settings.bot_token)
+            tg_bind_payload = build_web_bind_payload(order_id, bot_token=settings.bot_token)
             tg_bind_url = (
                 f"https://t.me/{runtime.bot_username}?start={tg_bind_payload}"
                 if runtime.bot_username

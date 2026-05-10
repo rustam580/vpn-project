@@ -1,6 +1,6 @@
 ﻿# Open Issues
 
-Last updated: 2026-05-06
+Last updated: 2026-05-10
 
 ## Priority Legend
 - P0: blocks sales or legal-safe launch
@@ -21,10 +21,22 @@ Last updated: 2026-05-06
 - Next action: batch processing or next-check schedule index.
 - Owner: dev
 
-3. P2 - Continue `bot.py` decomposition
+3. P2 - Finish `bot_runtime.py` decomposition
+- Status: in_progress
+- Problem: `src/vpnbot/bot_runtime.py` is down to ~1.4k lines from 2.4k, but still hosts the giant `build_router` (~1080 lines) with all command/callback handlers inline.
+- Next action: split `build_router` by handler groups (subscription, status, devices, referrals) into dedicated modules; then re-enable strict mypy on `bot_runtime` and `handlers/*`.
+- Owner: dev
+
+4. P2 - Audit silent `except Exception:` in critical paths
 - Status: pending
-- Problem: `bot.py` is still large (~2.9k lines), onboarding and safe edits stay expensive.
-- Next action: move remaining router/worker wiring and command handlers into dedicated modules.
+- Problem: 92 silent exception swallows across the codebase. Worker loops are mostly fine, but DB (`db/bot_repo.py`) and access (`bot_access.py`) layers may hide real bugs.
+- Next action: add `logging.exception(...)` with context in `bot_repo.py` (3 cases) and `bot_access.py` (2 cases).
+- Owner: dev
+
+5. P2 - Drop legacy shim files in repo root
+- Status: pending
+- Problem: 17 one-line shim modules at repo root (`bot_access.py`, `bot_formatters.py`, …) re-export from `src/vpnbot/*` for backwards-compat with `from bot_X import …` style imports in `config.py`, `utils.py`, `website_api.py`, and several tests.
+- Next action: rewrite remaining flat imports to `from src.vpnbot.X import …`, then delete the shim files (keep only `bot.py` entrypoint).
 - Owner: dev
 
 ## Recently Closed

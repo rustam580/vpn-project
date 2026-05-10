@@ -8,7 +8,7 @@ import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from bot_network import measure_iface_mbps, measure_iface_mbps_sar
 

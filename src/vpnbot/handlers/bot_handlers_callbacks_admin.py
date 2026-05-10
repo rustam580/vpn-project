@@ -10,6 +10,8 @@ from typing import Any
 from aiogram import F, Router
 from aiogram.types import CallbackQuery
 
+from src.vpnbot.background_tasks import spawn as _spawn_bg
+
 
 @dataclass
 class AdminCallbackDeps:
@@ -187,7 +189,7 @@ def register_admin_callback_handlers(*, router: Router, deps: AdminCallbackDeps)
                 await callback.message.answer(
                     "🚀 Deploy запущен. Результат пришлю после перезапуска."
                 )
-                asyncio.create_task(schedule_deploy_report(callback.message.bot))
+                _spawn_bg(schedule_deploy_report(callback.message.bot), name="schedule_deploy_report")
             else:
                 await callback.message.answer("Не удалось запустить deploy.")
             return

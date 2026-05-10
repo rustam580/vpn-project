@@ -2,14 +2,11 @@
 import asyncio
 import html
 import logging
-import os
-import re
-import shutil
 import subprocess
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import Command
 from aiogram.types import (
@@ -23,25 +20,16 @@ from app_texts import (
 )
 from src.vpnbot.payment_helpers import (
     apply_paid_payment,
-    apply_referral_bonus_if_needed,
     cryptobot_check_invoice,
     cryptobot_create_invoice,
     yookassa_check_payment,
     yookassa_create_payment,
 )
 from config import (
-    _absolutize_subscription_link,
-    _parse_plans_json,
     _plans_to_json,
     _preset_plans,
-    env_bool,
-    normalize_config_delivery_mode,
-    normalize_public_base_url,
-    parse_admin_ids,
-    parse_int_csv,
     Settings,
 )
-from models import MarzbanUser
 from src.vpnbot.services.payment_flow import (
     check_and_apply_payment as pf_check_and_apply_payment,
 )
@@ -50,7 +38,6 @@ from src.vpnbot.bot_formatters import (
     format_expire,
     format_last_online,
     format_limit,
-    format_time_left,
     format_used,
     plan_gb_text,
     plan_title,
@@ -58,7 +45,6 @@ from src.vpnbot.bot_formatters import (
 )
 from src.vpnbot.device_utils import (
     _device_label,
-    _short_label,
     format_device_limit,
     next_device_slot,
     normalize_device_name,
@@ -70,26 +56,17 @@ from src.vpnbot.env_utils import (
     update_env_file,
 )
 from src.vpnbot.message_utils import (
-    config_import_hint_text,
     quick_connect_guide_text,
-    split_message,
 )
 from src.vpnbot.messaging import (
     _render_config_block,
     collect_device_links,
     notify_access_updated,
     send_configs_in_chat,
-    send_configs_in_chat_to_bot,
     send_device_links,
     send_device_links_to_bot,
-    send_links,
     send_status,
     send_status_to_bot,
-)
-from src.vpnbot.notifications import (
-    notify_admin_payment,
-    notify_admin_requeued_processing,
-    notify_admin_worker_alert,
 )
 from src.vpnbot.permissions import is_admin
 from src.vpnbot.deploy_reports import (
@@ -98,12 +75,9 @@ from src.vpnbot.deploy_reports import (
     send_deploy_report_if_any,
 )
 from src.vpnbot.worker_runtime import (
-    auto_renew_plan,
-    auto_renew_provider,
     cryptobot_auto_worker,
     daily_ops_report_worker,
     find_plan,
-    send_daily_report,
     subscription_migration_worker,
     subscription_renewal_worker,
     yookassa_auto_worker,
@@ -145,20 +119,16 @@ from src.vpnbot.keyboards.bot_keyboards import (
     more_actions_keyboard,
     pay_action_keyboard,
     payment_methods_keyboard,
-    renewal_actions_keyboard,
 )
 from src.vpnbot.bot_access import (
     ensure_device,
-    ensure_user,
     extend_access,
     extend_access_all_devices,
     extend_access_days_only,
     extend_access_device,
-    set_permanent_access,
     sync_expire_across_devices,
 )
 from src.vpnbot.services.bot_marzban import MarzbanClient
-from src.vpnbot.bot_network import _parse_sar_dev_output
 from src.vpnbot.bot_ops import (
     build_admin_stats_text,
     build_ops_report_text,
@@ -176,18 +146,10 @@ from utils import (
     build_device_username,
     build_replacement_username,
     build_username,
-    build_web_bind_payload,
-    extract_links,
     extract_start_payload,
-    extract_subscription_links,
     parse_referrer_from_payload,
     parse_web_order_from_payload,
-    select_delivery_links,
-    status_text,
 )
-
-BYTES_IN_GB = 1024**3
-
 
 def enabled_payment_providers(settings: Settings) -> list[str]:
     providers: list[str] = []

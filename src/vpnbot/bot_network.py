@@ -2,7 +2,6 @@
 
 import asyncio
 import os
-import re
 from pathlib import Path
 
 def _read_iface_bytes(iface: str) -> tuple[int, int] | None:

@@ -96,8 +96,8 @@ def test_build_delivery_payload_dedupes_links_and_uses_supported_signature(monke
     def fake_extract_links(_user):
         return ["vless://one", "vless://one", "vless://two"]
 
-    monkeypatch.setattr(website_api.bot, "extract_subscription_links", fake_extract_subscription_links)
-    monkeypatch.setattr(website_api.bot, "extract_links", fake_extract_links)
+    monkeypatch.setattr(website_api, "extract_subscription_links", fake_extract_subscription_links)
+    monkeypatch.setattr(website_api, "extract_links", fake_extract_links)
 
     settings = SimpleNamespace(subscription_public_base_url="https://sub.example.com")
     payload = website_api._build_delivery_payload(settings, {"username": "web_1"})
