@@ -27,19 +27,10 @@ Last updated: 2026-05-10
 - Next action: split `build_router` by handler groups (subscription, status, devices, referrals) into dedicated modules; then re-enable strict mypy on `bot_runtime` and `handlers/*`.
 - Owner: dev
 
-4. P2 - Audit silent `except Exception:` in critical paths
-- Status: pending
-- Problem: 92 silent exception swallows across the codebase. Worker loops are mostly fine, but DB (`db/bot_repo.py`) and access (`bot_access.py`) layers may hide real bugs.
-- Next action: add `logging.exception(...)` with context in `bot_repo.py` (3 cases) and `bot_access.py` (2 cases).
-- Owner: dev
-
-5. P2 - Drop legacy shim files in repo root
-- Status: pending
-- Problem: 17 one-line shim modules at repo root (`bot_access.py`, `bot_formatters.py`, …) re-export from `src/vpnbot/*` for backwards-compat with `from bot_X import …` style imports in `config.py`, `utils.py`, `website_api.py`, and several tests.
-- Next action: rewrite remaining flat imports to `from src.vpnbot.X import …`, then delete the shim files (keep only `bot.py` entrypoint).
-- Owner: dev
-
 ## Recently Closed
+- Removed 18 legacy shim files in repo root (`bot_access.py`, `bot_formatters.py`, `bot_handlers_*.py`, `bot_keyboards.py`, `bot_marzban.py`, `bot_network.py`, `bot_ops.py`, `bot_rate_limit.py`, `bot_repo.py`, `bot_router_helpers.py`, `bot_runtime.py`, `bot_workers.py`, `payment_flow.py`, `payments_service.py`); all production and test imports now use canonical `src.vpnbot.*` paths.
+- Audited silent `except Exception:` in critical paths: `bot_repo.py` JSON ops narrowed to `(TypeError, ValueError)` with `logging.warning`; `bot_access.py` already correct.
+- P0+P1 audit closed: fixed 2× `RUF006` dangling tasks via `src/vpnbot/background_tasks.spawn`; auto-removed 42 unused imports; unified `BYTES_IN_GB` via direct import from `bot_formatters`; tightened `pyproject.toml` ruff (`F401`, `F811`, `F841`, `RUF006`).
 - Fixed UTF-8 mojibake in `README.md`, `docs/website.md`, and `.env.example` (PLANS_JSON example).
 - Database migration framework added:
   - `schema_version` table
