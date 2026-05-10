@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import time
 from pathlib import Path
@@ -427,7 +428,8 @@ class Repo:
         if event_meta:
             try:
                 meta_raw = json.dumps(event_meta, ensure_ascii=False, separators=(",", ":"))
-            except Exception:
+            except (TypeError, ValueError) as exc:
+                logging.warning("log_event: cannot serialize meta for %s: %s", event_type, exc)
                 meta_raw = ""
         await self.conn.execute(
             """
@@ -790,7 +792,8 @@ class Repo:
                 continue
             try:
                 meta = json.loads(raw_meta)
-            except Exception:
+            except (TypeError, ValueError) as exc:
+                logging.warning("web_order events: malformed meta in event %s: %s", event_type, exc)
                 continue
             order_id = str(meta.get("order_id") or "").strip()
             if not order_id:
