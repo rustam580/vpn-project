@@ -14,8 +14,6 @@ from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import Command
 from aiogram.types import (
     CallbackQuery,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
     Message,
 )
 from app_texts import (
@@ -66,6 +64,7 @@ from src.vpnbot.device_utils import (
     normalize_device_name,
 )
 from src.vpnbot.env_utils import (
+    ENV_EDITABLE_KEYS,
     coerce_env_value,
     normalize_channel_url,
     update_env_file,
@@ -139,6 +138,9 @@ from src.vpnbot.keyboards.bot_keyboards import (
     buy_plan_keyboard,
     buy_target_keyboard,
     device_methods_keyboard,
+    device_replace_confirm_keyboard,
+    devices_rename_keyboard,
+    devices_replace_keyboard,
     keyboard_for_user,
     more_actions_keyboard,
     pay_action_keyboard,
@@ -194,142 +196,6 @@ def enabled_payment_providers(settings: Settings) -> list[str]:
     if settings.yookassa_enabled():
         providers.append("card")
     return providers
-
-
-def _link_copy_keyboard(link: str) -> InlineKeyboardMarkup | None:
-    return None
-
-
-def _link_preview(link: str) -> str:
-    link = link.strip()
-    if len(link) <= 28:
-        return link
-    prefix = ""
-    core = link
-    if "://" in link:
-        proto, rest = link.split("://", 1)
-        prefix = f"{proto}://"
-        core = rest
-    if len(core) <= 20:
-        return link
-    return f"{prefix}{core[:10]}...{core[-8:]}"
-
-
-ENV_EDITABLE_KEYS: dict[str, str] = {
-    "TRIAL_DAYS": "int",
-    "TRIAL_GB": "int",
-    "PAY_DAYS": "int",
-    "PAY_GB": "int",
-    "PAY_RUB": "float",
-    "PLANS_JSON": "str",
-    "DEVICE_LIMIT": "int",
-    "DEVICE_ADD_RUB": "float",
-    "REFERRAL_BONUS_DAYS": "int",
-    "SUPPORT_USERNAME": "str",
-    "SUPPORT_TEXT": "str",
-    "CHANNEL_URL": "str",
-    "CONFIG_DELIVERY_MODE": "str",
-    "SUBSCRIPTION_PUBLIC_BASE_URL": "str",
-    "DEPLOY_BROADCAST_USERS": "bool",
-    "OPS_REPORT_ENABLED": "bool",
-    "OPS_REPORT_HOUR": "int",
-    "OPS_REPORT_MINUTE": "int",
-    "YOOKASSA_POLL_SECONDS": "int",
-    "YOOKASSA_SHOP_ID": "str",
-    "YOOKASSA_SECRET_KEY": "str",
-    "YOOKASSA_RETURN_URL": "str",
-    "PAYMENT_PROCESSING_REQUEUE_SECONDS": "int",
-    "RENEWAL_ALERTS_ENABLED": "bool",
-    "RENEWAL_ALERT_INTERVAL_SEC": "int",
-    "RENEWAL_REMINDER_HOURS": "str",
-    "RENEWAL_EXPIRED_ALERT_ENABLED": "bool",
-    "ADMIN_ALERTS_ENABLED": "bool",
-    "ADMIN_ALERT_COOLDOWN_SEC": "int",
-    "AUTO_RENEW_INVOICE_ENABLED": "bool",
-    "AUTO_RENEW_INVOICE_HOURS_BEFORE": "int",
-    "AUTO_RENEW_INVOICE_PROVIDER": "str",
-    "AUTO_RENEW_INVOICE_PLAN_KEY": "str",
-    "AUTO_RENEW_INVOICE_TARGET": "str",
-    "SUB_MIGRATION_REMINDER_ENABLED": "bool",
-    "SUB_MIGRATION_REMINDER_INTERVAL_SEC": "int",
-    "SUB_MIGRATION_REMINDER_LOOKBACK_DAYS": "int",
-    "SUB_MIGRATION_REMINDER_COOLDOWN_HOURS": "int",
-    "SUB_MIGRATION_REMINDER_BATCH": "int",
-    "SUBSCRIPTION_HITS_RETENTION_DAYS": "int",
-}
-
-
-def _configs_keyboard(items: list[tuple[int, str]]) -> InlineKeyboardMarkup | None:
-    if not items:
-        return None
-    rows: list[list[InlineKeyboardButton]] = []
-    if len(items) <= 2:
-        for index, label in items:
-            rows.append(
-                [
-                    InlineKeyboardButton(
-                        text=f"Показать #{index} ({_short_label(label)})",
-                        callback_data=f"cfg:show:{index}",
-                    )
-                ]
-            )
-    rows.append([InlineKeyboardButton(text="Показать все в чате", callback_data="cfg:showall")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-def _devices_rename_keyboard(devices: list[dict[str, Any]]) -> InlineKeyboardMarkup | None:
-    if not devices:
-        return None
-    rows: list[list[InlineKeyboardButton]] = []
-    for row in devices:
-        device_id = int(row["device_id"])
-        label = _device_label(device_id, row.get("device_name"))
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text=f"{device_id}. {_short_label(label, limit=22)}",
-                    callback_data=f"devrename:{device_id}",
-                )
-            ]
-        )
-    rows.append([InlineKeyboardButton(text="Отмена", callback_data="devrename:cancel")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-def _devices_replace_keyboard(devices: list[dict[str, Any]]) -> InlineKeyboardMarkup | None:
-    if not devices:
-        return None
-    rows: list[list[InlineKeyboardButton]] = []
-    for row in devices:
-        device_id = int(row["device_id"])
-        label = _device_label(device_id, row.get("device_name"))
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text=f"{device_id}. {_short_label(label, limit=22)}",
-                    callback_data=f"devreplace:{device_id}",
-                )
-            ]
-        )
-    rows.append([InlineKeyboardButton(text="Отмена", callback_data="devreplace:cancel")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-def _device_replace_confirm_keyboard(device_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="✅ Подтвердить",
-                    callback_data=f"devreplace_confirm:{device_id}:yes",
-                ),
-                InlineKeyboardButton(
-                    text="❌ Отмена",
-                    callback_data=f"devreplace_confirm:{device_id}:no",
-                ),
-            ]
-        ]
-    )
 
 
 async def check_and_apply_payment(
@@ -1045,7 +911,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
         if not devices:
             await message.answer("Активные устройства не найдены. Сначала получите подписку.")
             return
-        kb = _devices_replace_keyboard(devices)
+        kb = devices_replace_keyboard(devices)
         await message.answer(
             "Выберите устройство для перевыпуска ссылки.\n"
             "Старая ссылка выбранного устройства будет отключена.",
@@ -1214,7 +1080,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
         if not devices:
             await message.answer("Устройства не найдены. Сначала получите подписку.")
             return
-        kb = _devices_rename_keyboard(devices)
+        kb = devices_rename_keyboard(devices)
         await message.answer("Выберите устройство для переименования:", reply_markup=kb)
 
     @router.message(F.text == "🎁 Рефералка")
@@ -1336,9 +1202,9 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             next_device_slot=next_device_slot,
             check_and_apply_payment=check_and_apply_payment,
             device_methods_keyboard=device_methods_keyboard,
-            devices_replace_keyboard=_devices_replace_keyboard,
-            devices_rename_keyboard=_devices_rename_keyboard,
-            device_replace_confirm_keyboard=_device_replace_confirm_keyboard,
+            devices_replace_keyboard=devices_replace_keyboard,
+            devices_rename_keyboard=devices_rename_keyboard,
+            device_replace_confirm_keyboard=device_replace_confirm_keyboard,
             device_label=_device_label,
         ),
     )

@@ -254,3 +254,58 @@ def broadcast_next_format(fmt_key: str) -> str:
         return "plain"
     idx = (order.index(fmt_key) + 1) % len(order)
     return order[idx]
+
+
+def devices_rename_keyboard(devices: list[dict[str, Any]]) -> InlineKeyboardMarkup | None:
+    if not devices:
+        return None
+    rows: list[list[InlineKeyboardButton]] = []
+    for row in devices:
+        device_id = int(row["device_id"])
+        label = _device_label(device_id, row.get("device_name"))
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{device_id}. {_short_label(label, limit=22)}",
+                    callback_data=f"devrename:{device_id}",
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton(text="Отмена", callback_data="devrename:cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def devices_replace_keyboard(devices: list[dict[str, Any]]) -> InlineKeyboardMarkup | None:
+    if not devices:
+        return None
+    rows: list[list[InlineKeyboardButton]] = []
+    for row in devices:
+        device_id = int(row["device_id"])
+        label = _device_label(device_id, row.get("device_name"))
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{device_id}. {_short_label(label, limit=22)}",
+                    callback_data=f"devreplace:{device_id}",
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton(text="Отмена", callback_data="devreplace:cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def device_replace_confirm_keyboard(device_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Подтвердить",
+                    callback_data=f"devreplace_confirm:{device_id}:yes",
+                ),
+                InlineKeyboardButton(
+                    text="❌ Отмена",
+                    callback_data=f"devreplace_confirm:{device_id}:no",
+                ),
+            ]
+        ]
+    )

@@ -10,6 +10,50 @@ import re
 from pathlib import Path
 
 
+ENV_EDITABLE_KEYS: dict[str, str] = {
+    "TRIAL_DAYS": "int",
+    "TRIAL_GB": "int",
+    "PAY_DAYS": "int",
+    "PAY_GB": "int",
+    "PAY_RUB": "float",
+    "PLANS_JSON": "str",
+    "DEVICE_LIMIT": "int",
+    "DEVICE_ADD_RUB": "float",
+    "REFERRAL_BONUS_DAYS": "int",
+    "SUPPORT_USERNAME": "str",
+    "SUPPORT_TEXT": "str",
+    "CHANNEL_URL": "str",
+    "CONFIG_DELIVERY_MODE": "str",
+    "SUBSCRIPTION_PUBLIC_BASE_URL": "str",
+    "DEPLOY_BROADCAST_USERS": "bool",
+    "OPS_REPORT_ENABLED": "bool",
+    "OPS_REPORT_HOUR": "int",
+    "OPS_REPORT_MINUTE": "int",
+    "YOOKASSA_POLL_SECONDS": "int",
+    "YOOKASSA_SHOP_ID": "str",
+    "YOOKASSA_SECRET_KEY": "str",
+    "YOOKASSA_RETURN_URL": "str",
+    "PAYMENT_PROCESSING_REQUEUE_SECONDS": "int",
+    "RENEWAL_ALERTS_ENABLED": "bool",
+    "RENEWAL_ALERT_INTERVAL_SEC": "int",
+    "RENEWAL_REMINDER_HOURS": "str",
+    "RENEWAL_EXPIRED_ALERT_ENABLED": "bool",
+    "ADMIN_ALERTS_ENABLED": "bool",
+    "ADMIN_ALERT_COOLDOWN_SEC": "int",
+    "AUTO_RENEW_INVOICE_ENABLED": "bool",
+    "AUTO_RENEW_INVOICE_HOURS_BEFORE": "int",
+    "AUTO_RENEW_INVOICE_PROVIDER": "str",
+    "AUTO_RENEW_INVOICE_PLAN_KEY": "str",
+    "AUTO_RENEW_INVOICE_TARGET": "str",
+    "SUB_MIGRATION_REMINDER_ENABLED": "bool",
+    "SUB_MIGRATION_REMINDER_INTERVAL_SEC": "int",
+    "SUB_MIGRATION_REMINDER_LOOKBACK_DAYS": "int",
+    "SUB_MIGRATION_REMINDER_COOLDOWN_HOURS": "int",
+    "SUB_MIGRATION_REMINDER_BATCH": "int",
+    "SUBSCRIPTION_HITS_RETENTION_DAYS": "int",
+}
+
+
 def update_env_file(path: Path, key: str, value: str) -> None:
     lines: list[str] = []
     found = False
