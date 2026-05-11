@@ -175,6 +175,8 @@ async def collect_db_refs(repo: Any) -> tuple[list[DbRef], list[str], list[str]]
     refs: list[DbRef] = []
     web_without_access: list[str] = []
     non_standard_devices: list[str] = []
+    web_rows: list[Any] = []
+    active_web_usernames: set[str] = set()
 
     cursor = await repo.conn.execute("SELECT telegram_id, marzban_username FROM users ORDER BY telegram_id")
     user_rows = await cursor.fetchall()
@@ -184,28 +186,6 @@ async def collect_db_refs(repo: Any) -> tuple[list[DbRef], list[str], list[str]]
         if username:
             tg_id = int(_row_get(row, "telegram_id"))
             refs.append(DbRef("users", tg_id, 1, username, f"tg={tg_id}"))
-
-    cursor = await repo.conn.execute(
-        """
-        SELECT telegram_id, device_id, marzban_username, COALESCE(device_name, '') AS device_name
-        FROM devices
-        ORDER BY telegram_id, device_id
-        """
-    )
-    device_rows = await cursor.fetchall()
-    await cursor.close()
-    for row in device_rows:
-        username = str(_row_get(row, "marzban_username") or "").strip()
-        if not username:
-            continue
-        tg_id = int(_row_get(row, "telegram_id"))
-        device_id = int(_row_get(row, "device_id"))
-        detail = f"tg={tg_id} slot={device_id} name={_row_get(row, 'device_name')}"
-        refs.append(DbRef("devices", tg_id, device_id, username, detail))
-        if not is_expected_device_username(tg_id, device_id, username):
-            non_standard_devices.append(
-                f"tg={tg_id} slot={device_id} db_username={username} expected={build_device_username(tg_id, device_id)}"
-            )
 
     cursor = await repo.conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'web_orders'"
@@ -230,13 +210,42 @@ async def collect_db_refs(repo: Any) -> tuple[list[DbRef], list[str], list[str]]
                     f"order={_row_get(row, 'order_id')} plan={_row_get(row, 'plan_key')} "
                     f"updated={fmt_ts(_row_get(row, 'updated_at'))}"
                 )
-            if username:
-                detail = (
-                    f"order={_row_get(row, 'order_id')} status={status} "
-                    f"plan={_row_get(row, 'plan_key')}"
-                )
-                if status in WEB_ORDER_ACCESS_STATUSES:
-                    refs.append(DbRef("web_orders", None, None, username, detail))
+            if username and status in WEB_ORDER_ACCESS_STATUSES:
+                active_web_usernames.add(username)
+
+    cursor = await repo.conn.execute(
+        """
+        SELECT telegram_id, device_id, marzban_username, COALESCE(device_name, '') AS device_name
+        FROM devices
+        ORDER BY telegram_id, device_id
+        """
+    )
+    device_rows = await cursor.fetchall()
+    await cursor.close()
+    for row in device_rows:
+        username = str(_row_get(row, "marzban_username") or "").strip()
+        if not username:
+            continue
+        tg_id = int(_row_get(row, "telegram_id"))
+        device_id = int(_row_get(row, "device_id"))
+        detail = f"tg={tg_id} slot={device_id} name={_row_get(row, 'device_name')}"
+        refs.append(DbRef("devices", tg_id, device_id, username, detail))
+        web_order_bound_to_tg = username.startswith("web_") and username in active_web_usernames
+        if not web_order_bound_to_tg and not is_expected_device_username(tg_id, device_id, username):
+            non_standard_devices.append(
+                f"tg={tg_id} slot={device_id} db_username={username} expected={build_device_username(tg_id, device_id)}"
+            )
+
+    for row in web_rows:
+        username = str(_row_get(row, "marzban_username") or "").strip()
+        status = str(_row_get(row, "status") or "")
+        if not username or status not in WEB_ORDER_ACCESS_STATUSES:
+            continue
+        detail = (
+            f"order={_row_get(row, 'order_id')} status={status} "
+            f"plan={_row_get(row, 'plan_key')}"
+        )
+        refs.append(DbRef("web_orders", None, None, username, detail))
 
     return refs, web_without_access, non_standard_devices
 
@@ -262,13 +271,15 @@ def build_audit_report(
     unknown_in_db = [
         f"{username} status={user.get('status')} expire={fmt_expire(user)}"
         for username, user in sorted(mz_users.items())
-        if username not in db_by_username and re.match(r"^(tg_|web_)", username)
+        if username not in db_by_username
+        and str(user.get("status") or "").lower() != "disabled"
+        and re.match(r"^(tg_|web_)", username)
     ]
 
     shared_db_refs = [
         f"{username} <- " + "; ".join(f"{ref.source}:{ref.detail}" for ref in refs_for_user)
         for username, refs_for_user in sorted(db_by_username.items())
-        if len(refs_for_user) > 2
+        if _has_suspicious_shared_refs(refs_for_user)
     ]
 
     db_known_summary = [
@@ -289,6 +300,20 @@ def build_audit_report(
         shared_db_refs=shared_db_refs,
         db_known_summary=db_known_summary,
     )
+
+
+def _has_suspicious_shared_refs(refs_for_user: list[DbRef]) -> bool:
+    owner_tgs = {
+        int(ref.telegram_id)
+        for ref in refs_for_user
+        if ref.telegram_id is not None and ref.source in {"users", "devices"}
+    }
+    device_slots = {
+        (int(ref.telegram_id), int(ref.device_id))
+        for ref in refs_for_user
+        if ref.source == "devices" and ref.telegram_id is not None and ref.device_id is not None
+    }
+    return len(owner_tgs) > 1 or len(device_slots) > 1
 
 
 async def audit_marzban_sync(repo: Any, marzban: Any, *, limit: int = 100) -> SyncAuditReport:

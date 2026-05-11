@@ -54,7 +54,7 @@ async def test_audit_marzban_sync_reports_critical_and_noncritical_findings(repo
     marzban = FakeMarzban(
         [
             {"username": "tg_1001", "status": "active", "expire": 0},
-            {"username": "web_unknown", "status": "disabled", "expire": 0},
+            {"username": "web_unknown", "status": "active", "expire": 0},
         ]
     )
 
@@ -88,3 +88,44 @@ async def test_audit_marzban_sync_ignores_removed_web_order_access(repo) -> None
     assert report.missing_in_marzban == []
     assert report.web_orders_without_access == []
     assert report.has_critical_findings() is False
+
+
+async def test_audit_marzban_sync_treats_bound_web_order_as_normal(repo) -> None:
+    username = "web_64c4dcd10b"
+    await repo.upsert_user(592525300, username)
+    await repo.create_web_order(
+        order_id="64c4dcd10b2a416da357213871cf5872",
+        provider="card",
+        external_id="pay-bound",
+        status="paid_applied",
+        plan_key="m1",
+        days=30,
+        gb=0,
+        amount_rub=99,
+        customer_contact="bound@example.com",
+        pay_url="https://pay.example",
+    )
+    await repo.attach_web_order_access(
+        order_id="64c4dcd10b2a416da357213871cf5872",
+        marzban_username=username,
+    )
+
+    report = await audit_marzban_sync(
+        repo,
+        FakeMarzban([{"username": username, "status": "active", "expire": 0}]),
+        limit=100,
+    )
+
+    assert report.non_standard_device_names == []
+    assert report.shared_db_refs == []
+
+
+async def test_audit_marzban_sync_ignores_disabled_orphan_marzban_user(repo) -> None:
+    report = await audit_marzban_sync(
+        repo,
+        FakeMarzban([{"username": "web_disabled_orphan", "status": "disabled", "expire": 0}]),
+        limit=100,
+    )
+
+    assert report.unknown_in_db == []
+    assert report.has_findings() is False
