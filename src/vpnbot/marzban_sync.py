@@ -7,6 +7,9 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 
+WEB_ORDER_ACCESS_STATUSES = frozenset({"paid_applied"})
+
+
 @dataclass(frozen=True)
 class DbRef:
     source: str
@@ -232,7 +235,8 @@ async def collect_db_refs(repo: Any) -> tuple[list[DbRef], list[str], list[str]]
                     f"order={_row_get(row, 'order_id')} status={status} "
                     f"plan={_row_get(row, 'plan_key')}"
                 )
-                refs.append(DbRef("web_orders", None, None, username, detail))
+                if status in WEB_ORDER_ACCESS_STATUSES:
+                    refs.append(DbRef("web_orders", None, None, username, detail))
 
     return refs, web_without_access, non_standard_devices
 

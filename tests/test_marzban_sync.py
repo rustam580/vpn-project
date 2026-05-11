@@ -65,3 +65,26 @@ async def test_audit_marzban_sync_reports_critical_and_noncritical_findings(repo
     assert any("order-without-access" in item for item in report.web_orders_without_access)
     assert any("web_unknown" in item for item in report.unknown_in_db)
     assert any("expected=tg_1001_d2" in item for item in report.non_standard_device_names)
+
+
+async def test_audit_marzban_sync_ignores_removed_web_order_access(repo) -> None:
+    await repo.create_web_order(
+        order_id="removed-order",
+        provider="card",
+        external_id="pay-removed",
+        status="paid_applied",
+        plan_key="m1",
+        days=30,
+        gb=0,
+        amount_rub=99,
+        customer_contact="old@example.com",
+        pay_url="https://pay.example",
+    )
+    await repo.attach_web_order_access(order_id="removed-order", marzban_username="web_removed")
+    await repo.set_web_order_status("removed-order", "manual_removed")
+
+    report = await audit_marzban_sync(repo, FakeMarzban([]), limit=100)
+
+    assert report.missing_in_marzban == []
+    assert report.web_orders_without_access == []
+    assert report.has_critical_findings() is False
