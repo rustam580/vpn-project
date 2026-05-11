@@ -150,7 +150,8 @@ def register_user_message_handlers(*, router: Router, deps: UserMessageDeps) -> 
             "• <code>/device_replace &lt;telegram_id&gt; &lt;slot&gt;</code>\n"
             "• <code>/disable &lt;telegram_id&gt;</code>\n"
             "• <code>/link &lt;telegram_id&gt; &lt;marzban_username&gt;</code>\n"
-            "• <code>/ops</code> — health-отчет"
+            "• <code>/ops</code> — health-отчет\n"
+            "• <code>/sync_audit</code> — Marzban/DB рассинхрон"
         )
         await message.answer(user_block + "\n\n" + admin_block, parse_mode="HTML")
 

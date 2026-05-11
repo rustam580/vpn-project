@@ -12,6 +12,8 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 from src.vpnbot.background_tasks import spawn as _spawn_bg
+from src.vpnbot.marzban_sync import audit_marzban_sync
+from src.vpnbot.message_utils import split_message
 
 
 @dataclass
@@ -548,6 +550,38 @@ def register_admin_message_handlers(*, router: Router, deps: AdminMessageDeps) -
         except Exception as exc:
             logging.exception("Ops command failed")
             await message.answer(f"Ошибка ops-отчета: {exc}")
+
+    @router.message(Command("sync_audit"))
+    async def sync_audit_cmd(message: Message) -> None:
+        if not await guard_message_rate_limit(message):
+            return
+        if not message.from_user or not is_admin_fn(int(message.from_user.id), settings):
+            await message.answer("Недостаточно прав.")
+            return
+        await message.answer("🧭 Проверяю Marzban/DB рассинхрон...")
+        try:
+            report = await asyncio.wait_for(
+                audit_marzban_sync(
+                    repo,
+                    marzban,
+                    limit=max(20, int(settings.marzban_sync_audit_limit)),
+                ),
+                timeout=90,
+            )
+        except asyncio.TimeoutError:
+            await message.answer("Аудит Marzban/DB занял слишком много времени. Попробуйте позже.")
+            return
+        except Exception as exc:
+            logging.exception("Marzban sync audit command failed")
+            await message.answer(f"Ошибка аудита Marzban/DB: {exc}")
+            return
+
+        text = report.summary_text(
+            show=max(1, int(settings.marzban_sync_audit_show)),
+            include_noncritical=True,
+        )
+        for chunk in split_message(text, limit=3500):
+            await message.answer(chunk)
 
     @router.message(Command("ref_grant"))
     async def ref_grant_cmd(message: Message) -> None:

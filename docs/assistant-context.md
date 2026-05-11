@@ -118,6 +118,7 @@ Before relying on docs for deployment:
 - Added repository test coverage for web order lookup by order/contact/Marzban username.
 - Corrected infra/website docs to reflect the two-host deployment and the observed website static root `/var/www/rootvpn`.
 - Added reusable Marzban/DB sync audit module and a background worker. The worker is safe-by-default: it only reports drift to admins and does not mutate Marzban or DB.
+- Added manual Telegram admin entrypoints for Marzban/DB drift checks: `/sync_audit` and admin cabinet button `🧭 Marzban/DB аудит`.
 
 ## Recommended Strategic Improvements
 

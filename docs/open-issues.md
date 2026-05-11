@@ -30,7 +30,7 @@ Last updated: 2026-05-11
 4. P1 - Safe Marzban/DB drift resolution
 - Status: in_progress
 - Problem: background audit now detects drift, but admins still need safe guided actions to resolve ambiguous cases without manual SQL/Marzban edits.
-- Next action: add admin review command/buttons for "accept Marzban", "accept DB", "ignore known test/stale user", and event-log every resolution.
+- Next action: add safe resolution actions for "accept Marzban", "accept DB", "ignore known test/stale user", and event-log every resolution.
 - Owner: ops/dev
 
 5. P2 - Finish `bot_runtime.py` decomposition
@@ -40,6 +40,7 @@ Last updated: 2026-05-11
 - Owner: dev
 
 ## Recently Closed
+- Added manual Marzban/DB audit in the Telegram admin cabinet: `/sync_audit` command and `🧭 Marzban/DB аудит` button.
 - Added reusable Marzban/DB sync audit module and background worker. It alerts admins about critical drift (`missing_in_marzban`, paid web orders without access) and can optionally include noncritical drift.
 - Corrected infrastructure and website deployment docs for the two-host layout (`205.196.81.194` site-host with `/var/www/rootvpn`, `77.110.125.105` bot/API/VPN host).
 - Expanded admin user lookup from Telegram ID only to Telegram ID, web order ID, external payment ID, contact/email, and Marzban username.
