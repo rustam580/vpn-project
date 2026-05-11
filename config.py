@@ -502,6 +502,25 @@ def _load_marzban_sync_audit_block() -> dict[str, Any]:
     }
 
 
+def _load_xray_quality_block() -> dict[str, Any]:
+    return {
+        "xray_error_log_path": os.getenv("XRAY_ERROR_LOG_PATH", "/var/log/xray/error.log").strip(),
+        "xray_quality_monitor_enabled": env_bool("XRAY_QUALITY_MONITOR_ENABLED", False),
+        "xray_quality_monitor_interval_sec": max(
+            300, int(os.getenv("XRAY_QUALITY_MONITOR_INTERVAL_SEC", "900"))
+        ),
+        "xray_quality_monitor_window_min": max(
+            1, int(os.getenv("XRAY_QUALITY_MONITOR_WINDOW_MIN", "15"))
+        ),
+        "xray_quality_monitor_threshold": max(
+            1, int(os.getenv("XRAY_QUALITY_MONITOR_THRESHOLD", "50"))
+        ),
+        "xray_quality_monitor_show": max(
+            1, min(30, int(os.getenv("XRAY_QUALITY_MONITOR_SHOW", "8")))
+        ),
+    }
+
+
 @dataclass(frozen=True)
 class Settings:
     bot_token: str
@@ -571,6 +590,12 @@ class Settings:
     marzban_sync_audit_limit: int
     marzban_sync_audit_show: int
     marzban_sync_audit_alert_noncritical: bool
+    xray_error_log_path: str
+    xray_quality_monitor_enabled: bool
+    xray_quality_monitor_interval_sec: int
+    xray_quality_monitor_window_min: int
+    xray_quality_monitor_threshold: int
+    xray_quality_monitor_show: int
 
     @staticmethod
     def load() -> "Settings":
@@ -592,6 +617,7 @@ class Settings:
         fields.update(_load_auto_renew_block())
         fields.update(_load_sub_migration_block())
         fields.update(_load_marzban_sync_audit_block())
+        fields.update(_load_xray_quality_block())
         return Settings(**fields)
 
     def cryptobot_enabled(self) -> bool:

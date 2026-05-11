@@ -13,6 +13,7 @@ from aiogram.types import CallbackQuery
 from src.vpnbot.background_tasks import spawn as _spawn_bg
 from src.vpnbot.marzban_sync import audit_marzban_sync
 from src.vpnbot.message_utils import split_message
+from src.vpnbot.xray_quality import format_xray_quality_report, summarize_xray_error_log
 
 
 @dataclass
@@ -206,6 +207,24 @@ def register_admin_callback_handlers(*, router: Router, deps: AdminCallbackDeps)
             for chunk in split_message(text, limit=3500):
                 await callback.message.answer(chunk)
             return
+        if action == "xray_errors":
+            await callback.answer("Смотрю Xray error log...")
+            try:
+                summary = summarize_xray_error_log(
+                    settings.xray_error_log_path,
+                    window_minutes=max(1, int(settings.xray_quality_monitor_window_min)),
+                )
+            except Exception as exc:
+                logging.exception("Xray quality callback failed")
+                await callback.message.answer(f"Ошибка чтения Xray error log: {exc}")
+                return
+            text = format_xray_quality_report(
+                summary,
+                show=max(1, int(settings.xray_quality_monitor_show)),
+            )
+            for chunk in split_message(text, limit=3500):
+                await callback.message.answer(chunk)
+            return
         if action == "deploy":
             await callback.answer("Запускаю deploy...")
             script = Path("/usr/local/sbin/vpn-ops-deploy")
@@ -341,6 +360,7 @@ def register_admin_callback_handlers(*, router: Router, deps: AdminCallbackDeps)
                 "/ref_stats [telegram_id]\n"
                 "/ops\n"
                 "/sync_audit\n"
+                "/xray_errors [minutes]\n"
                 f"{check_hint}\n\n"
                 "Примеры:\n"
                 "/grant 386029735 30 0\n"
@@ -360,6 +380,7 @@ def register_admin_callback_handlers(*, router: Router, deps: AdminCallbackDeps)
                 "/deploy\n"
                 "/ref_stats\n"
                 "/sync_audit\n"
+                "/xray_errors 15\n"
                 "/disable 386029735\n"
                 "/user 386029735\n"
                 "/broadcast Текст рассылки"

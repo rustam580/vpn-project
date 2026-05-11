@@ -58,6 +58,7 @@ from src.vpnbot.payment_helpers import (
     yookassa_create_payment,
 )
 from src.vpnbot.services.bot_marzban import MarzbanClient
+from src.vpnbot.xray_quality import format_xray_quality_report, summarize_xray_error_log
 
 
 def find_plan(settings: Settings, key: str) -> Plan | None:
@@ -330,6 +331,63 @@ async def marzban_sync_audit_worker(
                 )
             except Exception:
                 logging.exception("Marzban sync audit worker: alert notify failed")
+
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval)
+        except asyncio.TimeoutError:
+            continue
+
+
+async def xray_quality_monitor_worker(
+    *,
+    settings: Settings,
+    bot: Bot,
+    stop_event: asyncio.Event,
+) -> None:
+    if not settings.xray_quality_monitor_enabled:
+        logging.info("Xray quality monitor worker disabled")
+        return
+
+    interval = max(300, int(settings.xray_quality_monitor_interval_sec))
+    window_min = max(1, int(settings.xray_quality_monitor_window_min))
+    threshold = max(1, int(settings.xray_quality_monitor_threshold))
+    logging.info(
+        "Xray quality monitor worker started: path=%s window_min=%s threshold=%s interval_sec=%s",
+        settings.xray_error_log_path,
+        window_min,
+        threshold,
+        interval,
+    )
+
+    while not stop_event.is_set():
+        try:
+            summary = summarize_xray_error_log(
+                settings.xray_error_log_path,
+                window_minutes=window_min,
+            )
+            if summary.read_error or summary.file_missing or summary.has_problem(threshold=threshold):
+                await notify_admin_worker_alert(
+                    bot=bot,
+                    settings=settings,
+                    key="worker.xray_quality.findings",
+                    title="Xray quality findings",
+                    details=format_xray_quality_report(
+                        summary,
+                        show=max(1, int(settings.xray_quality_monitor_show)),
+                    ),
+                )
+        except Exception as exc:
+            logging.exception("Xray quality monitor worker iteration failed")
+            try:
+                await notify_admin_worker_alert(
+                    bot=bot,
+                    settings=settings,
+                    key="worker.xray_quality.iteration_failed",
+                    title="Xray quality monitor failed",
+                    details=str(exc),
+                )
+            except Exception:
+                logging.exception("Xray quality monitor worker: alert notify failed")
 
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=interval)

@@ -22,9 +22,9 @@ Last updated: 2026-05-11
 - Owner: dev
 
 3. P1 - Xray/Marzban quality monitoring
-- Status: pending
-- Problem: when clients report "VPN does not work", ops currently lacks a concise error-log summary for Xray/Reality/SNI/TLS issues and post-deploy spikes.
-- Next action: add a lightweight local parser for Xray `error.log` with Telegram admin summaries before considering a private dashboard. XrayPulse is a useful reference, but do not expose it publicly.
+- Status: in_progress
+- Problem: a lightweight parser and admin command now exist, but production log path/permissions and alert thresholds still need validation on the bot/VPN host.
+- Next action: deploy, verify `/xray_errors 15`, then set `XRAY_ERROR_LOG_PATH` if the default path differs. Enable `XRAY_QUALITY_MONITOR_ENABLED=1` only after threshold tuning.
 - Owner: ops/dev
 
 4. P1 - Safe Marzban/DB drift resolution
@@ -40,6 +40,7 @@ Last updated: 2026-05-11
 - Owner: dev
 
 ## Recently Closed
+- Added lightweight Xray quality tooling: `/xray_errors [minutes]`, `📡 Xray ошибки` admin button, reusable `xray_quality` parser, and disabled-by-default worker alert.
 - Added manual Marzban/DB audit in the Telegram admin cabinet: `/sync_audit` command and `🧭 Marzban/DB аудит` button.
 - Added reusable Marzban/DB sync audit module and background worker. It alerts admins about critical drift (`missing_in_marzban`, paid web orders without access) and can optionally include noncritical drift.
 - Corrected infrastructure and website deployment docs for the two-host layout (`205.196.81.194` site-host with `/var/www/rootvpn`, `77.110.125.105` bot/API/VPN host).

@@ -81,6 +81,7 @@ from src.vpnbot.worker_runtime import (
     marzban_sync_audit_worker,
     subscription_migration_worker,
     subscription_renewal_worker,
+    xray_quality_monitor_worker,
     yookassa_auto_worker,
 )
 from src.vpnbot.handlers.bot_handlers_admin import (
@@ -1341,6 +1342,13 @@ async def main() -> None:
             stop_event=stop_event,
         )
     )
+    xray_quality_task = asyncio.create_task(
+        xray_quality_monitor_worker(
+            settings=settings,
+            bot=bot,
+            stop_event=stop_event,
+        )
+    )
 
     try:
         await dp.start_polling(bot)
@@ -1353,6 +1361,7 @@ async def main() -> None:
         renewal_task.cancel()
         sub_migration_task.cancel()
         marzban_sync_task.cancel()
+        xray_quality_task.cancel()
         try:
             await worker_task
         except asyncio.CancelledError:
@@ -1379,6 +1388,10 @@ async def main() -> None:
             pass
         try:
             await marzban_sync_task
+        except asyncio.CancelledError:
+            pass
+        try:
+            await xray_quality_task
         except asyncio.CancelledError:
             pass
         await marzban.close()

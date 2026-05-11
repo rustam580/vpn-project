@@ -14,6 +14,7 @@ from aiogram.types import Message
 from src.vpnbot.background_tasks import spawn as _spawn_bg
 from src.vpnbot.marzban_sync import audit_marzban_sync
 from src.vpnbot.message_utils import split_message
+from src.vpnbot.xray_quality import format_xray_quality_report, summarize_xray_error_log
 
 
 @dataclass
@@ -579,6 +580,35 @@ def register_admin_message_handlers(*, router: Router, deps: AdminMessageDeps) -
         text = report.summary_text(
             show=max(1, int(settings.marzban_sync_audit_show)),
             include_noncritical=True,
+        )
+        for chunk in split_message(text, limit=3500):
+            await message.answer(chunk)
+
+    @router.message(Command("xray_errors"))
+    async def xray_errors_cmd(message: Message) -> None:
+        if not await guard_message_rate_limit(message):
+            return
+        if not message.from_user or not is_admin_fn(int(message.from_user.id), settings):
+            await message.answer("Недостаточно прав.")
+            return
+        parts = (message.text or "").split()
+        try:
+            window_min = int(parts[1]) if len(parts) >= 2 else int(settings.xray_quality_monitor_window_min)
+        except ValueError:
+            await message.answer("Использование: /xray_errors [minutes]")
+            return
+        try:
+            summary = summarize_xray_error_log(
+                settings.xray_error_log_path,
+                window_minutes=max(1, min(1440, window_min)),
+            )
+        except Exception as exc:
+            logging.exception("Xray quality command failed")
+            await message.answer(f"Ошибка чтения Xray error log: {exc}")
+            return
+        text = format_xray_quality_report(
+            summary,
+            show=max(1, int(settings.xray_quality_monitor_show)),
         )
         for chunk in split_message(text, limit=3500):
             await message.answer(chunk)

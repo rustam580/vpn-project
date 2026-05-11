@@ -61,6 +61,8 @@ RootVPN currently uses a two-host production layout.
 - `AUTO_RENEW_INVOICE_ENABLED`: auto-created invoice before expiry
 - `MARZBAN_SYNC_AUDIT_ENABLED`: background Marzban/DB drift audit alerts
 - `MARZBAN_SYNC_AUDIT_INTERVAL_SEC`: drift audit interval
+- `XRAY_ERROR_LOG_PATH`: local Xray error log path used by `/xray_errors`
+- `XRAY_QUALITY_MONITOR_ENABLED`: optional background Xray error spike alerts
 - `PLANS_JSON`: multi-tariff config
 
 ## Operations
