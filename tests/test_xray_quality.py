@@ -7,6 +7,7 @@ from src.vpnbot.xray_quality import (
     summarize_xray_error_lines,
     summarize_xray_error_log,
 )
+from src.vpnbot import xray_quality
 
 
 def test_xray_quality_summary_counts_recent_errors_and_normalizes_signatures() -> None:
@@ -39,6 +40,22 @@ def test_xray_quality_missing_file_report(local_tmp_path) -> None:
 
     assert summary.file_missing is True
     assert "log file not found" in text
+    assert "Next steps" in text
+
+
+def test_xray_quality_missing_file_report_shows_detected_process(local_tmp_path, monkeypatch) -> None:
+    path = local_tmp_path / "missing.log"
+    monkeypatch.setattr(
+        xray_quality,
+        "_detect_xray_processes",
+        lambda: ["pid=149439 /usr/local/bin/xray run -config stdin:"],
+    )
+
+    summary = summarize_xray_error_log(str(path), window_minutes=15)
+    text = format_xray_quality_report(summary)
+
+    assert "Detected Xray processes" in text
+    assert "pid=149439" in text
 
 
 def test_xray_quality_ok_report_for_empty_window() -> None:

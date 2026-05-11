@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import time
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
@@ -29,6 +29,7 @@ class XrayErrorSummary:
     samples: list[str]
     file_missing: bool = False
     read_error: str | None = None
+    xray_processes: list[str] = field(default_factory=list)
 
     def has_problem(self, *, threshold: int) -> bool:
         return self.total >= max(1, int(threshold))
@@ -87,6 +88,33 @@ def _tail_text(path: Path, *, max_bytes: int) -> str:
         except OSError:
             fh.seek(0)
         return fh.read().decode("utf-8", errors="replace")
+
+
+def _detect_xray_processes(*, limit: int = 5) -> list[str]:
+    """Best-effort Linux process discovery without shelling out."""
+    proc = Path("/proc")
+    if not proc.exists():
+        return []
+
+    found: list[str] = []
+    for child in proc.iterdir():
+        if len(found) >= max(1, int(limit)):
+            break
+        if not child.name.isdigit():
+            continue
+        cmdline = child / "cmdline"
+        try:
+            raw = cmdline.read_bytes()
+        except OSError:
+            continue
+        if not raw:
+            continue
+        cmd = raw.replace(b"\x00", b" ").decode("utf-8", errors="replace").strip()
+        lowered = cmd.lower()
+        if "xray" not in lowered:
+            continue
+        found.append(f"pid={child.name} {cmd[:220]}")
+    return found
 
 
 def summarize_xray_error_lines(
@@ -154,6 +182,7 @@ def summarize_xray_error_log(
             top_remote_ips=[],
             samples=[],
             file_missing=True,
+            xray_processes=_detect_xray_processes(),
         )
     try:
         text = _tail_text(path, max_bytes=max_bytes)
@@ -168,6 +197,7 @@ def summarize_xray_error_log(
             top_remote_ips=[],
             samples=[],
             read_error=str(exc),
+            xray_processes=_detect_xray_processes(),
         )
     return summarize_xray_error_lines(
         text.splitlines(),
@@ -185,9 +215,24 @@ def format_xray_quality_report(summary: XrayErrorSummary, *, show: int = 8) -> s
     ]
     if summary.file_missing:
         lines.append("Result: log file not found")
+        if summary.xray_processes:
+            lines.append("\nDetected Xray processes:")
+            lines.extend(f"- {process}" for process in summary.xray_processes[:show])
+        lines.extend(
+            [
+                "\nNext steps:",
+                "- Xray is likely running without a file error log, or XRAY_ERROR_LOG_PATH points to the wrong file.",
+                "- On this host Marzban may start Xray with config from stdin, so systemd unit logs can be empty.",
+                "- Enable Xray/Marzban error logging to a stable file, then set XRAY_ERROR_LOG_PATH to that path.",
+                "- Keep XRAY_QUALITY_MONITOR_ENABLED=false until the log path is confirmed.",
+            ]
+        )
         return "\n".join(lines)
     if summary.read_error:
         lines.append(f"Result: read error: {summary.read_error}")
+        if summary.xray_processes:
+            lines.append("\nDetected Xray processes:")
+            lines.extend(f"- {process}" for process in summary.xray_processes[:show])
         return "\n".join(lines)
 
     lines.append(f"Errors/warnings: {summary.total}")
