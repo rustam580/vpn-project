@@ -5,8 +5,7 @@ import subprocess
 import time
 from pathlib import Path
 from typing import Any
-from aiogram import Bot, Dispatcher, F, Router
-from aiogram.filters import Command
+from aiogram import Bot, Dispatcher, Router
 from aiogram.types import (
     CallbackQuery,
     Message,
@@ -102,9 +101,9 @@ from src.vpnbot.handlers.bot_handlers_user import (
     UserMessageDeps,
     register_user_message_handlers,
 )
-from src.vpnbot.handlers.bot_handlers_user_runtime import (
-    UserRuntimeDeps,
-    register_user_runtime_handlers,
+from src.vpnbot.handlers.bot_handlers_admin_runtime import (
+    AdminRuntimeDeps,
+    register_admin_runtime_handlers,
 )
 from src.vpnbot.keyboards.bot_keyboards import (
     admin_panel_keyboard,
@@ -655,86 +654,20 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             normalize_channel_url=normalize_channel_url,
         ),
     )
-    @router.message(F.text.contains("/grant_perm"))
-    async def grant_perm_any(message: Message) -> None:
-        if await handle_grant_perm(message):
-            return
-
-
-
-
-
-
-
-
-    @router.message(Command("admin"))
-    async def admin_cmd(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        if not message.from_user or not is_admin(int(message.from_user.id), settings):
-            await message.answer("Недостаточно прав.")
-            return
-        await message.answer(
-            "Админ-кабинет:\n"
-            "- Статистика по пользователям и платежам\n"
-            "- Быстрые действия без ручного ввода команд",
-            reply_markup=admin_panel_keyboard(),
-        )
-
-    @router.message(Command("broadcast"))
-    async def broadcast_cmd(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        if not message.from_user or not is_admin(int(message.from_user.id), settings):
-            await message.answer("Недостаточно прав.")
-            return
-        text = (message.text or "").split(maxsplit=1)
-        if len(text) < 2 or not text[1].strip():
-            pending_broadcast_prompt.add(int(message.from_user.id))
-            pending_broadcast_format.setdefault(int(message.from_user.id), "plain")
-            pending_broadcast_buttons.setdefault(int(message.from_user.id), True)
-            await message.answer("Введите текст рассылки или «отмена».")
-            return
-        body = text[1].strip()
-        admin_id = int(message.from_user.id)
-        pending_broadcast_text[admin_id] = body
-        pending_broadcast_format.setdefault(admin_id, "plain")
-        pending_broadcast_buttons.setdefault(admin_id, True)
-        await send_broadcast_preview(message, body)
-
-    @router.message(Command("user"))
-    async def user_lookup_cmd(message: Message) -> None:
-        if not await guard_message_rate_limit(message):
-            return
-        if not message.from_user or not is_admin(int(message.from_user.id), settings):
-            await message.answer("Недостаточно прав.")
-            return
-        parts = (message.text or "").split()
-        if len(parts) != 2:
-            await message.answer("Использование: /user <telegram_id|order_id|email|marzban_username>")
-            return
-        target_id = parts[1].strip()
-        await send_user_lookup(message, target_id)
-
-    register_user_runtime_handlers(
+    register_admin_runtime_handlers(
         router=router,
-        deps=UserRuntimeDeps(
+        deps=AdminRuntimeDeps(
             settings=settings,
-            repo=repo,
-            marzban=marzban,
             guard_message_rate_limit=guard_message_rate_limit,
-            list_replaceable_devices=list_replaceable_devices,
-            get_bot_username=get_bot_username,
-            track_event=track_event,
-            pending_issue=pending_issue,
-            check_and_apply_payment=check_and_apply_payment,
-            enabled_payment_providers=enabled_payment_providers,
+            handle_grant_perm=handle_grant_perm,
+            send_broadcast_preview=send_broadcast_preview,
+            send_user_lookup=send_user_lookup,
+            pending_broadcast_prompt=pending_broadcast_prompt,
+            pending_broadcast_format=pending_broadcast_format,
+            pending_broadcast_buttons=pending_broadcast_buttons,
+            pending_broadcast_text=pending_broadcast_text,
         ),
     )
-
-    @router.message(F.text == "🛠 Админ-кабинет")
-    async def admin_btn(message: Message) -> None:
-        await admin_cmd(message)
 
     register_user_callback_handlers(
         router=router,
