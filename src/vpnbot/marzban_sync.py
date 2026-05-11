@@ -3,11 +3,36 @@ from __future__ import annotations
 import re
 import sqlite3
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
 WEB_ORDER_ACCESS_STATUSES = frozenset({"paid_applied"})
+DRIFT_IGNORED_EVENT_TYPE = "drift_ignored"
+
+# DriftFinding.kind constants.
+KIND_MISSING_IN_MARZBAN = "missing_in_marzban"
+KIND_WEB_ORDER_NO_ACCESS = "web_order_no_access"
+KIND_UNKNOWN_IN_DB = "unknown_in_db"
+KIND_NON_STANDARD_DEVICE = "non_standard_device"
+
+# Short prefixes for finding_id (kept tiny to fit Telegram's 64-byte callback_data).
+_KIND_TO_PREFIX = {
+    KIND_MISSING_IN_MARZBAN: "m",
+    KIND_WEB_ORDER_NO_ACCESS: "w",
+    KIND_UNKNOWN_IN_DB: "u",
+    KIND_NON_STANDARD_DEVICE: "n",
+}
+_PREFIX_TO_KIND = {prefix: kind for kind, prefix in _KIND_TO_PREFIX.items()}
+
+
+def kind_prefix(kind: str) -> str:
+    """Short, stable single-letter prefix used in finding_id and callback_data."""
+    return _KIND_TO_PREFIX.get(kind, "x")
+
+
+def prefix_to_kind(prefix: str) -> str | None:
+    return _PREFIX_TO_KIND.get(prefix)
 
 
 @dataclass(frozen=True)
@@ -17,6 +42,30 @@ class DbRef:
     device_id: int | None
     username: str
     detail: str
+
+
+@dataclass(frozen=True)
+class DriftFinding:
+    """Structured drift finding suitable for admin-driven resolution.
+
+    `finding_id` is short and stable (no timestamps) so the same drift produces
+    the same id across audit runs, which lets us link UI actions and ignore-records.
+    `payload` carries everything a resolver needs (username, list of DB refs,
+    web order id, etc.).
+    """
+
+    kind: str
+    finding_id: str
+    summary: str
+    payload: dict[str, Any]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "kind": self.kind,
+            "finding_id": self.finding_id,
+            "summary": self.summary,
+            "payload": dict(self.payload),
+        }
 
 
 @dataclass(frozen=True)
@@ -31,9 +80,26 @@ class SyncAuditReport:
     non_standard_device_names: list[str]
     shared_db_refs: list[str]
     db_known_summary: list[str]
+    findings: list[DriftFinding] = field(default_factory=list)
+    ignored_finding_ids: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        data["findings"] = [finding.as_dict() for finding in self.findings]
+        return data
+
+    def critical_findings(self) -> list[DriftFinding]:
+        return [
+            finding
+            for finding in self.findings
+            if finding.kind in {KIND_MISSING_IN_MARZBAN, KIND_WEB_ORDER_NO_ACCESS}
+        ]
+
+    def find_by_id(self, finding_id: str) -> DriftFinding | None:
+        for finding in self.findings:
+            if finding.finding_id == finding_id:
+                return finding
+        return None
 
     def has_critical_findings(self) -> bool:
         return bool(self.missing_in_marzban or self.web_orders_without_access)
@@ -168,12 +234,15 @@ def _row_get(row: Any, key: str) -> Any:
     return row[key]
 
 
-async def collect_db_refs(repo: Any) -> tuple[list[DbRef], list[str], list[str]]:
+async def collect_db_refs(
+    repo: Any,
+) -> tuple[list[DbRef], list[str], list[str], list[dict[str, Any]]]:
     if repo.conn is None:
         raise RuntimeError("Repo is not open")
 
     refs: list[DbRef] = []
     web_without_access: list[str] = []
+    web_without_access_payload: list[dict[str, Any]] = []
     non_standard_devices: list[str] = []
     web_rows: list[Any] = []
     active_web_usernames: set[str] = set()
@@ -195,7 +264,7 @@ async def collect_db_refs(repo: Any) -> tuple[list[DbRef], list[str], list[str]]
     if web_orders_exists:
         cursor = await repo.conn.execute(
             """
-            SELECT order_id, status, plan_key, marzban_username, updated_at
+            SELECT order_id, status, plan_key, days, gb, marzban_username, updated_at
             FROM web_orders
             ORDER BY updated_at DESC
             """
@@ -210,6 +279,13 @@ async def collect_db_refs(repo: Any) -> tuple[list[DbRef], list[str], list[str]]
                     f"order={_row_get(row, 'order_id')} plan={_row_get(row, 'plan_key')} "
                     f"updated={fmt_ts(_row_get(row, 'updated_at'))}"
                 )
+                web_without_access_payload.append({
+                    "order_id": str(_row_get(row, "order_id") or ""),
+                    "plan_key": str(_row_get(row, "plan_key") or ""),
+                    "days": int(_row_get(row, "days") or 0),
+                    "gb": int(_row_get(row, "gb") or 0),
+                    "updated_at_text": fmt_ts(_row_get(row, "updated_at")),
+                })
             if username and status in WEB_ORDER_ACCESS_STATUSES:
                 active_web_usernames.add(username)
 
@@ -247,26 +323,49 @@ async def collect_db_refs(repo: Any) -> tuple[list[DbRef], list[str], list[str]]
         )
         refs.append(DbRef("web_orders", None, None, username, detail))
 
-    return refs, web_without_access, non_standard_devices
+    return refs, web_without_access, non_standard_devices, web_without_access_payload
+
+
+async def collect_ignored_drift_ids(repo: Any) -> set[str]:
+    """Return finding IDs explicitly ignored by an admin.
+
+    Ignore is intentionally stored in the existing events table to avoid a schema
+    migration for this safety feature. If events are unavailable, audit simply
+    behaves as before.
+    """
+    if getattr(repo, "conn", None) is None:
+        return set()
+    try:
+        cursor = await repo.conn.execute(
+            """
+            SELECT DISTINCT event_value
+            FROM events
+            WHERE event_type = ?
+              AND COALESCE(event_value, '') != ''
+            """,
+            (DRIFT_IGNORED_EVENT_TYPE,),
+        )
+        rows = await cursor.fetchall()
+        await cursor.close()
+    except Exception:
+        return set()
+    return {str(row["event_value"]).strip() for row in rows if str(row["event_value"] or "").strip()}
 
 
 def build_audit_report(
     *,
     refs: list[DbRef],
     web_without_access: list[str],
+    web_without_access_payload: list[dict[str, Any]] | None = None,
     non_standard_devices: list[str],
     mz_users: dict[str, dict[str, Any]],
     list_error: str | None,
+    ignored_finding_ids: set[str] | None = None,
 ) -> SyncAuditReport:
+    ignored_finding_ids = set(ignored_finding_ids or set())
     db_by_username: dict[str, list[DbRef]] = {}
     for ref in refs:
         db_by_username.setdefault(ref.username, []).append(ref)
-
-    missing_in_marzban = [
-        f"{username} <- " + "; ".join(ref.detail for ref in refs_for_user)
-        for username, refs_for_user in sorted(db_by_username.items())
-        if username not in mz_users
-    ]
 
     unknown_in_db = [
         f"{username} status={user.get('status')} expire={fmt_expire(user)}"
@@ -288,6 +387,23 @@ def build_audit_report(
         for username, refs_for_user in sorted(db_by_username.items())
     ]
 
+    findings = _build_findings(
+        db_by_username=db_by_username,
+        mz_users=mz_users,
+        web_without_access_payload=web_without_access_payload or [],
+    )
+    if ignored_finding_ids:
+        findings = [
+            finding for finding in findings if finding.finding_id not in ignored_finding_ids
+        ]
+
+    missing_in_marzban = [
+        finding.summary for finding in findings if finding.kind == KIND_MISSING_IN_MARZBAN
+    ]
+    web_orders_without_access = [
+        finding.summary for finding in findings if finding.kind == KIND_WEB_ORDER_NO_ACCESS
+    ]
+
     return SyncAuditReport(
         db_refs=len(refs),
         db_unique_usernames=len(db_by_username),
@@ -295,11 +411,69 @@ def build_audit_report(
         marzban_list_error=list_error,
         missing_in_marzban=missing_in_marzban,
         unknown_in_db=unknown_in_db,
-        web_orders_without_access=web_without_access,
+        web_orders_without_access=web_orders_without_access,
         non_standard_device_names=non_standard_devices,
         shared_db_refs=shared_db_refs,
         db_known_summary=db_known_summary,
+        findings=findings,
+        ignored_finding_ids=sorted(ignored_finding_ids),
     )
+
+
+def _build_findings(
+    *,
+    db_by_username: dict[str, list[DbRef]],
+    mz_users: dict[str, dict[str, Any]],
+    web_without_access_payload: list[dict[str, Any]],
+) -> list[DriftFinding]:
+    findings: list[DriftFinding] = []
+
+    for username in sorted(db_by_username.keys()):
+        if username in mz_users:
+            continue
+        refs_for_user = db_by_username[username]
+        ref_payload = [
+            {
+                "source": ref.source,
+                "telegram_id": ref.telegram_id,
+                "device_id": ref.device_id,
+                "username": ref.username,
+                "detail": ref.detail,
+            }
+            for ref in refs_for_user
+        ]
+        summary = f"{username} <- " + "; ".join(ref.detail for ref in refs_for_user)
+        findings.append(
+            DriftFinding(
+                kind=KIND_MISSING_IN_MARZBAN,
+                finding_id=f"{kind_prefix(KIND_MISSING_IN_MARZBAN)}:{username}",
+                summary=summary,
+                payload={"username": username, "refs": ref_payload},
+            )
+        )
+
+    for entry in web_without_access_payload:
+        order_id = str(entry.get("order_id") or "").strip()
+        if not order_id:
+            continue
+        plan_key = str(entry.get("plan_key") or "")
+        updated = str(entry.get("updated_at_text") or "")
+        summary = f"order={order_id} plan={plan_key} updated={updated}"
+        findings.append(
+            DriftFinding(
+                kind=KIND_WEB_ORDER_NO_ACCESS,
+                finding_id=f"{kind_prefix(KIND_WEB_ORDER_NO_ACCESS)}:{order_id}",
+                summary=summary,
+                payload={
+                    "order_id": order_id,
+                    "plan_key": plan_key,
+                    "days": int(entry.get("days") or 0),
+                    "gb": int(entry.get("gb") or 0),
+                },
+            )
+        )
+
+    return findings
 
 
 def _has_suspicious_shared_refs(refs_for_user: list[DbRef]) -> bool:
@@ -317,7 +491,10 @@ def _has_suspicious_shared_refs(refs_for_user: list[DbRef]) -> bool:
 
 
 async def audit_marzban_sync(repo: Any, marzban: Any, *, limit: int = 100) -> SyncAuditReport:
-    refs, web_without_access, non_standard_devices = await collect_db_refs(repo)
+    refs, web_without_access, non_standard_devices, web_without_access_payload = (
+        await collect_db_refs(repo)
+    )
+    ignored_finding_ids = await collect_ignored_drift_ids(repo)
     db_usernames = sorted({ref.username for ref in refs})
     mz_users, list_error = await list_marzban_users(marzban, limit=max(1, int(limit)))
     if not mz_users:
@@ -328,9 +505,11 @@ async def audit_marzban_sync(repo: Any, marzban: Any, *, limit: int = 100) -> Sy
     return build_audit_report(
         refs=refs,
         web_without_access=web_without_access,
+        web_without_access_payload=web_without_access_payload,
         non_standard_devices=non_standard_devices,
         mz_users=mz_users,
         list_error=list_error,
+        ignored_finding_ids=ignored_finding_ids,
     )
 
 

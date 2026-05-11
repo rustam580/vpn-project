@@ -249,8 +249,8 @@ async def bind_web_order_to_user(
             return True, "Этот доступ уже привязан к вашему Telegram. Нажмите «🔑 Получить конфиг»."
 
     used_slots = {int(row.get("device_id") or 0) for row in devices}
-    slot = next_device_slot(used_slots, settings.device_limit)
-    if slot is None:
+    next_slot = next_device_slot(used_slots, settings.device_limit)
+    if next_slot is None:
         return False, (
             f"Достигнут лимит устройств ({format_device_limit(settings.device_limit)}).\n"
             "Освободите слот через «🔁 Заменить устройство» или напишите в поддержку."
@@ -258,7 +258,7 @@ async def bind_web_order_to_user(
 
     try:
         target_username, _ = await ensure_slot_username(
-            slot=slot,
+            slot=next_slot,
             source_username=username,
             source_user=user_in_mz,
         )
@@ -267,18 +267,18 @@ async def bind_web_order_to_user(
             "webbind: failed for tg=%s order=%s slot=%s username=%s",
             telegram_id,
             order_id,
-            slot,
+            next_slot,
             username,
         )
         return False, "Не удалось привязать доступ как устройство. Напишите в поддержку."
     await track_event(
         "web_order_bound",
         telegram_id=telegram_id,
-        event_value=f"slot_{slot}",
+        event_value=f"slot_{next_slot}",
         event_meta={
             "order_id": order_id,
             "from_marzban_username": username,
             "marzban_username": target_username,
         },
     )
-    return True, f"Готово ✅ Доступ с сайта привязан как устройство #{slot}. Нажмите «🔑 Получить конфиг»."
+    return True, f"Готово ✅ Доступ с сайта привязан как устройство #{next_slot}. Нажмите «🔑 Получить конфиг»."

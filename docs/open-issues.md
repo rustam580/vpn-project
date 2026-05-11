@@ -29,8 +29,8 @@ Last updated: 2026-05-11 (afternoon)
 
 4. P1 - Safe Marzban/DB drift resolution
 - Status: in_progress
-- Problem: background audit now detects drift, but admins still need safe guided actions to resolve ambiguous cases without manual SQL/Marzban edits.
-- Next action: add safe resolution actions for "accept Marzban", "accept DB", "ignore known test/stale user", and event-log every resolution.
+- Problem: guided admin actions are now implemented for critical drift, but need production validation on a real finding before calling this fully closed.
+- Next action: deploy, run `🧭 Marzban/DB аудит`, validate that critical findings show action cards, and use only on a known-safe stale/test finding first.
 - Owner: ops/dev
 
 5. P2 - Finish `bot_runtime.py` decomposition
@@ -40,6 +40,7 @@ Last updated: 2026-05-11 (afternoon)
 - Owner: dev
 
 ## Recently Closed
+- Added guided Marzban/DB drift resolution: structured `DriftFinding` objects, action keyboards on admin sync audit, safe resolver functions (`recreate`, `drop_db_ref`, `retry_web_order`, `ignore`), ignored finding suppression, and resolver/keyboards unit tests.
 - Refactor of `build_router` (commits 8726e85, 77a57d8, 11d716c): extracted 25 inline handlers to `src/vpnbot/handlers/bot_handlers_user_runtime.py` and `bot_handlers_admin_runtime.py`; extracted 3 large pure helpers (`bind_web_order_to_user`, `replace_device_slot`, `list_replaceable_devices`) to `src/vpnbot/runtime_helpers.py` with 10 new unit tests in `tests/test_runtime_helpers.py`. `bot_runtime.py`: 1411 -> 742 lines (-47%). pytest: 72 -> 82 passing.
 - Added lightweight Xray quality tooling: `/xray_errors [minutes]`, `📡 Xray ошибки` admin button, reusable `xray_quality` parser, and disabled-by-default worker alert.
 - Added manual Marzban/DB audit in the Telegram admin cabinet: `/sync_audit` command and `🧭 Marzban/DB аудит` button.

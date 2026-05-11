@@ -11,6 +11,20 @@ from aiogram import F, Router
 from aiogram.types import CallbackQuery
 
 from src.vpnbot.background_tasks import spawn as _spawn_bg
+from src.vpnbot.drift_resolver import (
+    drop_missing_marzban_db_ref,
+    ignore_drift,
+    recreate_missing_marzban_user,
+    retry_web_order_access,
+)
+from src.vpnbot.keyboards.drift_keyboards import (
+    ACTION_DROP_DB_REF,
+    ACTION_IGNORE,
+    ACTION_RECREATE,
+    ACTION_RETRY_WEB_ORDER,
+    drift_finding_keyboard,
+    parse_drift_callback,
+)
 from src.vpnbot.marzban_sync import audit_marzban_sync
 from src.vpnbot.message_utils import split_message
 from src.vpnbot.xray_quality import format_xray_quality_report, summarize_xray_error_log
@@ -206,6 +220,18 @@ def register_admin_callback_handlers(*, router: Router, deps: AdminCallbackDeps)
             )
             for chunk in split_message(text, limit=3500):
                 await callback.message.answer(chunk)
+            critical = report.critical_findings()
+            if critical:
+                max_cards = max(1, int(getattr(settings, "marzban_sync_audit_show", 8)))
+                await callback.message.answer(
+                    f"🔧 Действия по drift (показываю {min(len(critical), max_cards)} из {len(critical)}):"
+                )
+                for finding in critical[:max_cards]:
+                    await callback.message.answer(
+                        f"<b>{finding.kind}</b>\n<code>{finding.finding_id}</code>\n{finding.summary}",
+                        parse_mode="HTML",
+                        reply_markup=drift_finding_keyboard(finding),
+                    )
             return
         if action == "xray_errors":
             await callback.answer("Смотрю Xray error log...")
@@ -391,3 +417,88 @@ def register_admin_callback_handlers(*, router: Router, deps: AdminCallbackDeps)
             await callback.message.answer(build_support_templates_text(), parse_mode="HTML")
             return
         await callback.answer("Неизвестное действие", show_alert=True)
+
+    @router.callback_query(F.data.startswith("da:"))
+    async def drift_action_callback(callback: CallbackQuery) -> None:
+        """Apply one of the safe drift-resolution actions emitted by sync_audit cards."""
+        if not await guard_callback_rate_limit(callback):
+            return
+        if not callback.data or not callback.from_user or callback.message is None:
+            await callback.answer("Ошибка callback", show_alert=True)
+            return
+        if not is_admin_fn(int(callback.from_user.id), settings):
+            await callback.answer("Недостаточно прав.", show_alert=True)
+            return
+
+        parsed = parse_drift_callback(callback.data)
+        if parsed is None:
+            await callback.answer("Некорректные данные действия.", show_alert=True)
+            return
+        finding_id, action = parsed
+        actor_tg = int(callback.from_user.id)
+
+        await callback.answer("Применяю...")
+        try:
+            report = await asyncio.wait_for(
+                audit_marzban_sync(
+                    repo,
+                    marzban,
+                    limit=max(20, int(settings.marzban_sync_audit_limit)),
+                ),
+                timeout=90,
+            )
+        except asyncio.TimeoutError:
+            await callback.message.answer("Не удалось обновить аудит для подтверждения.")
+            return
+        except Exception as exc:
+            logging.exception("Drift re-audit failed before resolution")
+            await callback.message.answer(f"Ошибка повторного аудита: {exc}")
+            return
+
+        finding = report.find_by_id(finding_id)
+        if finding is None and action != ACTION_IGNORE:
+            await callback.message.answer(
+                f"Drift {finding_id} больше не наблюдается. Возможно, уже разрешен."
+            )
+            return
+
+        try:
+            if action == ACTION_RECREATE and finding is not None:
+                result = await recreate_missing_marzban_user(
+                    finding, repo=repo, marzban=marzban, settings=settings, actor_tg=actor_tg
+                )
+            elif action == ACTION_DROP_DB_REF and finding is not None:
+                result = await drop_missing_marzban_db_ref(
+                    finding, repo=repo, actor_tg=actor_tg
+                )
+            elif action == ACTION_RETRY_WEB_ORDER and finding is not None:
+                result = await retry_web_order_access(
+                    finding, repo=repo, marzban=marzban, settings=settings, actor_tg=actor_tg
+                )
+            elif action == ACTION_IGNORE:
+                # If the finding has vanished by now we still record an ignore by id,
+                # which keeps the audit trail consistent.
+                if finding is None:
+                    from src.vpnbot.marzban_sync import DriftFinding, prefix_to_kind
+                    prefix = finding_id.split(":", 1)[0] if ":" in finding_id else ""
+                    finding = DriftFinding(
+                        kind=prefix_to_kind(prefix) or "unknown",
+                        finding_id=finding_id,
+                        summary="(finding already resolved or stale)",
+                        payload={},
+                    )
+                result = await ignore_drift(finding, repo=repo, actor_tg=actor_tg)
+            else:
+                await callback.message.answer(f"Неизвестное действие: {action}.")
+                return
+        except Exception as exc:
+            logging.exception(
+                "drift_action_callback failed: finding=%s action=%s", finding_id, action
+            )
+            await callback.message.answer(f"Ошибка применения действия: {exc}")
+            return
+
+        status_icon = "✅" if result.ok else "❌"
+        await callback.message.answer(
+            f"{status_icon} {result.action or action} • {result.finding_id or finding_id}\n{result.message}"
+        )

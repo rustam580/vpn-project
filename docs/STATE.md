@@ -44,6 +44,7 @@ RootVPN currently uses a two-host production layout.
 - Website standalone sales are active (`/api/checkout`, `/api/order/{id}`).
 - Paid web orders can be bound to Telegram via `/start webbind_*`.
 - Public website API should expose subscription URL(s), not raw direct config links.
+- Admin Marzban/DB audit supports guided critical-drift actions via inline buttons; use first on known-safe stale/test findings after deploy validation.
 
 ## Payments
 
