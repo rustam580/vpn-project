@@ -1,6 +1,6 @@
 ﻿# Open Issues
 
-Last updated: 2026-05-10
+Last updated: 2026-05-11
 
 ## Priority Legend
 - P0: blocks sales or legal-safe launch
@@ -27,13 +27,20 @@ Last updated: 2026-05-10
 - Next action: add a lightweight local parser for Xray `error.log` with Telegram admin summaries before considering a private dashboard. XrayPulse is a useful reference, but do not expose it publicly.
 - Owner: ops/dev
 
-4. P2 - Finish `bot_runtime.py` decomposition
+4. P1 - Safe Marzban/DB drift resolution
+- Status: in_progress
+- Problem: background audit now detects drift, but admins still need safe guided actions to resolve ambiguous cases without manual SQL/Marzban edits.
+- Next action: add admin review command/buttons for "accept Marzban", "accept DB", "ignore known test/stale user", and event-log every resolution.
+- Owner: ops/dev
+
+5. P2 - Finish `bot_runtime.py` decomposition
 - Status: in_progress
 - Problem: `src/vpnbot/bot_runtime.py` is down to ~1.4k lines from 2.4k, but still hosts the giant `build_router` (~1080 lines) with all command/callback handlers inline.
 - Next action: split `build_router` by handler groups (subscription, status, devices, referrals) into dedicated modules; then re-enable strict mypy on `bot_runtime` and `handlers/*`.
 - Owner: dev
 
 ## Recently Closed
+- Added reusable Marzban/DB sync audit module and background worker. It alerts admins about critical drift (`missing_in_marzban`, paid web orders without access) and can optionally include noncritical drift.
 - Corrected infrastructure and website deployment docs for the two-host layout (`205.196.81.194` site-host with `/var/www/rootvpn`, `77.110.125.105` bot/API/VPN host).
 - Expanded admin user lookup from Telegram ID only to Telegram ID, web order ID, external payment ID, contact/email, and Marzban username.
 - Added explicit startup/disabled logs for payment, renewal, migration, and daily ops background workers to make deploy smoke checks easier.

@@ -44,6 +44,7 @@ from src.vpnbot.keyboards.bot_keyboards import (
     renewal_actions_keyboard,
 )
 from src.vpnbot.message_utils import split_message
+from src.vpnbot.marzban_sync import audit_marzban_sync
 from src.vpnbot.messaging import notify_access_updated
 from src.vpnbot.notifications import (
     notify_admin_requeued_processing,
@@ -277,3 +278,60 @@ async def subscription_migration_worker(
         stop_event=stop_event,
         notify_admin_worker_alert_fn=notify_admin_worker_alert,
     )
+
+
+async def marzban_sync_audit_worker(
+    *,
+    settings: Settings,
+    repo: Repo,
+    marzban: MarzbanClient,
+    bot: Bot,
+    stop_event: asyncio.Event,
+) -> None:
+    if not settings.marzban_sync_audit_enabled:
+        logging.info("Marzban sync audit worker disabled")
+        return
+
+    interval = max(900, int(settings.marzban_sync_audit_interval_sec))
+    include_noncritical = bool(settings.marzban_sync_audit_alert_noncritical)
+    logging.info(
+        "Marzban sync audit worker started: interval_sec=%s alert_noncritical=%s",
+        interval,
+        include_noncritical,
+    )
+
+    while not stop_event.is_set():
+        try:
+            report = await audit_marzban_sync(
+                repo,
+                marzban,
+                limit=max(20, int(settings.marzban_sync_audit_limit)),
+            )
+            if report.has_findings(include_noncritical=include_noncritical):
+                await notify_admin_worker_alert(
+                    bot=bot,
+                    settings=settings,
+                    key="worker.marzban_sync.findings",
+                    title="Marzban/DB sync findings",
+                    details=report.summary_text(
+                        show=max(1, int(settings.marzban_sync_audit_show)),
+                        include_noncritical=include_noncritical,
+                    ),
+                )
+        except Exception as exc:
+            logging.exception("Marzban sync audit worker iteration failed")
+            try:
+                await notify_admin_worker_alert(
+                    bot=bot,
+                    settings=settings,
+                    key="worker.marzban_sync.iteration_failed",
+                    title="Marzban/DB sync audit failed",
+                    details=str(exc),
+                )
+            except Exception:
+                logging.exception("Marzban sync audit worker: alert notify failed")
+
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval)
+        except asyncio.TimeoutError:
+            continue

@@ -78,6 +78,7 @@ from src.vpnbot.worker_runtime import (
     cryptobot_auto_worker,
     daily_ops_report_worker,
     find_plan,
+    marzban_sync_audit_worker,
     subscription_migration_worker,
     subscription_renewal_worker,
     yookassa_auto_worker,
@@ -1331,6 +1332,15 @@ async def main() -> None:
             stop_event=stop_event,
         )
     )
+    marzban_sync_task = asyncio.create_task(
+        marzban_sync_audit_worker(
+            settings=settings,
+            repo=repo,
+            marzban=marzban,
+            bot=bot,
+            stop_event=stop_event,
+        )
+    )
 
     try:
         await dp.start_polling(bot)
@@ -1342,6 +1352,7 @@ async def main() -> None:
         deploy_report_task.cancel()
         renewal_task.cancel()
         sub_migration_task.cancel()
+        marzban_sync_task.cancel()
         try:
             await worker_task
         except asyncio.CancelledError:
@@ -1364,6 +1375,10 @@ async def main() -> None:
             pass
         try:
             await sub_migration_task
+        except asyncio.CancelledError:
+            pass
+        try:
+            await marzban_sync_task
         except asyncio.CancelledError:
             pass
         await marzban.close()

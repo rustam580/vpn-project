@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-05-10
+Last updated: 2026-05-11
 
 ## Current Production
 
@@ -59,6 +59,8 @@ RootVPN currently uses a two-host production layout.
 - `ADMIN_ALERTS_ENABLED`: admin alerts for worker failures
 - `ADMIN_ALERT_COOLDOWN_SEC`: anti-spam cooldown for repeated worker alerts
 - `AUTO_RENEW_INVOICE_ENABLED`: auto-created invoice before expiry
+- `MARZBAN_SYNC_AUDIT_ENABLED`: background Marzban/DB drift audit alerts
+- `MARZBAN_SYNC_AUDIT_INTERVAL_SEC`: drift audit interval
 - `PLANS_JSON`: multi-tariff config
 
 ## Operations

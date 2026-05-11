@@ -1,6 +1,6 @@
 # Assistant Context Handoff
 
-Last updated: 2026-05-10
+Last updated: 2026-05-11
 
 This file is the durable context for future Codex/Claude/agent sessions. Read it before making product, infra, payment, or deployment decisions.
 
@@ -117,6 +117,7 @@ Before relying on docs for deployment:
   - Marzban username.
 - Added repository test coverage for web order lookup by order/contact/Marzban username.
 - Corrected infra/website docs to reflect the two-host deployment and the observed website static root `/var/www/rootvpn`.
+- Added reusable Marzban/DB sync audit module and a background worker. The worker is safe-by-default: it only reports drift to admins and does not mutate Marzban or DB.
 
 ## Recommended Strategic Improvements
 

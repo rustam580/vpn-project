@@ -484,6 +484,24 @@ def _load_sub_migration_block() -> dict[str, Any]:
     }
 
 
+def _load_marzban_sync_audit_block() -> dict[str, Any]:
+    return {
+        "marzban_sync_audit_enabled": env_bool("MARZBAN_SYNC_AUDIT_ENABLED", True),
+        "marzban_sync_audit_interval_sec": max(
+            900, int(os.getenv("MARZBAN_SYNC_AUDIT_INTERVAL_SEC", "21600"))
+        ),
+        "marzban_sync_audit_limit": max(
+            20, min(500, int(os.getenv("MARZBAN_SYNC_AUDIT_LIMIT", "100")))
+        ),
+        "marzban_sync_audit_show": max(
+            1, min(30, int(os.getenv("MARZBAN_SYNC_AUDIT_SHOW", "8")))
+        ),
+        "marzban_sync_audit_alert_noncritical": env_bool(
+            "MARZBAN_SYNC_AUDIT_ALERT_NONCRITICAL", False
+        ),
+    }
+
+
 @dataclass(frozen=True)
 class Settings:
     bot_token: str
@@ -548,6 +566,11 @@ class Settings:
     sub_migration_reminder_cooldown_hours: int
     sub_migration_reminder_batch: int
     subscription_hits_retention_days: int
+    marzban_sync_audit_enabled: bool
+    marzban_sync_audit_interval_sec: int
+    marzban_sync_audit_limit: int
+    marzban_sync_audit_show: int
+    marzban_sync_audit_alert_noncritical: bool
 
     @staticmethod
     def load() -> "Settings":
@@ -568,6 +591,7 @@ class Settings:
         fields.update(_load_admin_alerts_block())
         fields.update(_load_auto_renew_block())
         fields.update(_load_sub_migration_block())
+        fields.update(_load_marzban_sync_audit_block())
         return Settings(**fields)
 
     def cryptobot_enabled(self) -> bool:
