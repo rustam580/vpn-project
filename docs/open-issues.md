@@ -21,13 +21,23 @@ Last updated: 2026-05-10
 - Next action: batch processing or next-check schedule index.
 - Owner: dev
 
-3. P2 - Finish `bot_runtime.py` decomposition
+3. P1 - Xray/Marzban quality monitoring
+- Status: pending
+- Problem: when clients report "VPN does not work", ops currently lacks a concise error-log summary for Xray/Reality/SNI/TLS issues and post-deploy spikes.
+- Next action: add a lightweight local parser for Xray `error.log` with Telegram admin summaries before considering a private dashboard. XrayPulse is a useful reference, but do not expose it publicly.
+- Owner: ops/dev
+
+4. P2 - Finish `bot_runtime.py` decomposition
 - Status: in_progress
 - Problem: `src/vpnbot/bot_runtime.py` is down to ~1.4k lines from 2.4k, but still hosts the giant `build_router` (~1080 lines) with all command/callback handlers inline.
 - Next action: split `build_router` by handler groups (subscription, status, devices, referrals) into dedicated modules; then re-enable strict mypy on `bot_runtime` and `handlers/*`.
 - Owner: dev
 
 ## Recently Closed
+- Corrected infrastructure and website deployment docs for the two-host layout (`205.196.81.194` site-host with `/var/www/rootvpn`, `77.110.125.105` bot/API/VPN host).
+- Expanded admin user lookup from Telegram ID only to Telegram ID, web order ID, external payment ID, contact/email, and Marzban username.
+- Added explicit startup/disabled logs for payment, renewal, migration, and daily ops background workers to make deploy smoke checks easier.
+- Removed raw `direct_links` from public website order delivery payloads; website API now exposes subscription URL(s) only.
 - Removed 18 legacy shim files in repo root (`bot_access.py`, `bot_formatters.py`, `bot_handlers_*.py`, `bot_keyboards.py`, `bot_marzban.py`, `bot_network.py`, `bot_ops.py`, `bot_rate_limit.py`, `bot_repo.py`, `bot_router_helpers.py`, `bot_runtime.py`, `bot_workers.py`, `payment_flow.py`, `payments_service.py`); all production and test imports now use canonical `src.vpnbot.*` paths.
 - Audited silent `except Exception:` in critical paths: `bot_repo.py` JSON ops narrowed to `(TypeError, ValueError)` with `logging.warning`; `bot_access.py` already correct.
 - P0+P1 audit closed: fixed 2× `RUF006` dangling tasks via `src/vpnbot/background_tasks.spawn`; auto-removed 42 unused imports; unified `BYTES_IN_GB` via direct import from `bot_formatters`; tightened `pyproject.toml` ruff (`F401`, `F811`, `F841`, `RUF006`).

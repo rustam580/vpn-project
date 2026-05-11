@@ -274,7 +274,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
         broadcast_confirm_keyboard=broadcast_confirm_keyboard,
     )
 
-    async def send_user_lookup(message: Message, target_id: int) -> None:
+    async def send_user_lookup(message: Message, target_id: int | str) -> None:
         await send_user_lookup_impl(
             message=message,
             target_id=target_id,
@@ -709,13 +709,9 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             return
         parts = (message.text or "").split()
         if len(parts) != 2:
-            await message.answer("Использование: /user <telegram_id>")
+            await message.answer("Использование: /user <telegram_id|order_id|email|marzban_username>")
             return
-        try:
-            target_id = int(parts[1])
-        except ValueError:
-            await message.answer("ID должен быть числом. Пример: /user 386029735")
-            return
+        target_id = parts[1].strip()
         await send_user_lookup(message, target_id)
 
     @router.message(Command("config"))

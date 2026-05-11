@@ -122,7 +122,13 @@ async def daily_ops_report_worker(
     stop_event: asyncio.Event,
 ) -> None:
     if not settings.ops_report_enabled:
+        logging.info("Daily ops report worker disabled")
         return
+    logging.info(
+        "Daily ops report worker started: time=%02d:%02d",
+        settings.ops_report_hour,
+        settings.ops_report_minute,
+    )
     last_sent: Any = None
     while not stop_event.is_set():
         now = datetime.now()
@@ -156,6 +162,11 @@ async def cryptobot_auto_worker(
     bot: Bot,
     stop_event: asyncio.Event,
 ) -> None:
+    logging.info(
+        "Crypto payment worker started: enabled=%s interval_sec=%s",
+        settings.cryptobot_enabled(),
+        max(10, settings.cryptobot_poll_seconds),
+    )
     await _cryptobot_auto_worker(
         settings=settings,
         repo=repo,
@@ -178,6 +189,11 @@ async def yookassa_auto_worker(
     bot: Bot,
     stop_event: asyncio.Event,
 ) -> None:
+    logging.info(
+        "YooKassa payment worker started: enabled=%s interval_sec=%s",
+        settings.yookassa_enabled(),
+        max(10, settings.yookassa_poll_seconds),
+    )
     await _yookassa_auto_worker(
         settings=settings,
         repo=repo,
@@ -200,6 +216,20 @@ async def subscription_renewal_worker(
     bot: Bot,
     stop_event: asyncio.Event,
 ) -> None:
+    if (
+        not settings.renewal_alerts_enabled
+        and not settings.renewal_expired_alert_enabled
+        and not settings.auto_renew_invoice_enabled
+    ):
+        logging.info("Subscription renewal worker disabled")
+    else:
+        logging.info(
+            "Subscription renewal worker started: reminders=%s expired=%s auto_invoice=%s interval_sec=%s",
+            settings.renewal_alerts_enabled,
+            settings.renewal_expired_alert_enabled,
+            settings.auto_renew_invoice_enabled,
+            max(60, settings.renewal_alert_interval_sec),
+        )
     await _subscription_renewal_worker(
         settings=settings,
         repo=repo,
@@ -227,6 +257,19 @@ async def subscription_migration_worker(
     bot: Bot,
     stop_event: asyncio.Event,
 ) -> None:
+    if not settings.sub_migration_reminder_enabled or settings.config_delivery_mode == "direct":
+        logging.info(
+            "Subscription migration worker disabled: enabled=%s delivery_mode=%s",
+            settings.sub_migration_reminder_enabled,
+            settings.config_delivery_mode,
+        )
+    else:
+        logging.info(
+            "Subscription migration worker started: interval_sec=%s lookback_days=%s batch=%s",
+            max(300, int(settings.sub_migration_reminder_interval_sec)),
+            max(1, int(settings.sub_migration_reminder_lookback_days)),
+            max(1, min(200, int(settings.sub_migration_reminder_batch))),
+        )
     await _subscription_migration_worker(
         settings=settings,
         repo=repo,

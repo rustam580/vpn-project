@@ -197,7 +197,7 @@ def register_admin_callback_handlers(*, router: Router, deps: AdminCallbackDeps)
             await callback.answer("Ок")
             pending_user_lookup.add(int(callback.from_user.id))
             await callback.message.answer(
-                "Введите Telegram ID пользователя (пример: 386029735) или «отмена»."
+                "Введите Telegram ID, order ID, email/контакт или Marzban username. Или «отмена»."
             )
             return
         if action == "device_add":
@@ -306,7 +306,7 @@ def register_admin_callback_handlers(*, router: Router, deps: AdminCallbackDeps)
                 "/device_replace <telegram_id> <slot>\n"
                 "/disable <telegram_id>\n"
                 "/link <telegram_id> <marzban_username>\n"
-                "/user <telegram_id>\n"
+                "/user <telegram_id|order_id|email|marzban_username>\n"
                 "/broadcast <текст>\n"
                 "/broadcast_menu\n"
                 "/setenv <KEY> <VALUE>\n"

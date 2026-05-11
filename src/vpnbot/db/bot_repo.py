@@ -742,6 +742,34 @@ class Repo:
         await c.close()
         return dict(row) if row else None
 
+    async def find_web_orders(self, query: str, *, limit: int = 5) -> list[dict[str, Any]]:
+        assert self.conn is not None
+        value = str(query or "").strip()
+        if not value:
+            return []
+        like = f"%{value}%"
+        c = await self.conn.execute(
+            """
+            SELECT
+                order_id, provider, external_id, status, plan_key, days, gb, amount_rub,
+                customer_contact, marzban_username, pay_url, created_at, updated_at
+            FROM web_orders
+            WHERE order_id = ?
+               OR external_id = ?
+               OR marzban_username = ?
+               OR order_id LIKE ?
+               OR external_id LIKE ?
+               OR marzban_username LIKE ?
+               OR customer_contact LIKE ?
+            ORDER BY updated_at DESC
+            LIMIT ?
+            """,
+            (value, value, value, like, like, like, like, max(1, int(limit))),
+        )
+        rows = await c.fetchall()
+        await c.close()
+        return [dict(row) for row in rows]
+
     async def set_web_order_status(self, order_id: str, status: str) -> None:
         assert self.conn is not None
         await self.conn.execute(

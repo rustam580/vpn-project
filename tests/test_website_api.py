@@ -93,11 +93,7 @@ def test_build_delivery_payload_dedupes_links_and_uses_supported_signature(monke
         call_args["public_base_url"] = public_base_url
         return ["/sub/token-a", "/sub/token-a", "https://sub.example.com/sub/token-b"]
 
-    def fake_extract_links(_user):
-        return ["vless://one", "vless://one", "vless://two"]
-
     monkeypatch.setattr(website_api, "extract_subscription_links", fake_extract_subscription_links)
-    monkeypatch.setattr(website_api, "extract_links", fake_extract_links)
 
     settings = SimpleNamespace(subscription_public_base_url="https://sub.example.com")
     payload = website_api._build_delivery_payload(settings, {"username": "web_1"})
@@ -108,7 +104,7 @@ def test_build_delivery_payload_dedupes_links_and_uses_supported_signature(monke
         "https://sub.example.com/sub/token-b",
     ]
     assert payload["subscription_url"] == "https://sub.example.com/sub/token-a"
-    assert payload["direct_links"] == ["vless://one", "vless://two"]
+    assert "direct_links" not in payload
 
 
 def test_extract_subscription_token_from_url_and_raw_token() -> None:

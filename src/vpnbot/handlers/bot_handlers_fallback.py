@@ -62,7 +62,7 @@ def register_fallback_handler(*, router: Router, deps: FallbackDeps) -> None:
         tg_id = int(message.from_user.id)
         if tg_id in pending_user_lookup:
             if not message.text:
-                await message.answer("Введите числовой Telegram ID или «отмена».")
+                await message.answer("Введите Telegram ID, order ID, email/контакт или Marzban username. Или «отмена».")
                 return
             text = message.text.strip()
             if text.lower() in {"отмена", "cancel", "/cancel"}:
@@ -70,15 +70,10 @@ def register_fallback_handler(*, router: Router, deps: FallbackDeps) -> None:
                 await message.answer("Ок, отменено.")
                 return
             if text.startswith("/"):
-                await message.answer("Введите Telegram ID числом или напишите «отмена».")
-                return
-            try:
-                target_id = int(text)
-            except ValueError:
-                await message.answer("ID должен быть числом. Пример: 386029735")
+                await message.answer("Введите Telegram ID, order ID, email/контакт или Marzban username. Или «отмена».")
                 return
             pending_user_lookup.discard(tg_id)
-            await send_user_lookup(message, target_id)
+            await send_user_lookup(message, text)
             return
         if tg_id in pending_device_add_prompt:
             if not message.text:

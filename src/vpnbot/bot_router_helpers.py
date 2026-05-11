@@ -32,12 +32,14 @@ class BroadcastPreviewContext:
     broadcast_confirm_keyboard: Any
 
 
-async def send_user_lookup(
-    *,
-    message: Message,
-    target_id: int,
-    ctx: UserLookupContext,
-) -> None:
+def _format_utc(ts: Any) -> str:
+    value = int(ts or 0)
+    if value <= 0:
+        return "n/a"
+    return datetime.fromtimestamp(value, tz=timezone.utc).strftime("%d.%m.%Y %H:%M UTC")
+
+
+async def _send_telegram_user_lookup(*, message: Message, target_id: int, ctx: UserLookupContext) -> None:
     if target_id <= 0:
         await message.answer("ID должен быть положительным числом.")
         return
@@ -146,6 +148,121 @@ async def send_user_lookup(
             text + "\n\n⚠️ Кнопка «Открыть диалог» недоступна из-за privacy-настроек пользователя.",
             parse_mode="HTML",
         )
+
+
+async def _send_generic_user_lookup(*, message: Message, query: str, ctx: UserLookupContext) -> None:
+    value = str(query or "").strip()
+    if not value:
+        await message.answer("Введите Telegram ID, order ID, email/контакт или Marzban username.")
+        return
+
+    lines: list[str] = [f"🔎 Поиск: <code>{html.escape(value)}</code>"]
+    found_tg_ids: set[int] = set()
+    found_any = False
+
+    user_row = await ctx.repo.get_user_by_username(value)
+    if user_row:
+        found_any = True
+        tg_id = int(user_row["telegram_id"])
+        found_tg_ids.add(tg_id)
+        lines.append(f"DB user: TG <code>{tg_id}</code> → <code>{html.escape(value)}</code>")
+
+    device_row = await ctx.repo.get_device_by_username(value)
+    if device_row:
+        found_any = True
+        tg_id = int(device_row["telegram_id"])
+        found_tg_ids.add(tg_id)
+        label = ctx.device_label(int(device_row["device_id"]), device_row.get("device_name"))
+        lines.append(
+            "DB device: "
+            f"TG <code>{tg_id}</code>, слот <code>{int(device_row['device_id'])}</code>, "
+            f"{html.escape(label)}"
+        )
+
+    payment = await ctx.repo.get_payment_any(value)
+    if payment:
+        found_any = True
+        tg_id = int(payment["telegram_id"])
+        found_tg_ids.add(tg_id)
+        lines.append(
+            "Платеж бота: "
+            f"TG <code>{tg_id}</code>, {html.escape(str(payment.get('provider') or ''))}, "
+            f"{html.escape(str(payment.get('purpose') or ''))}, "
+            f"{float(payment.get('amount_rub') or 0):.2f} RUB, "
+            f"{html.escape(str(payment.get('status') or ''))}, "
+            f"{_format_utc(payment.get('updated_at'))}"
+        )
+
+    web_orders = await ctx.repo.find_web_orders(value, limit=5)
+    if web_orders:
+        found_any = True
+        lines.append("Web-заказы:")
+        for order in web_orders:
+            order_id = str(order.get("order_id") or "")
+            mz_username = str(order.get("marzban_username") or "").strip()
+            contact = str(order.get("customer_contact") or "").strip()
+            if mz_username:
+                linked_user = await ctx.repo.get_user_by_username(mz_username)
+                linked_device = await ctx.repo.get_device_by_username(mz_username)
+                if linked_user:
+                    found_tg_ids.add(int(linked_user["telegram_id"]))
+                if linked_device:
+                    found_tg_ids.add(int(linked_device["telegram_id"]))
+            contact_text = f", контакт: {html.escape(contact)}" if contact else ""
+            mz_text = f", Marzban: <code>{html.escape(mz_username)}</code>" if mz_username else ""
+            lines.append(
+                "- "
+                f"<code>{html.escape(order_id)}</code>, "
+                f"{html.escape(str(order.get('provider') or ''))}, "
+                f"{html.escape(str(order.get('status') or ''))}, "
+                f"{html.escape(str(order.get('plan_key') or ''))}, "
+                f"{float(order.get('amount_rub') or 0):.2f} RUB"
+                f"{mz_text}{contact_text}, "
+                f"{_format_utc(order.get('updated_at'))}"
+            )
+
+    is_possible_username = all(ch.isalnum() or ch in "._-" for ch in value)
+    marzban_user = await ctx.marzban.get_user(value) if is_possible_username else None
+    if marzban_user:
+        found_any = True
+        expire_ts = int(marzban_user.get("expire", 0) or 0)
+        data_limit = int(marzban_user.get("data_limit", 0) or 0)
+        used = int(marzban_user.get("used_traffic", 0) or 0)
+        status = str(marzban_user.get("status", "unknown"))
+        lines.append("Marzban direct:")
+        lines.append(f"- Username: <code>{html.escape(value)}</code>")
+        lines.append(f"- Статус: {html.escape(status)}")
+        lines.append(f"- Действует до: {ctx.format_expire(expire_ts)}")
+        lines.append(f"- Трафик: {ctx.format_used(used)} из {ctx.format_limit(data_limit)}")
+
+    if not found_any:
+        await message.answer(
+            "Ничего не найдено. Можно искать по Telegram ID, order ID, внешнему ID платежа, "
+            "email/контакту или Marzban username."
+        )
+        return
+
+    if found_tg_ids:
+        ids_text = ", ".join(f"<code>{tg_id}</code>" for tg_id in sorted(found_tg_ids))
+        lines.append(f"Связанные Telegram ID: {ids_text}")
+        if len(found_tg_ids) == 1:
+            tg_id = next(iter(found_tg_ids))
+            lines.append(f"Полная карточка: <code>/user {tg_id}</code>")
+
+    await message.answer("\n".join(lines), parse_mode="HTML")
+
+
+async def send_user_lookup(
+    *,
+    message: Message,
+    target_id: int | str,
+    ctx: UserLookupContext,
+) -> None:
+    raw = str(target_id).strip()
+    if raw.isdigit():
+        await _send_telegram_user_lookup(message=message, target_id=int(raw), ctx=ctx)
+        return
+    await _send_generic_user_lookup(message=message, query=raw, ctx=ctx)
 
 
 async def send_broadcast_preview(

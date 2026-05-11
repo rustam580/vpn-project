@@ -94,6 +94,30 @@ async def test_list_known_telegram_ids_unions_all_sources(repo) -> None:
     assert ids == [3001, 3002, 3003, 3004]
 
 
+async def test_find_web_orders_matches_order_contact_and_username(repo) -> None:
+    await repo.create_web_order(
+        order_id="abc123order",
+        provider="card",
+        external_id="pay-abc-1",
+        status="paid_applied",
+        plan_key="m1",
+        days=30,
+        gb=0,
+        amount_rub=99.0,
+        customer_contact="client@example.com",
+        pay_url="https://pay.local/abc",
+    )
+    await repo.attach_web_order_access(order_id="abc123order", marzban_username="web_abc123")
+
+    by_order = await repo.find_web_orders("abc123order")
+    by_contact = await repo.find_web_orders("client@example.com")
+    by_username = await repo.find_web_orders("web_abc123")
+
+    assert [row["order_id"] for row in by_order] == ["abc123order"]
+    assert [row["order_id"] for row in by_contact] == ["abc123order"]
+    assert [row["order_id"] for row in by_username] == ["abc123order"]
+
+
 async def test_has_paid_plan_payment_counts_only_plan_paid(repo) -> None:
     tg_id = 4004
     assert await repo.has_paid_plan_payment(tg_id) is False

@@ -1,120 +1,138 @@
-# Сайт RootVPN
+# Website Deployment
 
-Сайт в папке `site/` теперь работает как отдельная точка продаж:
-- пользователь оплачивает на сайте,
-- сайт проверяет оплату,
-- выдает ссылку подписки без Telegram.
+Last updated: 2026-05-10
 
-## Что уже должно быть
+The website in `site/` is the public sales page for RootVPN:
 
-- Бот развернут в `/opt/vpn-bot`
-- `sub.rootvpn.tech:8443` уже проксирует на `127.0.0.1:8010` (subscription gateway)
-- Домен `rootvpn.tech` направлен на сервер
+- customer buys on the website;
+- website checks payment through `/api/*`;
+- customer receives a subscription URL;
+- Telegram binding is optional but recommended for renewals/support.
 
-## 1. Обновить код на сервере
+## Current Production Layout
+
+Website production is separate from the bot/VPN host.
+
+| Role | IP | Path / service |
+|---|---:|---|
+| Website host | `205.196.81.194` | static files in `/var/www/rootvpn`, Caddy public HTTPS |
+| Bot/API host | `77.110.125.105` | `/opt/vpn-bot`, `vpn-site-api.service`, Marzban, sub-gateway |
+
+DNS:
+
+- `rootvpn.tech`, `www.rootvpn.tech` -> `205.196.81.194`
+- `sub.rootvpn.tech`, `bot.rootvpn.tech` -> `77.110.125.105`
+
+## Check What Is Live
+
+From any machine:
 
 ```bash
+curl -sI https://rootvpn.tech/ | grep -i "Last-Modified\|Content-Length\|Server"
+curl -s https://rootvpn.tech/api/health
+```
+
+Expected API response:
+
+```json
+{"ok": true, "service": "website_api"}
+```
+
+As of 2026-05-10, public website headers showed:
+
+```text
+Server: Caddy
+Last-Modified: Sun, 10 May 2026 10:08:16 GMT
+Content-Length: 29393
+```
+
+## Update Static Website Files
+
+### Option A: deploy from local machine via `scp`
+
+Use this if site-host has no GitHub credentials or no repo clone.
+
+PowerShell from repo root:
+
+```powershell
+scp -r .\site\* root@205.196.81.194:/var/www/rootvpn/
+ssh root@205.196.81.194 "systemctl reload caddy && curl -sI https://rootvpn.tech/ | grep -i 'Last-Modified\|Content-Length'"
+```
+
+### Option B: deploy from a repo clone on site-host
+
+Use this only if GitHub auth/deploy key is already configured on `205.196.81.194`.
+
+```bash
+ssh root@205.196.81.194
+cd /opt/vpn-project   # or actual clone path; verify it exists
+git pull --ff-only
+rsync -av --delete /opt/vpn-project/site/ /var/www/rootvpn/
+systemctl reload caddy
+```
+
+If `/opt/vpn-project` or `/opt/vpn-bot` does not exist on site-host, do not run `git pull`; use Option A or configure a deploy key first.
+
+## Update Website API / Checkout Logic
+
+`website_api.py` is currently part of the bot/API deployment. Deploy backend/API changes on `77.110.125.105` unless a local site API has intentionally been installed on site-host.
+
+```bash
+ssh root@77.110.125.105
 cd /opt/vpn-bot
 git pull --ff-only
+systemctl restart vpn-site-api
+curl -s http://127.0.0.1:8011/api/health
+curl -s https://rootvpn.tech/api/health
 ```
 
-## 2. Проверить `.env`
+## Caddy Notes
 
-Добавьте/проверьте:
-
-```env
-WEBSITE_API_HOST=127.0.0.1
-WEBSITE_API_PORT=8011
-WEBSITE_PUBLIC_URL=https://rootvpn.tech
-WEBSITE_SUPPORT_URL=https://t.me/RootVPN_support_1
-WEBSITE_ENABLE_CRYPTO=true
-```
-
-## 3. Поднять API сайта как сервис
+On site-host, verify the static root:
 
 ```bash
-cp /opt/vpn-bot/deploy/vpn-site-api.service.example /etc/systemd/system/vpn-site-api.service
-systemctl daemon-reload
-systemctl enable --now vpn-site-api
-systemctl status vpn-site-api --no-pager
+grep -n "root \*" /etc/caddy/Caddyfile
 ```
 
-## 4. Настроить Caddy
-
-Откройте:
-
-```bash
-nano /etc/caddy/Caddyfile
-```
-
-Пример рабочего конфига (важно: блок `sub.rootvpn.tech:8443` должен быть только один раз):
+Observed intended static root:
 
 ```caddyfile
 rootvpn.tech, www.rootvpn.tech {
-    root * /opt/vpn-bot/site
+    root * /var/www/rootvpn
+    encode zstd gzip
 
     handle /api/* {
-        reverse_proxy 127.0.0.1:8011
+        # Verify actual target before editing:
+        # reverse_proxy 127.0.0.1:8011
+        # or reverse_proxy http://77.110.125.105
     }
 
     file_server
 }
-
-bot.rootvpn.tech {
-    reverse_proxy 127.0.0.1:8000
-}
-
-sub.rootvpn.tech:8443 {
-    reverse_proxy 127.0.0.1:8010
-}
 ```
 
-Проверка и применение:
+On bot-host, `sub.rootvpn.tech:8443` should stay on the bot/VPN host and proxy to `127.0.0.1:8010`.
 
-```bash
-caddy validate --config /etc/caddy/Caddyfile
-systemctl reload caddy
-systemctl status caddy --no-pager
-```
+## Common Problems
 
-## 5. Проверка
+1. `rootvpn.tech` shows old content
+- You updated GitHub or bot-host, but not the site-host static files.
+- Deploy `site/*` to `/var/www/rootvpn` on `205.196.81.194`.
 
-```bash
-curl -I https://rootvpn.tech
-curl -I https://www.rootvpn.tech
-curl -I https://rootvpn.tech/api/health
-curl -I https://sub.rootvpn.tech:8443/health
-```
+2. `git clone` asks for GitHub username/password on site-host
+- Password auth is not supported by GitHub.
+- Use `scp` from local machine or configure a deploy key/PAT.
 
-Ожидаемо:
-- `rootvpn.tech` -> `200`
-- `/api/health` -> JSON `{"ok": true}`
-- `sub...:8443/health` -> `200`
+3. `:443 bind: address already in use`
+- Usually nginx/FASTPANEL occupies the port.
+- Check: `ss -lntup | grep ':443'`.
+- Stop/disable only if you intentionally use Caddy as the web server.
 
-## 6. Обновление контента сайта
-
-Если меняете цены/тексты/кнопки в `site/index.html`, `site/styles.css`, `site/site.js`:
-
-```bash
-cd /opt/vpn-bot
-git pull --ff-only
-```
-
-Перезапуск `vpn-bot` для этого не нужен. Достаточно `git pull` (и при изменении Caddy — `systemctl reload caddy`).
-
-## Частые проблемы
-
-1. `ambiguous site definition: sub.rootvpn.tech:8443`
-- В `Caddyfile` два одинаковых блока `sub.rootvpn.tech:8443`.
-- Оставьте только один.
-
-2. `www.rootvpn.tech` не открывается
-- Добавьте DNS-запись `A` для `www` на IP сервера.
-
-3. API не отвечает
-- Проверьте сервис:
-```bash
-systemctl status vpn-site-api --no-pager
-journalctl -u vpn-site-api -n 100 --no-pager
-```
-
+4. API does not respond
+- Check bot/API host:
+  ```bash
+  systemctl status vpn-site-api --no-pager
+  journalctl -u vpn-site-api -n 100 --no-pager
+  curl -s http://127.0.0.1:8011/api/health
+  ```
+- Then check site-host Caddy proxy target.

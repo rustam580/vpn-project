@@ -28,7 +28,6 @@ from src.vpnbot.services.payments_service import (
 from src.vpnbot.worker_runtime import find_plan
 from utils import (
     build_web_bind_payload,
-    extract_links,
     extract_subscription_links,
 )
 
@@ -220,11 +219,9 @@ def _build_delivery_payload(settings: Settings, user: dict[str, Any]) -> dict[st
         )
     ]
     subscription_links = _uniq(subscription_candidates)
-    direct_links = _uniq([x for x in extract_links(user) if x])
     return {
         "subscription_url": subscription_links[0] if subscription_links else "",
         "subscription_links": subscription_links,
-        "direct_links": direct_links,
     }
 
 
@@ -597,7 +594,6 @@ async def create_app() -> web.Application:
                     "renewal": bool(order.get("marzban_username")),
                     "subscription_url": delivery["subscription_url"],
                     "subscription_links": delivery["subscription_links"],
-                    "direct_links": delivery["direct_links"],
                     "tg_bind_payload": tg_bind_payload,
                     "tg_bind_url": tg_bind_url,
                     "support_url": runtime.support_url,
