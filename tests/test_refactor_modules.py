@@ -35,3 +35,31 @@ def test_bot_runtime_registers_extracted_user_runtime_handlers() -> None:
     assert "register_user_runtime_handlers(" in text
     assert "UserRuntimeDeps(" in text
 
+
+def test_bot_runtime_registers_fallback_after_specific_message_handlers() -> None:
+    text = Path("src/vpnbot/bot_runtime.py").read_text(encoding="utf-8")
+    fallback_pos = text.index("register_fallback_handler(")
+    assert fallback_pos > text.index("register_user_message_handlers(")
+    assert fallback_pos > text.index("register_user_runtime_handlers(")
+    assert fallback_pos > text.index("register_admin_runtime_handlers(")
+    assert fallback_pos > text.index("register_admin_message_handlers(")
+
+
+def test_reply_keyboard_labels_have_matching_message_handlers() -> None:
+    keyboard_text = Path("src/vpnbot/keyboards/bot_keyboards.py").read_text(encoding="utf-8")
+    handler_text = (
+        Path("src/vpnbot/handlers/bot_handlers_user_runtime.py").read_text(encoding="utf-8")
+        + Path("src/vpnbot/handlers/bot_handlers_admin_runtime.py").read_text(encoding="utf-8")
+    )
+    labels = [
+        "🔑 Получить подписку",
+        "💳 Купить доступ",
+        "📊 Мой статус",
+        "📂 Еще",
+        "🆘 Поддержка",
+        "🛠 Админ-кабинет",
+    ]
+    for label in labels:
+        assert label in keyboard_text
+        assert label in handler_text
+

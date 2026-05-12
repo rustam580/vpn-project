@@ -519,31 +519,6 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
         ),
     )
 
-    register_fallback_handler(
-        router=router,
-        deps=FallbackDeps(
-            settings=settings,
-            repo=repo,
-            marzban=marzban,
-            guard_message_rate_limit=guard_message_rate_limit,
-            pending_user_lookup=pending_user_lookup,
-            pending_device_add_prompt=pending_device_add_prompt,
-            pending_broadcast_prompt=pending_broadcast_prompt,
-            pending_broadcast_text=pending_broadcast_text,
-            pending_broadcast_format=pending_broadcast_format,
-            pending_broadcast_buttons=pending_broadcast_buttons,
-            pending_device_rename=pending_device_rename,
-            pending_issue=pending_issue,
-            send_user_lookup=send_user_lookup,
-            ensure_device=ensure_device,
-            send_broadcast_preview=send_broadcast_preview,
-            normalize_device_name=normalize_device_name,
-            track_event=track_event,
-            keyboard_for_user=keyboard_for_user,
-            is_admin_fn=is_admin,
-        ),
-    )
-
     register_admin_callback_handlers(
         router=router,
         deps=AdminCallbackDeps(
@@ -609,6 +584,31 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             build_ref_top_text=build_ref_top_text,
             build_ops_report_text=build_ops_report_text,
             extend_access_days_only=extend_access_days_only,
+        ),
+    )
+
+    register_fallback_handler(
+        router=router,
+        deps=FallbackDeps(
+            settings=settings,
+            repo=repo,
+            marzban=marzban,
+            guard_message_rate_limit=guard_message_rate_limit,
+            pending_user_lookup=pending_user_lookup,
+            pending_device_add_prompt=pending_device_add_prompt,
+            pending_broadcast_prompt=pending_broadcast_prompt,
+            pending_broadcast_text=pending_broadcast_text,
+            pending_broadcast_format=pending_broadcast_format,
+            pending_broadcast_buttons=pending_broadcast_buttons,
+            pending_device_rename=pending_device_rename,
+            pending_issue=pending_issue,
+            send_user_lookup=send_user_lookup,
+            ensure_device=ensure_device,
+            send_broadcast_preview=send_broadcast_preview,
+            normalize_device_name=normalize_device_name,
+            track_event=track_event,
+            keyboard_for_user=keyboard_for_user,
+            is_admin_fn=is_admin,
         ),
     )
 
