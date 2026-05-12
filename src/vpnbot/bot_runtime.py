@@ -101,6 +101,10 @@ from src.vpnbot.handlers.bot_handlers_user import (
     UserMessageDeps,
     register_user_message_handlers,
 )
+from src.vpnbot.handlers.bot_handlers_user_runtime import (
+    UserRuntimeDeps,
+    register_user_runtime_handlers,
+)
 from src.vpnbot.handlers.bot_handlers_admin_runtime import (
     AdminRuntimeDeps,
     register_admin_runtime_handlers,
@@ -444,6 +448,23 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             normalize_channel_url=normalize_channel_url,
         ),
     )
+
+    register_user_runtime_handlers(
+        router=router,
+        deps=UserRuntimeDeps(
+            settings=settings,
+            repo=repo,
+            marzban=marzban,
+            guard_message_rate_limit=guard_message_rate_limit,
+            list_replaceable_devices=list_replaceable_devices,
+            get_bot_username=get_bot_username,
+            track_event=track_event,
+            pending_issue=pending_issue,
+            check_and_apply_payment=check_and_apply_payment,
+            enabled_payment_providers=enabled_payment_providers,
+        ),
+    )
+
     register_admin_runtime_handlers(
         router=router,
         deps=AdminRuntimeDeps(

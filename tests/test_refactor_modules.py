@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from config import normalize_public_base_url, parse_int_csv
 from models import Plan
 from utils import build_web_bind_payload, parse_web_order_from_payload
@@ -26,4 +28,10 @@ def test_web_bind_payload_roundtrip_in_utils_module() -> None:
     payload = build_web_bind_payload(order_id, bot_token=token)
     assert payload.startswith("webbind_")
     assert parse_web_order_from_payload(payload, bot_token=token) == order_id
+
+
+def test_bot_runtime_registers_extracted_user_runtime_handlers() -> None:
+    text = Path("src/vpnbot/bot_runtime.py").read_text(encoding="utf-8")
+    assert "register_user_runtime_handlers(" in text
+    assert "UserRuntimeDeps(" in text
 
