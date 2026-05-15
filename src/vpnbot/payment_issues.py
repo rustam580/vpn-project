@@ -181,6 +181,9 @@ def _section_orders(title: str, rows: list[dict[str, Any]], *, show: int) -> lis
             f"- order={order_id} provider={provider}:{external_id} plan={plan} "
             f"user={username} contact={contact} age={age}"
         )
+        lines.append(f"  action: /user {order_id}")
+        if provider and external_id:
+            lines.append(f"  check: /check {provider} {external_id}")
     if len(rows) > show:
         lines.append(f"... еще {len(rows) - show}")
     return lines

@@ -14,6 +14,7 @@ from src.vpnbot.customer_profile import (
     CustomerProfileFormatters,
     build_customer_profile_text,
 )
+from src.vpnbot.web_order_profile import build_web_order_profile_lines
 
 
 @dataclass
@@ -134,30 +135,15 @@ async def _send_generic_user_lookup(*, message: Message, query: str, ctx: UserLo
     web_orders = await ctx.repo.find_web_orders(value, limit=5)
     if web_orders:
         found_any = True
-        lines.append("Web-заказы:")
+        lines.append("Web orders:")
         for order in web_orders:
-            order_id = str(order.get("order_id") or "")
-            mz_username = str(order.get("marzban_username") or "").strip()
-            contact = str(order.get("customer_contact") or "").strip()
-            if mz_username:
-                linked_user = await ctx.repo.get_user_by_username(mz_username)
-                linked_device = await ctx.repo.get_device_by_username(mz_username)
-                if linked_user:
-                    found_tg_ids.add(int(linked_user["telegram_id"]))
-                if linked_device:
-                    found_tg_ids.add(int(linked_device["telegram_id"]))
-            contact_text = f", контакт: {html.escape(contact)}" if contact else ""
-            mz_text = f", Marzban: <code>{html.escape(mz_username)}</code>" if mz_username else ""
-            lines.append(
-                "- "
-                f"<code>{html.escape(order_id)}</code>, "
-                f"{html.escape(str(order.get('provider') or ''))}, "
-                f"{html.escape(str(order.get('status') or ''))}, "
-                f"{html.escape(str(order.get('plan_key') or ''))}, "
-                f"{float(order.get('amount_rub') or 0):.2f} RUB"
-                f"{mz_text}{contact_text}, "
-                f"{_format_utc(order.get('updated_at'))}"
+            order_lines, order_tg_ids = await build_web_order_profile_lines(
+                order,
+                repo=ctx.repo,
+                marzban=ctx.marzban,
             )
+            found_tg_ids.update(order_tg_ids)
+            lines.extend(order_lines)
 
     is_possible_username = all(ch.isalnum() or ch in "._-" for ch in value)
     marzban_user = await ctx.marzban.get_user(value) if is_possible_username else None

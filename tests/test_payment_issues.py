@@ -87,6 +87,30 @@ async def test_collect_payment_issues_detects_paid_web_order_without_access(repo
     assert [row["order_id"] for row in report.paid_web_without_access] == ["ord-no-access"]
 
 
+async def test_payment_issues_report_includes_direct_web_order_actions(repo) -> None:
+    await repo.create_web_order(
+        order_id="ord-action",
+        provider="card",
+        external_id="pay-action",
+        status="paid_applied",
+        plan_key="m1",
+        days=30,
+        gb=0,
+        amount_rub=99.0,
+        customer_contact="client@example.com",
+        pay_url="https://pay.local/action",
+    )
+
+    text = await build_payment_issues_report(
+        repo,
+        FakeMarzban(),
+        SimpleNamespace(payment_processing_requeue_seconds=300),
+    )
+
+    assert "/user ord-action" in text
+    assert "/check card pay-action" in text
+
+
 async def test_collect_payment_issues_detects_web_access_missing_in_marzban(repo) -> None:
     await repo.create_web_order(
         order_id="ord-missing-marzban",
