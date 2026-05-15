@@ -46,12 +46,13 @@ Last updated: 2026-05-15
 - Owner: dev/ops
 
 7. P2 - WebRTC fallback transport R&D
-- Status: pending
-- Problem: WebRTC/DataChannel may be useful as a reserve transport, but it requires a separate client/signaling/gateway path and has unclear TURN cost, stability, support, and legal/product risks.
-- Next action: if pursued, build a local echo PoC under `experiments/webrtc-gateway/` or a separate repo; keep it isolated from payments, Marzban, and public tariffs until closed beta criteria in `docs/webrtc-transport-research.md` are met.
+- Status: in_progress
+- Problem: WebRTC/DataChannel may be useful as a reserve transport, but it requires a separate client/signaling/gateway path and has unclear TURN cost, stability, support, and legal/product risks. Phase 1 local echo PoC now exists and is verified.
+- Next action: add short-lived signed token auth to signaling before any proxy/TURN/public deployment work; keep it isolated from payments, Marzban, and public tariffs until closed beta criteria in `docs/webrtc-transport-research.md` are met.
 - Owner: dev/research
 
 ## Recently Closed
+- Added isolated local WebRTC/DataChannel echo PoC under `experiments/webrtc-gateway/`: browser test page, Python `aiortc` gateway, `/offer`, `/metrics`, and local verification (`ping` -> `pong`, custom echo).
 - Documented WebRTC/DataChannel fallback transport as an R&D-only track with MVP phases, promotion criteria, kill criteria, and repository boundaries in `docs/webrtc-transport-research.md`.
 - Added read-only inline support buttons to web-order admin cards: check provider payment status by order ID (`wo:c:*`), open linked customer lookup, and run Marzban/DB drift audit. Payment check does not mutate DB or Marzban.
 - Added web-order support cards for `/user <order_id|email|web_username>` plus direct `/payment_issues` action hints (`/user <order_id>`, `/check <provider> <external_id>`, `/sync_audit`). This reduces manual SQL/Marzban work for website buyers who did not bind Telegram.

@@ -44,7 +44,7 @@ RootVPN currently uses a two-host production layout.
 - Website standalone sales are active (`/api/checkout`, `/api/order/{id}`).
 - Paid web orders can be bound to Telegram via `/start webbind_*`.
 - Public website API should expose subscription URL(s), not raw direct config links.
-- WebRTC/DataChannel transport is documented as an R&D track only (`docs/webrtc-transport-research.md`); do not sell or advertise it until a closed beta proves stability and cost.
+- WebRTC/DataChannel transport is documented as an R&D track only (`docs/webrtc-transport-research.md`); do not sell or advertise it until a closed beta proves stability and cost. Phase 1 local echo PoC exists under `experiments/webrtc-gateway/` and was verified locally on 2026-05-15.
 - Admin Marzban/DB audit supports guided critical-drift actions via inline buttons; use first on known-safe stale/test findings after deploy validation.
 - Admin `/user <telegram_id>` uses a unified customer profile renderer: Telegram identity, primary Marzban profile, all device slots, recent bot payments, related web orders, and drift warnings.
 - Admin `/user <order_id|email|web_username>` renders web-order support cards with linked Telegram IDs/devices, Marzban status, direct action hints (`/user`, `/check`, `/sync_audit`), and read-only inline support buttons for payment status check, customer lookup, and drift audit.
@@ -106,6 +106,7 @@ RootVPN currently uses a two-host production layout.
   - `bot_handlers_callbacks_user_payments.py` (~389 lines): buy/select/payment/check/device-add callbacks.
 - Website checkout API: `website_api.py` (~650 lines), aiohttp on `127.0.0.1:8011`.
 - Subscription gateway: `subscription_gateway.py`, sync HTTP proxy/dedupe/logging service on `127.0.0.1:8010`.
+- WebRTC R&D PoC: `experiments/webrtc-gateway/`, Python `aiortc` local browser DataChannel echo gateway.
 - SQLite schema version latest: `4`.
 - Local checks as of 2026-05-15:
   - `python scripts/compile_all.py` OK

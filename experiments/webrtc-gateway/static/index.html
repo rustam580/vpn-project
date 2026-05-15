@@ -1,0 +1,159 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RootVPN WebRTC Gateway Experiment</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #08111f;
+      --panel: #101b2e;
+      --line: #2b4368;
+      --text: #eaf2ff;
+      --muted: #98a9c3;
+      --accent: #48e1cf;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top left, #123b4e, transparent 35%), var(--bg);
+      color: var(--text);
+      display: grid;
+      place-items: center;
+    }
+    main {
+      width: min(760px, calc(100vw - 32px));
+      background: color-mix(in srgb, var(--panel) 88%, transparent);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      padding: 28px;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+    }
+    h1 { margin: 0 0 8px; font-size: clamp(28px, 5vw, 48px); }
+    p { color: var(--muted); line-height: 1.55; }
+    button, input {
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      padding: 12px 14px;
+      background: #0a1526;
+      color: var(--text);
+      font: inherit;
+    }
+    button { cursor: pointer; font-weight: 700; }
+    button.primary { background: var(--accent); color: #031017; border-color: transparent; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; margin: 18px 0; }
+    input { flex: 1; min-width: 220px; }
+    pre {
+      white-space: pre-wrap;
+      min-height: 220px;
+      background: #050b14;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px;
+      color: #cfe4ff;
+    }
+    .status { color: var(--accent); font-weight: 800; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>RootVPN WebRTC Lab</h1>
+    <p>Phase 1 local echo test. It opens a WebRTC DataChannel to the Python gateway and sends test messages. No VPN/proxy traffic yet.</p>
+    <p>Status: <span id="status" class="status">idle</span></p>
+    <div class="row">
+      <button id="connect" class="primary">Connect</button>
+      <button id="ping" disabled>Send ping</button>
+      <button id="metrics">Load metrics</button>
+    </div>
+    <div class="row">
+      <input id="message" value="hello-rootvpn" autocomplete="off">
+      <button id="send" disabled>Send custom</button>
+    </div>
+    <pre id="log"></pre>
+  </main>
+
+  <script>
+    const els = {
+      status: document.getElementById('status'),
+      connect: document.getElementById('connect'),
+      ping: document.getElementById('ping'),
+      metrics: document.getElementById('metrics'),
+      message: document.getElementById('message'),
+      send: document.getElementById('send'),
+      log: document.getElementById('log'),
+    };
+
+    let pc = null;
+    let dc = null;
+
+    function log(line) {
+      const now = new Date().toISOString().slice(11, 19);
+      els.log.textContent += `[${now}] ${line}\n`;
+    }
+
+    function setStatus(value) {
+      els.status.textContent = value;
+      log(`status=${value}`);
+    }
+
+    async function connect() {
+      els.connect.disabled = true;
+      setStatus('creating peer connection');
+      pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+      dc = pc.createDataChannel('rootvpn-lab');
+
+      pc.onconnectionstatechange = () => setStatus(`pc:${pc.connectionState}`);
+      dc.onopen = () => {
+        setStatus('datachannel:open');
+        els.ping.disabled = false;
+        els.send.disabled = false;
+      };
+      dc.onclose = () => {
+        setStatus('datachannel:closed');
+        els.ping.disabled = true;
+        els.send.disabled = true;
+      };
+      dc.onmessage = (event) => log(`received: ${event.data}`);
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      const response = await fetch('/offer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(pc.localDescription),
+      });
+      const payload = await response.json();
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.error || `HTTP ${response.status}`);
+      }
+      await pc.setRemoteDescription(payload);
+      log('remote answer applied');
+    }
+
+    function send(text) {
+      if (!dc || dc.readyState !== 'open') {
+        log('datachannel is not open');
+        return;
+      }
+      log(`sent: ${text}`);
+      dc.send(text);
+    }
+
+    els.connect.addEventListener('click', () => connect().catch((err) => {
+      els.connect.disabled = false;
+      setStatus('error');
+      log(`connect error: ${err.message}`);
+    }));
+    els.ping.addEventListener('click', () => send('ping'));
+    els.send.addEventListener('click', () => send(els.message.value || 'empty'));
+    els.metrics.addEventListener('click', async () => {
+      const payload = await (await fetch('/metrics')).json();
+      log(`metrics: ${JSON.stringify(payload)}`);
+    });
+  </script>
+</body>
+</html>

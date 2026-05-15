@@ -12,3 +12,8 @@ test_tmp/
 tmp_pytest/
 pytest-cache-files-*/
 node_modules/
+
+# WebRTC local experiment runtime artifacts
+experiments/webrtc-gateway/*.log
+experiments/webrtc-gateway/.venv/
+
