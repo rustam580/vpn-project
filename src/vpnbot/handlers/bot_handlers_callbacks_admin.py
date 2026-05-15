@@ -25,8 +25,13 @@ from src.vpnbot.keyboards.drift_keyboards import (
     drift_finding_keyboard,
     parse_drift_callback,
 )
+from src.vpnbot.keyboards.web_order_keyboards import (
+    ACTION_CHECK_PAYMENT,
+    parse_web_order_callback,
+)
 from src.vpnbot.marzban_sync import audit_marzban_sync
 from src.vpnbot.message_utils import split_message
+from src.vpnbot.payment_helpers import cryptobot_check_invoice, yookassa_check_payment
 from src.vpnbot.payment_issues import build_payment_issues_report
 from src.vpnbot.xray_quality import format_xray_quality_report, summarize_xray_error_log
 
@@ -434,6 +439,78 @@ def register_admin_callback_handlers(*, router: Router, deps: AdminCallbackDeps)
             await callback.message.answer(build_support_templates_text(), parse_mode="HTML")
             return
         await callback.answer("Неизвестное действие", show_alert=True)
+
+    @router.callback_query(F.data.startswith("wo:"))
+    async def web_order_action_callback(callback: CallbackQuery) -> None:
+        """Read-only support actions emitted by web-order lookup cards."""
+        if not await guard_callback_rate_limit(callback):
+            return
+        if not callback.data or not callback.from_user or callback.message is None:
+            await callback.answer("Callback error", show_alert=True)
+            return
+        if not is_admin_fn(int(callback.from_user.id), settings):
+            await callback.answer("Not enough permissions.", show_alert=True)
+            return
+
+        parsed = parse_web_order_callback(callback.data)
+        if parsed is None:
+            await callback.answer("Bad web-order action.", show_alert=True)
+            return
+        action, order_id = parsed
+        if action != ACTION_CHECK_PAYMENT:
+            await callback.answer("Unknown web-order action.", show_alert=True)
+            return
+
+        await callback.answer("Checking provider status...")
+        order = await repo.get_web_order(order_id)
+        if not order:
+            await callback.message.answer(f"Web order not found: {order_id}")
+            return
+
+        provider = str(order.get("provider") or "").strip()
+        external_id = str(order.get("external_id") or "").strip()
+        local_status = str(order.get("status") or "").strip()
+        if not provider or not external_id:
+            await callback.message.answer(
+                f"Web order {order_id} has no provider/external_id. Local status: {local_status or 'n/a'}"
+            )
+            return
+
+        try:
+            if provider == "crypto":
+                remote_status = await asyncio.wait_for(
+                    cryptobot_check_invoice(settings, external_id),
+                    timeout=30,
+                )
+            elif provider == "card":
+                remote_status = await asyncio.wait_for(
+                    yookassa_check_payment(settings, external_id),
+                    timeout=30,
+                )
+            else:
+                remote_status = f"unsupported provider: {provider}"
+        except asyncio.TimeoutError:
+            await callback.message.answer(
+                f"Payment status check timed out.\norder={order_id}\nprovider={provider}\nexternal_id={external_id}"
+            )
+            return
+        except Exception as exc:
+            logging.exception("Web order payment status check failed: %s", order_id)
+            await callback.message.answer(
+                f"Payment status check failed.\n"
+                f"order={order_id}\nprovider={provider}\nexternal_id={external_id}\nerror={exc}"
+            )
+            return
+
+        await callback.message.answer(
+            "Web order payment status (read-only):\n"
+            f"- order: {order_id}\n"
+            f"- provider: {provider}\n"
+            f"- external_id: {external_id}\n"
+            f"- local_status: {local_status or 'n/a'}\n"
+            f"- provider_status: {remote_status}\n\n"
+            "If provider_status is paid/succeeded but access is missing, run the drift audit button."
+        )
 
     @router.callback_query(F.data.startswith("da:"))
     async def drift_action_callback(callback: CallbackQuery) -> None:

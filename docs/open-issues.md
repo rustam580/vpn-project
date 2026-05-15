@@ -46,6 +46,7 @@ Last updated: 2026-05-15
 - Owner: dev/ops
 
 ## Recently Closed
+- Added read-only inline support buttons to web-order admin cards: check provider payment status by order ID (`wo:c:*`), open linked customer lookup, and run Marzban/DB drift audit. Payment check does not mutate DB or Marzban.
 - Added web-order support cards for `/user <order_id|email|web_username>` plus direct `/payment_issues` action hints (`/user <order_id>`, `/check <provider> <external_id>`, `/sync_audit`). This reduces manual SQL/Marzban work for website buyers who did not bind Telegram.
 - Added unified customer profile renderer for admin `/user <telegram_id>`: Telegram identity, primary Marzban profile, all device slots, recent bot payments, related web orders, and drift warnings now come from test-covered `src/vpnbot/customer_profile.py`.
 - Added admin payment/access issue report: `/payment_issues` command and `💳 Проблемные оплаты` admin button. The report highlights stale `processing` payments, old unfinished payments, paid web orders without access, and paid web orders whose Marzban user is missing.

@@ -14,6 +14,7 @@ from src.vpnbot.customer_profile import (
     CustomerProfileFormatters,
     build_customer_profile_text,
 )
+from src.vpnbot.keyboards.web_order_keyboards import web_order_support_keyboard
 from src.vpnbot.web_order_profile import build_web_order_profile_lines
 
 
@@ -96,6 +97,7 @@ async def _send_generic_user_lookup(*, message: Message, query: str, ctx: UserLo
         return
 
     lines: list[str] = [f"🔎 Поиск: <code>{html.escape(value)}</code>"]
+    web_order_cards: list[tuple[str, InlineKeyboardMarkup | None]] = []
     found_tg_ids: set[int] = set()
     found_any = False
 
@@ -135,7 +137,7 @@ async def _send_generic_user_lookup(*, message: Message, query: str, ctx: UserLo
     web_orders = await ctx.repo.find_web_orders(value, limit=5)
     if web_orders:
         found_any = True
-        lines.append("Web orders:")
+        lines.append(f"Web orders: {len(web_orders)}")
         for order in web_orders:
             order_lines, order_tg_ids = await build_web_order_profile_lines(
                 order,
@@ -143,7 +145,14 @@ async def _send_generic_user_lookup(*, message: Message, query: str, ctx: UserLo
                 marzban=ctx.marzban,
             )
             found_tg_ids.update(order_tg_ids)
-            lines.extend(order_lines)
+            order_id = str(order.get("order_id") or "").strip()
+            lines.append(f"- card sent below: <code>{html.escape(order_id)}</code>")
+            web_order_cards.append(
+                (
+                    "\n".join(order_lines),
+                    web_order_support_keyboard(order, linked_tg_ids=order_tg_ids),
+                )
+            )
 
     is_possible_username = all(ch.isalnum() or ch in "._-" for ch in value)
     marzban_user = await ctx.marzban.get_user(value) if is_possible_username else None
@@ -174,6 +183,8 @@ async def _send_generic_user_lookup(*, message: Message, query: str, ctx: UserLo
             lines.append(f"Полная карточка: <code>/user {tg_id}</code>")
 
     await message.answer("\n".join(lines), parse_mode="HTML")
+    for text, reply_markup in web_order_cards:
+        await message.answer(text, parse_mode="HTML", reply_markup=reply_markup)
 
 
 async def send_user_lookup(

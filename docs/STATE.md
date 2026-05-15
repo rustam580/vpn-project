@@ -46,7 +46,7 @@ RootVPN currently uses a two-host production layout.
 - Public website API should expose subscription URL(s), not raw direct config links.
 - Admin Marzban/DB audit supports guided critical-drift actions via inline buttons; use first on known-safe stale/test findings after deploy validation.
 - Admin `/user <telegram_id>` uses a unified customer profile renderer: Telegram identity, primary Marzban profile, all device slots, recent bot payments, related web orders, and drift warnings.
-- Admin `/user <order_id|email|web_username>` renders web-order support cards with linked Telegram IDs/devices, Marzban status, and direct action hints (`/user`, `/check`, `/sync_audit`).
+- Admin `/user <order_id|email|web_username>` renders web-order support cards with linked Telegram IDs/devices, Marzban status, direct action hints (`/user`, `/check`, `/sync_audit`), and read-only inline support buttons for payment status check, customer lookup, and drift audit.
 - User reply-keyboard handlers are extracted to `bot_handlers_user_runtime.py` and must be registered before fallback.
 - The catch-all fallback handler must stay last among message handlers, otherwise user/admin commands can be swallowed with "Открыл меню."
 
