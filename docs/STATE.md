@@ -44,6 +44,7 @@ RootVPN currently uses a two-host production layout.
 - Website standalone sales are active (`/api/checkout`, `/api/order/{id}`).
 - Paid web orders can be bound to Telegram via `/start webbind_*`.
 - Public website API should expose subscription URL(s), not raw direct config links.
+- WebRTC/DataChannel transport is documented as an R&D track only (`docs/webrtc-transport-research.md`); do not sell or advertise it until a closed beta proves stability and cost.
 - Admin Marzban/DB audit supports guided critical-drift actions via inline buttons; use first on known-safe stale/test findings after deploy validation.
 - Admin `/user <telegram_id>` uses a unified customer profile renderer: Telegram identity, primary Marzban profile, all device slots, recent bot payments, related web orders, and drift warnings.
 - Admin `/user <order_id|email|web_username>` renders web-order support cards with linked Telegram IDs/devices, Marzban status, direct action hints (`/user`, `/check`, `/sync_audit`), and read-only inline support buttons for payment status check, customer lookup, and drift audit.
@@ -114,7 +115,7 @@ RootVPN currently uses a two-host production layout.
 
 ## Documentation Freshness
 
-- Most reliable docs right now: `docs/assistant-context.md`, `docs/STATE.md`, `docs/open-issues.md`, `docs/infra-state.md`, `docs/website.md`.
+- Most reliable docs right now: `docs/assistant-context.md`, `docs/STATE.md`, `docs/open-issues.md`, `docs/infra-state.md`, `docs/website.md`, `docs/webrtc-transport-research.md`.
 - Older docs (`README.md`, `docs/product-decisions.md`, `docs/release-readiness.md`, `docs/integrations.md`, `docs/runbook.md`) are useful for background, but may omit current website API, drift-resolution, Xray diagnostics, two-host deploy details, and recent router fixes.
 
 ## Context Handoff Protocol (Do Not Skip)
