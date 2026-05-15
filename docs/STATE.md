@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-05-11 (afternoon)
+Last updated: 2026-05-15
 
 ## Current Production
 
@@ -45,6 +45,8 @@ RootVPN currently uses a two-host production layout.
 - Paid web orders can be bound to Telegram via `/start webbind_*`.
 - Public website API should expose subscription URL(s), not raw direct config links.
 - Admin Marzban/DB audit supports guided critical-drift actions via inline buttons; use first on known-safe stale/test findings after deploy validation.
+- User reply-keyboard handlers are extracted to `bot_handlers_user_runtime.py` and must be registered before fallback.
+- The catch-all fallback handler must stay last among message handlers, otherwise user/admin commands can be swallowed with "Открыл меню."
 
 ## Payments
 
@@ -85,6 +87,25 @@ RootVPN currently uses a two-host production layout.
 - Do not assume `/opt/vpn-bot` exists on site-host.
 - Verify Caddy root before deploying:
   - `grep -n "root \*" /etc/caddy/Caddyfile`
+
+## Current Code Snapshot
+
+- Entrypoint: `bot.py` imports and runs `src.vpnbot.bot_runtime.main()`.
+- Router assembly: `src/vpnbot/bot_runtime.py` (~761 lines).
+- Largest remaining handler module: `src/vpnbot/handlers/bot_handlers_callbacks_user.py` (~829 lines).
+- Website checkout API: `website_api.py` (~650 lines), aiohttp on `127.0.0.1:8011`.
+- Subscription gateway: `subscription_gateway.py`, sync HTTP proxy/dedupe/logging service on `127.0.0.1:8010`.
+- SQLite schema version latest: `4`.
+- Local checks as of 2026-05-15:
+  - `python scripts/compile_all.py` OK
+  - `python -m ruff check .` OK
+  - `python -m mypy . --ignore-missing-imports` OK
+  - `python -m pytest -q` OK
+
+## Documentation Freshness
+
+- Most reliable docs right now: `docs/assistant-context.md`, `docs/STATE.md`, `docs/open-issues.md`, `docs/infra-state.md`, `docs/website.md`.
+- Older docs (`README.md`, `docs/product-decisions.md`, `docs/release-readiness.md`, `docs/integrations.md`, `docs/runbook.md`) are useful for background, but may omit current website API, drift-resolution, Xray diagnostics, two-host deploy details, and recent router fixes.
 
 ## Context Handoff Protocol (Do Not Skip)
 

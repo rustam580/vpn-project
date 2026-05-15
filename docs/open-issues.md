@@ -1,6 +1,6 @@
 ﻿# Open Issues
 
-Last updated: 2026-05-11 (afternoon)
+Last updated: 2026-05-15
 
 ## Priority Legend
 - P0: blocks sales or legal-safe launch
@@ -35,11 +35,18 @@ Last updated: 2026-05-11 (afternoon)
 
 5. P2 - Finish `bot_runtime.py` decomposition
 - Status: in_progress
-- Problem: `src/vpnbot/bot_runtime.py` is now down to ~740 lines (from original 1411). All inline `@router.message` handlers and the three biggest closures (`bind_web_order_to_user`, `replace_device_slot`, `list_replaceable_devices`) are extracted. What remains: smaller inline closures (`track_event`, `start_deploy`, `handle_grant_perm`, `guard_*`, `get_bot_username`) still live in `build_router`, and `bot_handlers_callbacks_user.py` (38 KB) is still one large module.
+- Problem: `src/vpnbot/bot_runtime.py` is now ~761 lines (from original 1411). All inline `@router.message` handlers and the three biggest closures (`bind_web_order_to_user`, `replace_device_slot`, `list_replaceable_devices`) are extracted. What remains: smaller inline closures (`track_event`, `start_deploy`, `handle_grant_perm`, `guard_*`, `get_bot_username`) still live in `build_router`, and `bot_handlers_callbacks_user.py` (~829 lines) is still one large module.
 - Next action: extract remaining closures to `runtime_helpers.py` (use factories where mutable state like rate limiters or `bot_username_cache` is involved); split `bot_handlers_callbacks_user.py` by domain (subscription / devices / payments / referrals); then enable strict mypy on `bot_runtime.py` and `handlers/*`.
 - Owner: dev
 
+6. P2 - Refresh stale docs
+- Status: pending
+- Problem: `README.md`, `docs/product-decisions.md`, `docs/release-readiness.md`, `docs/integrations.md`, and `docs/runbook.md` are older than the current product architecture. They omit or under-describe the website checkout API, two-host deploy, drift-resolution actions, Xray diagnostics, and recent router-registration regressions.
+- Next action: either consolidate into a single current operator guide or mark old docs as historical/background with links to `STATE.md`, `assistant-context.md`, `infra-state.md`, and `website.md`.
+- Owner: dev/ops
+
 ## Recently Closed
+- Fixed post-refactor router regressions: registered extracted user runtime handlers in `build_router`, moved catch-all fallback after specific user/admin message handlers, and added regression tests for handler wiring, fallback order, and reply-keyboard coverage.
 - Added guided Marzban/DB drift resolution: structured `DriftFinding` objects, action keyboards on admin sync audit, safe resolver functions (`recreate`, `drop_db_ref`, `retry_web_order`, `ignore`), ignored finding suppression, and resolver/keyboards unit tests.
 - Refactor of `build_router` (commits 8726e85, 77a57d8, 11d716c): extracted 25 inline handlers to `src/vpnbot/handlers/bot_handlers_user_runtime.py` and `bot_handlers_admin_runtime.py`; extracted 3 large pure helpers (`bind_web_order_to_user`, `replace_device_slot`, `list_replaceable_devices`) to `src/vpnbot/runtime_helpers.py` with 10 new unit tests in `tests/test_runtime_helpers.py`. `bot_runtime.py`: 1411 -> 742 lines (-47%). pytest: 72 -> 82 passing.
 - Added lightweight Xray quality tooling: `/xray_errors [minutes]`, `📡 Xray ошибки` admin button, reusable `xray_quality` parser, and disabled-by-default worker alert.

@@ -1,6 +1,6 @@
 # Assistant Context Handoff
 
-Last updated: 2026-05-11
+Last updated: 2026-05-15
 
 This file is the durable context for future Codex/Claude/agent sessions. Read it before making product, infra, payment, or deployment decisions.
 
@@ -35,6 +35,19 @@ Important product direction:
 - One config means one device slot.
 - Device renewal must be separate per slot unless user explicitly renews all slots.
 - Family/parent use case is important: one user may manage VPN access for another person.
+
+## Current Architecture Snapshot (2026-05-15)
+
+- `bot.py` is a thin compatibility entrypoint that runs `src.vpnbot.bot_runtime.main()`.
+- `src/vpnbot/bot_runtime.py` assembles the aiogram router, shared mutable runtime state, and background workers.
+- User command/start/help handlers live in `src/vpnbot/handlers/bot_handlers_user.py`.
+- User reply-keyboard command handlers (`/config`, `/buy`, reply buttons such as `💳 Купить доступ`) live in `src/vpnbot/handlers/bot_handlers_user_runtime.py`.
+- User inline callbacks still live mostly in `src/vpnbot/handlers/bot_handlers_callbacks_user.py`; this is currently the largest remaining handler module and a good future split target.
+- Admin runtime handlers live in `src/vpnbot/handlers/bot_handlers_admin_runtime.py`; admin command handlers live in `src/vpnbot/handlers/bot_handlers_admin.py`; admin callbacks live in `src/vpnbot/handlers/bot_handlers_callbacks_admin.py`.
+- Critical router invariant: register specific user/admin message handlers before `register_fallback_handler()`. The fallback must remain last.
+- Website checkout/status backend lives in `website_api.py` and exposes `/api/health`, `/api/plans`, `/api/instructions`, `/api/checkout`, `/api/order/{order_id}`.
+- Subscription gateway lives in `subscription_gateway.py` and dedupes/logs `/sub/*` subscription hits.
+- DB source of truth is still SQLite with migrations in `db/migrations`; latest schema version is `4`.
 
 ## Production Topology Notes
 
@@ -98,11 +111,19 @@ Before relying on docs for deployment:
 
 ## Known Technical Risks
 
-1. Marzban and DB can drift if access is edited manually in Marzban. There is an audit script, but long term this needs a sync worker with admin review.
-2. `bot_runtime.py` and some handler modules are still large after refactoring.
-3. `mypy` is enabled but some large modules are excluded/loosened. Treat type safety as partial.
-4. Marketing/legal claims on the site must match reality: uptime, logs, retention, support availability, refunds.
-5. Two-host deployment makes "where do I deploy?" a recurring operational risk.
+1. Marzban and DB can drift if access is edited manually in Marzban. The audit worker and guided admin actions exist; use guided actions carefully, first on known-safe stale/test findings.
+2. `bot_handlers_callbacks_user.py` is still large and should be split by domain before major callback changes.
+3. `bot_runtime.py` is improved but still owns several closures and runtime state; preserve router registration order when refactoring.
+4. `mypy` is enabled but some large modules are excluded/loosened. Treat type safety as partial.
+5. Marketing/legal claims on the site must match reality: uptime, logs, retention, support availability, refunds.
+6. Two-host deployment makes "where do I deploy?" a recurring operational risk.
+7. Some docs are stale relative to current code. Prefer this file, `docs/STATE.md`, `docs/open-issues.md`, `docs/infra-state.md`, and `docs/website.md` as operational sources of truth.
+
+## Latest Post-Refactor Fixes (2026-05-12)
+
+- Fixed missing registration of `register_user_runtime_handlers(...)`; without it reply-keyboard buttons fell through to fallback and answered "Открыл меню."
+- Moved `register_fallback_handler(...)` after admin message handlers; without it some admin commands could be swallowed by fallback.
+- Added regression tests for user runtime handler wiring, fallback order, and reply-keyboard label coverage.
 
 ## Completed In 2026-05-10 Improvement Iteration
 
@@ -194,6 +215,8 @@ python -m ruff check .
 python -m mypy . --ignore-missing-imports
 python -m pytest -q
 ```
+
+Last full local check on 2026-05-15: compile, ruff, mypy, pytest all passed.
 
 Expected production smoke after bot/API deploy:
 
