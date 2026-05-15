@@ -49,6 +49,7 @@ def admin_panel_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📈 Статистика", callback_data="admin:stats")],
+            [InlineKeyboardButton(text="💳 Проблемные оплаты", callback_data="admin:payment_issues")],
             [InlineKeyboardButton(text="💼 Тарифы", callback_data="admin:plans")],
             [InlineKeyboardButton(text="🏆 Топ рефералов", callback_data="admin:ref_top")],
             [InlineKeyboardButton(text="🩺 Ops отчет", callback_data="admin:ops")],

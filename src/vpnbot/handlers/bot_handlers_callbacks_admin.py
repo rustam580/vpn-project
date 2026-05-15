@@ -27,6 +27,7 @@ from src.vpnbot.keyboards.drift_keyboards import (
 )
 from src.vpnbot.marzban_sync import audit_marzban_sync
 from src.vpnbot.message_utils import split_message
+from src.vpnbot.payment_issues import build_payment_issues_report
 from src.vpnbot.xray_quality import format_xray_quality_report, summarize_xray_error_log
 
 
@@ -195,6 +196,21 @@ def register_admin_callback_handlers(*, router: Router, deps: AdminCallbackDeps)
             except Exception as exc:
                 logging.exception("Ops callback failed")
                 await callback.message.answer(f"Ошибка ops-отчета: {exc}")
+            return
+        if action == "payment_issues":
+            await callback.answer("Checking payments...")
+            try:
+                text = await asyncio.wait_for(
+                    build_payment_issues_report(repo, marzban, settings),
+                    timeout=60,
+                )
+                for chunk in split_message(text, limit=3500):
+                    await callback.message.answer(chunk)
+            except asyncio.TimeoutError:
+                await callback.message.answer("Payment issues report timed out. Try /payment_issues.")
+            except Exception as exc:
+                logging.exception("Payment issues callback failed")
+                await callback.message.answer(f"Payment issues report error: {exc}")
             return
         if action == "sync_audit":
             await callback.answer("Проверяю Marzban/DB...")
@@ -385,6 +401,7 @@ def register_admin_callback_handlers(*, router: Router, deps: AdminCallbackDeps)
                 "/deploy\n"
                 "/ref_stats [telegram_id]\n"
                 "/ops\n"
+                "/payment_issues\n"
                 "/sync_audit\n"
                 "/xray_errors [minutes]\n"
                 f"{check_hint}\n\n"

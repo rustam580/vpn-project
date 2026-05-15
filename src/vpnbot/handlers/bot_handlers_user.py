@@ -151,6 +151,7 @@ def register_user_message_handlers(*, router: Router, deps: UserMessageDeps) -> 
             "• <code>/disable &lt;telegram_id&gt;</code>\n"
             "• <code>/link &lt;telegram_id&gt; &lt;marzban_username&gt;</code>\n"
             "• <code>/ops</code> — health-отчет\n"
+            "• <code>/payment_issues</code> — проблемные оплаты и выдача\n"
             "• <code>/sync_audit</code> — Marzban/DB рассинхрон\n"
             "• <code>/xray_errors [minutes]</code> — ошибки Xray"
         )

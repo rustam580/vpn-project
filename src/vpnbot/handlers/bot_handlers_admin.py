@@ -14,6 +14,7 @@ from aiogram.types import Message
 from src.vpnbot.background_tasks import spawn as _spawn_bg
 from src.vpnbot.marzban_sync import audit_marzban_sync
 from src.vpnbot.message_utils import split_message
+from src.vpnbot.payment_issues import build_payment_issues_report
 from src.vpnbot.xray_quality import format_xray_quality_report, summarize_xray_error_log
 
 
@@ -551,6 +552,30 @@ def register_admin_message_handlers(*, router: Router, deps: AdminMessageDeps) -
         except Exception as exc:
             logging.exception("Ops command failed")
             await message.answer(f"Ошибка ops-отчета: {exc}")
+
+    @router.message(Command("payment_issues"))
+    async def payment_issues_cmd(message: Message) -> None:
+        if not await guard_message_rate_limit(message):
+            return
+        if not message.from_user or not is_admin_fn(int(message.from_user.id), settings):
+            await message.answer("Недостаточно прав.")
+            return
+        await message.answer("💳 Проверяю проблемные оплаты и выдачу доступа...")
+        try:
+            text = await asyncio.wait_for(
+                build_payment_issues_report(repo, marzban, settings),
+                timeout=60,
+            )
+        except asyncio.TimeoutError:
+            await message.answer("Отчет по оплатам собирается слишком долго. Повторите через минуту.")
+            return
+        except Exception as exc:
+            logging.exception("Payment issues command failed")
+            await message.answer(f"Ошибка отчета по оплатам: {exc}")
+            return
+
+        for chunk in split_message(text, limit=3500):
+            await message.answer(chunk)
 
     @router.message(Command("sync_audit"))
     async def sync_audit_cmd(message: Message) -> None:

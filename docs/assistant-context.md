@@ -113,6 +113,7 @@ Before relying on docs for deployment:
 - Device names should become human-readable: "My iPhone", "Laptop", "Mom", etc.
 - Admin workflows should avoid manual Marzban edits where possible.
 - Admin "Find user" supports Telegram ID, website order ID, external payment ID, contact/email, and Marzban username.
+- Admin payment/access issue report exists as `/payment_issues` and `💳 Проблемные оплаты`. It is intentionally read-only: use it to decide whether to run `/check`, drift-audit safe actions, or a manual support flow.
 
 ## Known Technical Risks
 

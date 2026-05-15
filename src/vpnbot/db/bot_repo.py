@@ -600,6 +600,50 @@ class Repo:
         await self.conn.commit()
         return [dict(row) for row in rows]
 
+    async def list_stale_processing_payments(
+        self, *, older_than_sec: int, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        assert self.conn is not None
+        cutoff = int(time.time()) - max(60, int(older_than_sec))
+        c = await self.conn.execute(
+            """
+            SELECT
+                provider, external_id, telegram_id, days, gb, amount_rub, pay_url,
+                status, purpose, device_slot, created_at, updated_at
+            FROM payments
+            WHERE status = 'processing'
+              AND updated_at <= ?
+            ORDER BY updated_at ASC
+            LIMIT ?
+            """,
+            (cutoff, max(1, int(limit))),
+        )
+        rows = await c.fetchall()
+        await c.close()
+        return [dict(row) for row in rows]
+
+    async def list_old_unfinished_payments(
+        self, *, older_than_sec: int, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        assert self.conn is not None
+        cutoff = int(time.time()) - max(60, int(older_than_sec))
+        c = await self.conn.execute(
+            """
+            SELECT
+                provider, external_id, telegram_id, days, gb, amount_rub, pay_url,
+                status, purpose, device_slot, created_at, updated_at
+            FROM payments
+            WHERE status NOT IN ('paid_applied', 'canceled', 'expired', 'failed', 'processing')
+              AND created_at <= ?
+            ORDER BY created_at ASC
+            LIMIT ?
+            """,
+            (cutoff, max(1, int(limit))),
+        )
+        rows = await c.fetchall()
+        await c.close()
+        return [dict(row) for row in rows]
+
     async def mark_notification_once(
         self,
         *,
@@ -793,6 +837,45 @@ class Repo:
             (marzban_username, int(time.time()), order_id),
         )
         await self.conn.commit()
+
+    async def list_paid_web_orders_without_access(self, *, limit: int = 20) -> list[dict[str, Any]]:
+        assert self.conn is not None
+        c = await self.conn.execute(
+            """
+            SELECT
+                order_id, provider, external_id, status, plan_key, days, gb, amount_rub,
+                customer_contact, marzban_username, pay_url, created_at, updated_at
+            FROM web_orders
+            WHERE status IN ('paid', 'succeeded', 'paid_applied')
+              AND (marzban_username IS NULL OR marzban_username = '')
+            ORDER BY updated_at ASC
+            LIMIT ?
+            """,
+            (max(1, int(limit)),),
+        )
+        rows = await c.fetchall()
+        await c.close()
+        return [dict(row) for row in rows]
+
+    async def list_paid_web_orders_with_access(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        assert self.conn is not None
+        c = await self.conn.execute(
+            """
+            SELECT
+                order_id, provider, external_id, status, plan_key, days, gb, amount_rub,
+                customer_contact, marzban_username, pay_url, created_at, updated_at
+            FROM web_orders
+            WHERE status IN ('paid', 'succeeded', 'paid_applied')
+              AND marzban_username IS NOT NULL
+              AND marzban_username != ''
+            ORDER BY updated_at DESC
+            LIMIT ?
+            """,
+            (max(1, int(limit)),),
+        )
+        rows = await c.fetchall()
+        await c.close()
+        return [dict(row) for row in rows]
 
     async def web_bind_conversion_stats(self, *, days: int = 7) -> dict[str, int | float]:
         assert self.conn is not None

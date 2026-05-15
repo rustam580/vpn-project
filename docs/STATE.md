@@ -53,6 +53,7 @@ RootVPN currently uses a two-host production layout.
 - Providers in production: `card` (YooKassa), `crypto` (CryptoBot)
 - Anti-duplicate apply: payment claim lock (`processing` -> `paid_applied`)
 - Auto-check workers are active for both providers.
+- Admin payment/access report is available through `/payment_issues` and the `💳 Проблемные оплаты` admin button. It is read-only and surfaces stale `processing` payments, old unfinished payments, paid website orders without access, and paid website orders whose Marzban user is missing.
 
 ## Important Env Flags
 
