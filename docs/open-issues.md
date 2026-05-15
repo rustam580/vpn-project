@@ -48,10 +48,11 @@ Last updated: 2026-05-15
 7. P2 - WebRTC fallback transport R&D
 - Status: in_progress
 - Problem: WebRTC/DataChannel may be useful as a reserve transport, but whitelist-resilience requires a carrier layer through already-allowed video/conference services, not only a self-hosted gateway. This adds separate client/signaling/gateway/carrier work plus unclear carrier fragility, TURN cost, stability, support, and legal/product risks. Phase 1 local direct echo PoC now exists and is verified.
-- Next action: add short-lived signed token auth to signaling, then introduce a carrier interface with the current direct gateway as the test adapter; only after that evaluate one lab-only third-party carrier adapter. Keep it isolated from payments, Marzban, and public tariffs until closed beta criteria in `docs/webrtc-transport-research.md` are met.
+- Next action: add short-lived signed token auth to signaling, then implement one lab-only WB Stream adapter against an explicit room ID/URL. Keep it isolated from payments, Marzban, and public tariffs until closed beta criteria in `docs/webrtc-transport-research.md` are met.
 - Owner: dev/research
 
 ## Recently Closed
+- Added carrier interface to the WebRTC PoC and kept `direct` as the baseline carrier adapter. Captured WB Stream/LiveKit carrier notes in `experiments/webrtc-gateway/WBSTREAM_NOTES.md`.
 - Reviewed olcRTC architecture notes and captured applicable lessons in `docs/webrtc-transport-research.md`: layered carrier/transport design, app-level encryption, smux-style multiplexing, payload chunking, SOCKS5 boundary, reconnect/backpressure, and Android socket-protection caveats.
 - Added isolated local WebRTC/DataChannel echo PoC under `experiments/webrtc-gateway/`: browser test page, Python `aiortc` gateway, `/offer`, `/metrics`, and local verification (`ping` -> `pong`, custom echo).
 - Documented WebRTC/DataChannel fallback transport as an R&D-only track with MVP phases, promotion criteria, kill criteria, and repository boundaries in `docs/webrtc-transport-research.md`.

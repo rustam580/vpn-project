@@ -8,11 +8,12 @@ This is intentionally isolated from production bot, payments, Marzban, and websi
 
 - Serves a browser test page on `http://127.0.0.1:8090`.
 - Browser creates a WebRTC `RTCDataChannel`.
-- Python `aiortc` gateway accepts the offer and returns an answer.
+- Python `aiortc` direct carrier accepts the offer and returns an answer.
 - DataChannel supports:
   - `ping` -> `pong`
   - any other text -> `echo:<message>`
 - `/metrics` exposes simple JSON counters.
+- Carrier interface exists so direct local WebRTC can stay as the baseline adapter while WB Stream is added separately.
 
 ## What It Does Not Do Yet
 
@@ -59,3 +60,5 @@ Verified on 2026-05-15:
 ## Next Step After Success
 
 Phase 2 should add a short-lived signed token before signaling accepts offers.
+
+After token auth, see `WBSTREAM_NOTES.md` for WB Stream carrier-adapter notes.

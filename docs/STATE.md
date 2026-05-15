@@ -106,7 +106,7 @@ RootVPN currently uses a two-host production layout.
   - `bot_handlers_callbacks_user_payments.py` (~389 lines): buy/select/payment/check/device-add callbacks.
 - Website checkout API: `website_api.py` (~650 lines), aiohttp on `127.0.0.1:8011`.
 - Subscription gateway: `subscription_gateway.py`, sync HTTP proxy/dedupe/logging service on `127.0.0.1:8010`.
-- WebRTC R&D PoC: `experiments/webrtc-gateway/`, Python `aiortc` local browser DataChannel echo gateway.
+- WebRTC R&D PoC: `experiments/webrtc-gateway/`, Python `aiortc` local browser DataChannel echo gateway. It now has a carrier interface with `direct` as the baseline adapter; WB Stream implementation notes live in `experiments/webrtc-gateway/WBSTREAM_NOTES.md`.
 - SQLite schema version latest: `4`.
 - Local checks as of 2026-05-15:
   - `python scripts/compile_all.py` OK
