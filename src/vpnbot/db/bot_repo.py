@@ -786,6 +786,22 @@ class Repo:
         await c.close()
         return dict(row) if row else None
 
+    async def list_payments_for_user(self, telegram_id: int, *, limit: int = 10) -> list[dict[str, Any]]:
+        assert self.conn is not None
+        c = await self.conn.execute(
+            """
+            SELECT provider, external_id, telegram_id, days, gb, amount_rub, pay_url, status, purpose, device_slot, created_at, updated_at
+            FROM payments
+            WHERE telegram_id = ?
+            ORDER BY updated_at DESC
+            LIMIT ?
+            """,
+            (telegram_id, max(1, int(limit))),
+        )
+        rows = await c.fetchall()
+        await c.close()
+        return [dict(row) for row in rows]
+
     async def find_web_orders(self, query: str, *, limit: int = 5) -> list[dict[str, Any]]:
         assert self.conn is not None
         value = str(query or "").strip()
@@ -809,6 +825,31 @@ class Repo:
             LIMIT ?
             """,
             (value, value, value, like, like, like, like, max(1, int(limit))),
+        )
+        rows = await c.fetchall()
+        await c.close()
+        return [dict(row) for row in rows]
+
+    async def list_web_orders_for_usernames(
+        self, usernames: list[str], *, limit: int = 10
+    ) -> list[dict[str, Any]]:
+        assert self.conn is not None
+        clean = [str(name).strip() for name in usernames if str(name or "").strip()]
+        if not clean:
+            return []
+        unique = list(dict.fromkeys(clean))
+        placeholders = ",".join("?" for _ in unique)
+        c = await self.conn.execute(
+            f"""
+            SELECT
+                order_id, provider, external_id, status, plan_key, days, gb, amount_rub,
+                customer_contact, marzban_username, pay_url, created_at, updated_at
+            FROM web_orders
+            WHERE marzban_username IN ({placeholders})
+            ORDER BY updated_at DESC
+            LIMIT ?
+            """,
+            (*unique, max(1, int(limit))),
         )
         rows = await c.fetchall()
         await c.close()

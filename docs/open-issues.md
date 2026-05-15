@@ -46,6 +46,7 @@ Last updated: 2026-05-15
 - Owner: dev/ops
 
 ## Recently Closed
+- Added unified customer profile renderer for admin `/user <telegram_id>`: Telegram identity, primary Marzban profile, all device slots, recent bot payments, related web orders, and drift warnings now come from test-covered `src/vpnbot/customer_profile.py`.
 - Added admin payment/access issue report: `/payment_issues` command and `💳 Проблемные оплаты` admin button. The report highlights stale `processing` payments, old unfinished payments, paid web orders without access, and paid web orders whose Marzban user is missing.
 - Split `bot_handlers_callbacks_user.py` by domain into quick/device/config/payment modules plus shared `UserCallbackDeps`; facade is now ~16 lines, with regression tests for callback prefix placement.
 - Fixed post-refactor router regressions: registered extracted user runtime handlers in `build_router`, moved catch-all fallback after specific user/admin message handlers, and added regression tests for handler wiring, fallback order, and reply-keyboard coverage.

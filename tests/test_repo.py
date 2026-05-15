@@ -118,6 +118,76 @@ async def test_find_web_orders_matches_order_contact_and_username(repo) -> None:
     assert [row["order_id"] for row in by_username] == ["abc123order"]
 
 
+async def test_list_payments_for_user_orders_by_updated_at(repo, repo_conn) -> None:
+    now = int(time.time())
+    await repo.upsert_payment(
+        provider="card",
+        external_id="older-pay-list",
+        telegram_id=5005,
+        days=30,
+        gb=0,
+        amount_rub=99.0,
+        pay_url="https://pay.local/older-pay-list",
+        status="pending",
+    )
+    await repo.upsert_payment(
+        provider="crypto",
+        external_id="newer-pay-list",
+        telegram_id=5005,
+        days=90,
+        gb=0,
+        amount_rub=259.0,
+        pay_url="https://pay.local/newer-pay-list",
+        status="paid_applied",
+    )
+    await repo_conn.execute(
+        "UPDATE payments SET updated_at = ? WHERE external_id = ?",
+        (now - 10, "older-pay-list"),
+    )
+    await repo_conn.execute(
+        "UPDATE payments SET updated_at = ? WHERE external_id = ?",
+        (now + 10, "newer-pay-list"),
+    )
+    await repo_conn.commit()
+
+    rows = await repo.list_payments_for_user(5005, limit=10)
+
+    assert [row["external_id"] for row in rows] == ["newer-pay-list", "older-pay-list"]
+
+
+async def test_list_web_orders_for_usernames_matches_bound_orders(repo) -> None:
+    await repo.create_web_order(
+        order_id="ord-user-a",
+        provider="card",
+        external_id="pay-user-a",
+        status="paid_applied",
+        plan_key="m1",
+        days=30,
+        gb=0,
+        amount_rub=99.0,
+        customer_contact="@client",
+        pay_url="https://pay.local/user-a",
+    )
+    await repo.attach_web_order_access(order_id="ord-user-a", marzban_username="tg_5005")
+    await repo.create_web_order(
+        order_id="ord-user-b",
+        provider="card",
+        external_id="pay-user-b",
+        status="paid_applied",
+        plan_key="m1",
+        days=30,
+        gb=0,
+        amount_rub=99.0,
+        customer_contact="@client",
+        pay_url="https://pay.local/user-b",
+    )
+    await repo.attach_web_order_access(order_id="ord-user-b", marzban_username="tg_other")
+
+    rows = await repo.list_web_orders_for_usernames(["tg_5005", "tg_5005"], limit=10)
+
+    assert [row["order_id"] for row in rows] == ["ord-user-a"]
+
+
 async def test_has_paid_plan_payment_counts_only_plan_paid(repo) -> None:
     tg_id = 4004
     assert await repo.has_paid_plan_payment(tg_id) is False

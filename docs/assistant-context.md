@@ -114,6 +114,7 @@ Before relying on docs for deployment:
 - Admin workflows should avoid manual Marzban edits where possible.
 - Admin "Find user" supports Telegram ID, website order ID, external payment ID, contact/email, and Marzban username.
 - Admin payment/access issue report exists as `/payment_issues` and `💳 Проблемные оплаты`. It is intentionally read-only: use it to decide whether to run `/check`, drift-audit safe actions, or a manual support flow.
+- Admin `/user <telegram_id>` uses `src/vpnbot/customer_profile.py` to render a unified support card with Telegram identity, Marzban/device state, recent bot payments, related website orders, and drift warnings.
 
 ## Known Technical Risks
 

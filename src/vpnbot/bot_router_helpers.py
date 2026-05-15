@@ -9,6 +9,12 @@ from typing import Any
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
+from src.vpnbot.customer_profile import (
+    ChatIdentity,
+    CustomerProfileFormatters,
+    build_customer_profile_text,
+)
+
 
 @dataclass
 class UserLookupContext:
@@ -41,113 +47,45 @@ def _format_utc(ts: Any) -> str:
 
 async def _send_telegram_user_lookup(*, message: Message, target_id: int, ctx: UserLookupContext) -> None:
     if target_id <= 0:
-        await message.answer("ID должен быть положительным числом.")
+        await message.answer("ID must be a positive number.")
         return
-    chat = None
+
+    chat_identity: ChatIdentity | None = None
     try:
         chat = await message.bot.get_chat(target_id)
+        chat_identity = ChatIdentity(
+            first_name=str(chat.first_name or ""),
+            last_name=str(chat.last_name or ""),
+            username=str(chat.username or ""),
+        )
     except Exception:
         pass
 
-    lines: list[str] = []
-    link = f'<a href="tg://user?id={target_id}">ID {target_id}</a>'
-    lines.append(f"👤 Пользователь: {link}")
-    if chat is not None:
-        name_parts = [chat.first_name or "", chat.last_name or ""]
-        name = " ".join(p for p in name_parts if p).strip()
-        if name:
-            lines.append(f"Имя: {html.escape(name)}")
-        username = str(chat.username or "").strip()
-        if username:
-            lines.append(f"Username: @{html.escape(username)}")
-
-    row = await ctx.repo.get_user(target_id)
-    marzban_user = None
-    if row:
-        username = str(row["marzban_username"])
-        marzban_user = await ctx.marzban.get_user(username)
-        if marzban_user:
-            lines.append(f"Marzban: {html.escape(username)}")
-        else:
-            lines.append(f"Marzban: {html.escape(username)} (не найден)")
-    else:
-        guessed = ctx.build_username(target_id)
-        marzban_user = await ctx.marzban.get_user(guessed)
-        if marzban_user:
-            lines.append(f"Marzban: {html.escape(guessed)}")
-        else:
-            lines.append("Marzban: не найден")
-
-    if marzban_user:
-        expire_ts = int(marzban_user.get("expire", 0) or 0)
-        data_limit = int(marzban_user.get("data_limit", 0) or 0)
-        used = int(marzban_user.get("used_traffic", 0) or 0)
-        status = str(marzban_user.get("status", "unknown"))
-        lines.append(f"Статус: {html.escape(status)}")
-        lines.append(f"Действует до: {ctx.format_expire(expire_ts)}")
-        lines.append(f"Трафик: {ctx.format_used(used)} из {ctx.format_limit(data_limit)}")
-
-    devices = await ctx.repo.list_devices(target_id)
-    if devices:
-        lines.append("Устройства:")
-        for row in devices:
-            device_id = int(row["device_id"])
-            label = ctx.device_label(device_id, row.get("device_name"))
-            username = str(row.get("marzban_username") or "")
-            mz_user = await ctx.marzban.get_user(username) if username else None
-            if not mz_user:
-                state = "не найден в Marzban"
-            else:
-                state = (
-                    f"{mz_user.get('status', 'unknown')}, "
-                    f"online: {ctx.format_last_online(mz_user.get('online_at') or mz_user.get('last_online') or mz_user.get('last_online_at'))}, "
-                    f"traffic: {ctx.format_used(int(mz_user.get('used_traffic', 0) or 0))}"
-                )
-            if label.startswith("Устройство"):
-                lines.append(
-                    f"- {device_id}. {html.escape(label)} ({html.escape(username)}): {html.escape(state)}"
-                )
-            else:
-                lines.append(
-                    f"- {device_id}. Устройство {device_id} — {html.escape(label)} ({html.escape(username)}): {html.escape(state)}"
-                )
-    else:
-        lines.append("Устройства: нет")
-
-    latest_payment = await ctx.repo.get_latest_payment(target_id)
-    if latest_payment:
-        purpose = str(latest_payment.get("purpose") or "plan")
-        provider = str(latest_payment.get("provider") or "")
-        status = str(latest_payment.get("status") or "")
-        amount = float(latest_payment.get("amount_rub") or 0)
-        updated = int(latest_payment.get("updated_at") or 0)
-        updated_text = (
-            datetime.fromtimestamp(updated, tz=timezone.utc).strftime("%d.%m.%Y %H:%M UTC")
-            if updated > 0
-            else "n/a"
-        )
-        lines.append(
-            f"Последний платеж: {html.escape(provider)}, {html.escape(purpose)}, "
-            f"{amount:.2f} RUB, {html.escape(status)}, {updated_text}"
-        )
-    else:
-        lines.append("Последний платеж: нет данных")
-
+    text = await build_customer_profile_text(
+        telegram_id=target_id,
+        repo=ctx.repo,
+        marzban=ctx.marzban,
+        fmt=CustomerProfileFormatters(
+            build_username=ctx.build_username,
+            format_expire=ctx.format_expire,
+            format_limit=ctx.format_limit,
+            format_used=ctx.format_used,
+            format_last_online=ctx.format_last_online,
+            device_label=ctx.device_label,
+        ),
+        chat=chat_identity,
+    )
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Открыть диалог", url=f"tg://user?id={target_id}")]
+            [InlineKeyboardButton(text="Open chat", url=f"tg://user?id={target_id}")]
         ]
     )
-    text = "\n".join(lines)
     try:
         await message.answer(text, parse_mode="HTML", reply_markup=kb)
     except TelegramBadRequest as exc:
         if "BUTTON_USER_PRIVACY_RESTRICTED" not in str(exc):
             raise
-        await message.answer(
-            text + "\n\n⚠️ Кнопка «Открыть диалог» недоступна из-за privacy-настроек пользователя.",
-            parse_mode="HTML",
-        )
+        await message.answer(text + "\n\nOpen chat button is unavailable due to user privacy settings.", parse_mode="HTML")
 
 
 async def _send_generic_user_lookup(*, message: Message, query: str, ctx: UserLookupContext) -> None:

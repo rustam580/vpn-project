@@ -45,6 +45,7 @@ RootVPN currently uses a two-host production layout.
 - Paid web orders can be bound to Telegram via `/start webbind_*`.
 - Public website API should expose subscription URL(s), not raw direct config links.
 - Admin Marzban/DB audit supports guided critical-drift actions via inline buttons; use first on known-safe stale/test findings after deploy validation.
+- Admin `/user <telegram_id>` uses a unified customer profile renderer: Telegram identity, primary Marzban profile, all device slots, recent bot payments, related web orders, and drift warnings.
 - User reply-keyboard handlers are extracted to `bot_handlers_user_runtime.py` and must be registered before fallback.
 - The catch-all fallback handler must stay last among message handlers, otherwise user/admin commands can be swallowed with "Открыл меню."
 
@@ -93,6 +94,7 @@ RootVPN currently uses a two-host production layout.
 
 - Entrypoint: `bot.py` imports and runs `src.vpnbot.bot_runtime.main()`.
 - Router assembly: `src/vpnbot/bot_runtime.py` (~761 lines).
+- Customer support profile: `src/vpnbot/customer_profile.py`.
 - User callback facade: `src/vpnbot/handlers/bot_handlers_callbacks_user.py` (~16 lines).
 - User callback domains:
   - `bot_handlers_callbacks_user_quick.py` (~242 lines): quick actions, legal, referral, FAQ, channel, support issue.
