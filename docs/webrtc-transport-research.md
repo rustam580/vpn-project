@@ -43,6 +43,35 @@ Client app / browser page
   -> internet
 ```
 
+## External Reference: olcRTC Notes
+
+Reference reviewed: `https://github.com/openlibrecommunity/olcrtc/blob/master/docs/about.md`.
+
+Useful ideas to learn from, without copying code into the main RootVPN product:
+
+- Separate the system into replaceable layers:
+  - client/server business logic;
+  - stream multiplexer;
+  - encryption wrapper;
+  - link adapter;
+  - transport;
+  - carrier/provider.
+- Treat WebRTC DataChannel as only one transport. The olcRTC design also explores video-based transports (`vp8channel`, `seichannel`, visual/video frames) because DataChannel may be removed, limited, or fingerprinted by a carrier.
+- Add an application encryption layer over WebRTC DTLS. olcRTC uses ChaCha20-Poly1305 before data enters the carrier transport, so the carrier only sees encrypted blobs.
+- Use stream multiplexing over the WebRTC message channel. olcRTC uses `smux`; for RootVPN this means Phase 3 should not directly map "one TCP connection = one DataChannel" unless it is just a throwaway test.
+- Respect payload limits. olcRTC reports SFU/DataChannel payload limits around 8-12 KB depending on provider; RootVPN should frame and chunk well below that, likely 4-8 KB initially.
+- Start with SOCKS5 as the client boundary. This is easier to test than TUN and lets browsers/apps use the tunnel without kernel-level routing.
+- Keep carrier and transport concepts separate. A "carrier" is the WebRTC service/path; a "transport" is the encoding over that carrier. This keeps experiments swappable.
+- Plan for reconnects, keepalive, backpressure, and queue visibility from the first non-echo PoC.
+- For Android, `VpnService.protect()`-style socket protection matters if the WebRTC client runs inside a VPN-style app, otherwise the tunnel can recursively route itself.
+
+Important cautions:
+
+- olcRTC intentionally depends on third-party whitelisted video-call services. That is operationally fragile and may carry ToS/legal/reputation risk.
+- The RootVPN experiment should first use our own signaling/gateway path, then evaluate third-party carrier research only in an isolated lab.
+- Do not promote "white-list bypass" language in customer-facing RootVPN materials.
+- Do not mix this with production Marzban, payments, or the public site until closed beta criteria are met.
+
 Components:
 
 1. Client
@@ -99,9 +128,11 @@ Phase 2: Authenticated PoC
 - Gateway logs session start/stop with a user/device identifier.
 
 Phase 3: Proxy PoC
-- Browser/client sends simple HTTP proxy requests through the DataChannel.
+- Add a local SOCKS5 or HTTP CONNECT boundary.
+- Add framing/chunking below observed DataChannel payload limits.
+- Add a minimal stream multiplexer or evaluate an existing permissive-license multiplexer.
 - Gateway forwards to upstream and returns responses.
-- Measure latency and throughput.
+- Measure latency, throughput, reconnect behaviour, and memory per active stream.
 
 Phase 4: Closed beta
 - One or two admin-owned devices only.

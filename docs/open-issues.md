@@ -48,10 +48,11 @@ Last updated: 2026-05-15
 7. P2 - WebRTC fallback transport R&D
 - Status: in_progress
 - Problem: WebRTC/DataChannel may be useful as a reserve transport, but it requires a separate client/signaling/gateway path and has unclear TURN cost, stability, support, and legal/product risks. Phase 1 local echo PoC now exists and is verified.
-- Next action: add short-lived signed token auth to signaling before any proxy/TURN/public deployment work; keep it isolated from payments, Marzban, and public tariffs until closed beta criteria in `docs/webrtc-transport-research.md` are met.
+- Next action: add short-lived signed token auth to signaling, then move toward SOCKS5/HTTP CONNECT with chunking and stream multiplexing; keep it isolated from payments, Marzban, and public tariffs until closed beta criteria in `docs/webrtc-transport-research.md` are met.
 - Owner: dev/research
 
 ## Recently Closed
+- Reviewed olcRTC architecture notes and captured applicable lessons in `docs/webrtc-transport-research.md`: layered carrier/transport design, app-level encryption, smux-style multiplexing, payload chunking, SOCKS5 boundary, reconnect/backpressure, and Android socket-protection caveats.
 - Added isolated local WebRTC/DataChannel echo PoC under `experiments/webrtc-gateway/`: browser test page, Python `aiortc` gateway, `/offer`, `/metrics`, and local verification (`ping` -> `pong`, custom echo).
 - Documented WebRTC/DataChannel fallback transport as an R&D-only track with MVP phases, promotion criteria, kill criteria, and repository boundaries in `docs/webrtc-transport-research.md`.
 - Added read-only inline support buttons to web-order admin cards: check provider payment status by order ID (`wo:c:*`), open linked customer lookup, and run Marzban/DB drift audit. Payment check does not mutate DB or Marzban.
