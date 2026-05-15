@@ -18,6 +18,11 @@ Do not advertise it on the public website and do not sell it as a stable plan un
 
 Explore a reserve transport for cases where the standard VLESS Reality subscription is unreliable for a customer network.
 
+Important distinction:
+
+- the current self-hosted WebRTC gateway PoC is only a lab baseline for DataChannel mechanics;
+- the real whitelist-resilience hypothesis requires a carrier layer that routes WebRTC traffic through already-allowed video/conference services, similar to the olcRTC carrier concept.
+
 The intended product shape, if successful:
 
 - `Standard`: current VLESS Reality subscription through Happ/V2Box/etc.
@@ -35,11 +40,11 @@ The intended product shape, if successful:
 ## High-Level Architecture
 
 ```text
-Client app / browser page
-  -> WebRTC DataChannel
-  -> RootVPN signaling service
-  -> RootVPN WebRTC gateway
-  -> local proxy/upstream
+Client app / local proxy
+  -> stream mux + app encryption
+  -> transport (DataChannel first)
+  -> carrier (direct lab / Telemost / Jazz / WB Stream style service)
+  -> RootVPN server participant
   -> internet
 ```
 
@@ -82,27 +87,40 @@ Components:
 2. Signaling service
 - HTTPS/WebSocket service exchanging SDP offer/answer and ICE candidates.
 - Authenticates short-lived RootVPN tokens.
-- Does not carry user traffic.
+- Does not carry user traffic in the direct lab mode.
+- In carrier mode, signaling may need to create/join a third-party room or consume an externally-created room URL.
 
 3. WebRTC gateway
 - Server process accepting WebRTC DataChannel sessions.
 - Candidate stacks:
   - Go with `pion/webrtc`;
   - Rust with `webrtc-rs`.
-- Translates DataChannel messages to a local upstream. First PoC can target a local HTTP echo; later a SOCKS/TUN/HTTP proxy.
+- In direct lab mode, accepts browser offers directly.
+- In carrier mode, acts as the server-side participant in the same third-party WebRTC room as the client.
+- Translates DataChannel/messages to a local upstream. First PoC can target a local HTTP echo; later a SOCKS/TUN/HTTP proxy.
 
-4. STUN/TURN
+4. Carrier layer
+- Direct carrier: self-hosted offer/answer, useful only for local lab mechanics and baseline metrics.
+- Third-party carrier: WebRTC service already reachable on restricted networks.
+- Candidate carrier families based on olcRTC research:
+  - Telemost-style room;
+  - SaluteJazz-style room;
+  - WB Stream/LiveKit-style room.
+- Carrier adapters must be isolated behind a stable interface so they can be removed or replaced without touching payments, Marzban, or customer flows.
+
+5. STUN/TURN
 - STUN for NAT discovery.
 - TURN for relay fallback.
 - `coturn` is the likely first TURN server.
+- For the final whitelist-resilience hypothesis, our own TURN is not enough by itself; the traffic path must still look like the chosen carrier service.
 - Relay traffic is expensive and must be measured before any paid plan.
 
-5. Auth and entitlement
+6. Auth and entitlement
 - Bot/API issues a short-lived token for a paid user/device.
 - Signaling validates token against RootVPN backend.
 - Gateway enforces session TTL, max sessions, and eventually traffic accounting.
 
-6. Monitoring
+7. Monitoring
 - ICE success/failure rate.
 - Connection setup time.
 - Reconnect rate.
@@ -117,24 +135,32 @@ Phase 0: Documentation and risk review
 - Keep this file as the source of truth.
 - Keep experiment isolated from production purchase flow.
 
-Phase 1: Local lab PoC
+Phase 1: Local direct lab PoC
 - Browser page opens a WebRTC DataChannel to a gateway.
 - Gateway receives binary messages and echoes them.
 - No Marzban, no payment, no public tariff.
+- This does not validate whitelist bypass; it only validates our local WebRTC/DataChannel mechanics.
 
 Phase 2: Authenticated PoC
 - Add short-lived token endpoint.
 - Signaling rejects missing/expired tokens.
 - Gateway logs session start/stop with a user/device identifier.
 
-Phase 3: Proxy PoC
+Phase 3: Carrier adapter PoC
+- Add a carrier interface.
+- Keep direct carrier as a test adapter.
+- Add one experimental third-party carrier adapter in a lab-only branch or isolated module.
+- Validate that both client and server can join the same room and exchange small messages.
+- Do not add SOCKS/proxy traffic yet.
+
+Phase 4: Proxy PoC
 - Add a local SOCKS5 or HTTP CONNECT boundary.
 - Add framing/chunking below observed DataChannel payload limits.
 - Add a minimal stream multiplexer or evaluate an existing permissive-license multiplexer.
 - Gateway forwards to upstream and returns responses.
 - Measure latency, throughput, reconnect behaviour, and memory per active stream.
 
-Phase 4: Closed beta
+Phase 5: Closed beta
 - One or two admin-owned devices only.
 - No public sales copy.
 - Track daily metrics and failure modes.
@@ -143,6 +169,9 @@ Phase 4: Closed beta
 
 - Which server stack is better for the gateway: Go/Pion or Rust/webrtc-rs?
 - Can we provide a usable client without forcing users into a custom app?
+- Which carrier adapter is practical and least fragile for a lab test?
+- Which carriers allow guest participation without account friction?
+- Which carriers still expose usable DataChannel versus only video-track paths?
 - Is TURN usage low enough to be economically viable?
 - Can we account traffic accurately enough for abuse control?
 - What is the support burden compared with the current subscription URL flow?
@@ -166,7 +195,7 @@ Stop the experiment if:
 - client setup is more complex than current VPN support can handle;
 - TURN relay cost makes the tariff unprofitable;
 - gateway is unstable under modest concurrency;
-- the approach depends on fragile third-party whitelist behaviour;
+- the selected carrier breaks often, blocks automation, bans accounts/IPs, or changes protocol frequently;
 - it materially increases risk to the main RootVPN infrastructure.
 
 ## Repository Boundary

@@ -47,8 +47,8 @@ Last updated: 2026-05-15
 
 7. P2 - WebRTC fallback transport R&D
 - Status: in_progress
-- Problem: WebRTC/DataChannel may be useful as a reserve transport, but it requires a separate client/signaling/gateway path and has unclear TURN cost, stability, support, and legal/product risks. Phase 1 local echo PoC now exists and is verified.
-- Next action: add short-lived signed token auth to signaling, then move toward SOCKS5/HTTP CONNECT with chunking and stream multiplexing; keep it isolated from payments, Marzban, and public tariffs until closed beta criteria in `docs/webrtc-transport-research.md` are met.
+- Problem: WebRTC/DataChannel may be useful as a reserve transport, but whitelist-resilience requires a carrier layer through already-allowed video/conference services, not only a self-hosted gateway. This adds separate client/signaling/gateway/carrier work plus unclear carrier fragility, TURN cost, stability, support, and legal/product risks. Phase 1 local direct echo PoC now exists and is verified.
+- Next action: add short-lived signed token auth to signaling, then introduce a carrier interface with the current direct gateway as the test adapter; only after that evaluate one lab-only third-party carrier adapter. Keep it isolated from payments, Marzban, and public tariffs until closed beta criteria in `docs/webrtc-transport-research.md` are met.
 - Owner: dev/research
 
 ## Recently Closed

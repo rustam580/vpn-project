@@ -44,7 +44,7 @@ RootVPN currently uses a two-host production layout.
 - Website standalone sales are active (`/api/checkout`, `/api/order/{id}`).
 - Paid web orders can be bound to Telegram via `/start webbind_*`.
 - Public website API should expose subscription URL(s), not raw direct config links.
-- WebRTC/DataChannel transport is documented as an R&D track only (`docs/webrtc-transport-research.md`); do not sell or advertise it until a closed beta proves stability and cost. Phase 1 local echo PoC exists under `experiments/webrtc-gateway/` and was verified locally on 2026-05-15.
+- WebRTC/DataChannel transport is documented as an R&D track only (`docs/webrtc-transport-research.md`); do not sell or advertise it until a closed beta proves stability and cost. Phase 1 local direct echo PoC exists under `experiments/webrtc-gateway/` and was verified locally on 2026-05-15. For whitelist-resilience, the intended hypothesis is carrier-based WebRTC through already-allowed video/conference services; the direct gateway is only a lab baseline.
 - Admin Marzban/DB audit supports guided critical-drift actions via inline buttons; use first on known-safe stale/test findings after deploy validation.
 - Admin `/user <telegram_id>` uses a unified customer profile renderer: Telegram identity, primary Marzban profile, all device slots, recent bot payments, related web orders, and drift warnings.
 - Admin `/user <order_id|email|web_username>` renders web-order support cards with linked Telegram IDs/devices, Marzban status, direct action hints (`/user`, `/check`, `/sync_audit`), and read-only inline support buttons for payment status check, customer lookup, and drift audit.
