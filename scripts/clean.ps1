@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $ProjectRoot
 try {
-    foreach ($dir in @(".pytest_cache", ".ruff_cache", "test_tmp", "__pycache__")) {
+    foreach ($dir in @(".mypy_cache", ".pytest_cache", ".ruff_cache", "test_tmp", "__pycache__")) {
         if (Test-Path $dir) {
             Remove-Item -Recurse -Force $dir
         }

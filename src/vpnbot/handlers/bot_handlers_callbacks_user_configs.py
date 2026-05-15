@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from aiogram import F, Router
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, LinkPreviewOptions
 
 from src.vpnbot.handlers.bot_handlers_callbacks_user_deps import UserCallbackDeps
+
+NO_LINK_PREVIEW = LinkPreviewOptions(is_disabled=True)
 
 
 def register_config_callbacks(*, router: Router, deps: UserCallbackDeps) -> None:
@@ -53,7 +55,7 @@ def register_config_callbacks(*, router: Router, deps: UserCallbackDeps) -> None
             await callback.message.answer(
                 render_config_block(selected[0], selected[1]),
                 parse_mode="HTML",
-                disable_web_page_preview=True,
+                link_preview_options=NO_LINK_PREVIEW,
             )
             await callback.answer()
             return

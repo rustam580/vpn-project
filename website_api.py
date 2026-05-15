@@ -265,7 +265,7 @@ async def _notify_admin_web_order_paid(
                         "chat_id": int(admin_id),
                         "text": text,
                         "parse_mode": "HTML",
-                        "disable_web_page_preview": True,
+                        "link_preview_options": {"is_disabled": True},
                     },
                 )
                 if resp.status_code >= 400:

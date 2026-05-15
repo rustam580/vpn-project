@@ -11,7 +11,7 @@ import html
 from typing import Any, Mapping
 
 from aiogram import Bot
-from aiogram.types import Message
+from aiogram.types import LinkPreviewOptions, Message
 
 from config import Settings
 from models import MarzbanUser
@@ -21,6 +21,8 @@ from src.vpnbot.db.bot_repo import Repo
 from src.vpnbot.message_utils import config_import_hint_text
 from src.vpnbot.services.bot_marzban import MarzbanClient
 from utils import extract_links, select_delivery_links, status_text
+
+NO_LINK_PREVIEW = LinkPreviewOptions(is_disabled=True)
 
 
 async def send_status(message: Message, user: Mapping[str, Any] | MarzbanUser) -> None:
@@ -42,7 +44,7 @@ async def send_links(message: Message, user: Mapping[str, Any] | MarzbanUser) ->
     link = links[0]
     safe_link = html.escape(link)
     text = f"<code>{safe_link}</code>"
-    await message.answer(text, parse_mode="HTML", disable_web_page_preview=True)
+    await message.answer(text, parse_mode="HTML", link_preview_options=NO_LINK_PREVIEW)
     await message.answer(config_import_hint_text(), parse_mode="HTML")
 
 
@@ -142,7 +144,7 @@ async def send_configs_in_chat(message: Message, items: list[tuple[int, str, str
     if current:
         chunks.append(current)
     for chunk in chunks:
-        await message.answer(chunk, parse_mode="HTML", disable_web_page_preview=True)
+        await message.answer(chunk, parse_mode="HTML", link_preview_options=NO_LINK_PREVIEW)
 
 
 async def send_configs_in_chat_to_bot(
@@ -167,7 +169,7 @@ async def send_configs_in_chat_to_bot(
     if current:
         chunks.append(current)
     for chunk in chunks:
-        await bot.send_message(telegram_id, chunk, parse_mode="HTML", disable_web_page_preview=True)
+        await bot.send_message(telegram_id, chunk, parse_mode="HTML", link_preview_options=NO_LINK_PREVIEW)
 
 
 async def send_device_links_to_bot(
