@@ -92,7 +92,12 @@ RootVPN currently uses a two-host production layout.
 
 - Entrypoint: `bot.py` imports and runs `src.vpnbot.bot_runtime.main()`.
 - Router assembly: `src/vpnbot/bot_runtime.py` (~761 lines).
-- Largest remaining handler module: `src/vpnbot/handlers/bot_handlers_callbacks_user.py` (~829 lines).
+- User callback facade: `src/vpnbot/handlers/bot_handlers_callbacks_user.py` (~16 lines).
+- User callback domains:
+  - `bot_handlers_callbacks_user_quick.py` (~242 lines): quick actions, legal, referral, FAQ, channel, support issue.
+  - `bot_handlers_callbacks_user_devices.py` (~144 lines): rename/replace device callbacks.
+  - `bot_handlers_callbacks_user_configs.py` (~60 lines): config show/show-all callbacks.
+  - `bot_handlers_callbacks_user_payments.py` (~389 lines): buy/select/payment/check/device-add callbacks.
 - Website checkout API: `website_api.py` (~650 lines), aiohttp on `127.0.0.1:8011`.
 - Subscription gateway: `subscription_gateway.py`, sync HTTP proxy/dedupe/logging service on `127.0.0.1:8010`.
 - SQLite schema version latest: `4`.

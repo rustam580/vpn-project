@@ -42,7 +42,12 @@ Important product direction:
 - `src/vpnbot/bot_runtime.py` assembles the aiogram router, shared mutable runtime state, and background workers.
 - User command/start/help handlers live in `src/vpnbot/handlers/bot_handlers_user.py`.
 - User reply-keyboard command handlers (`/config`, `/buy`, reply buttons such as `💳 Купить доступ`) live in `src/vpnbot/handlers/bot_handlers_user_runtime.py`.
-- User inline callbacks still live mostly in `src/vpnbot/handlers/bot_handlers_callbacks_user.py`; this is currently the largest remaining handler module and a good future split target.
+- User inline callbacks are split by domain:
+  - `bot_handlers_callbacks_user.py` is a thin facade.
+  - `bot_handlers_callbacks_user_quick.py` handles `quick:*`.
+  - `bot_handlers_callbacks_user_devices.py` handles `devrename:*`, `devreplace:*`, `devreplace_confirm:*`.
+  - `bot_handlers_callbacks_user_configs.py` handles `cfg:*`.
+  - `bot_handlers_callbacks_user_payments.py` handles `buyselect:*`, `buyplan:*`, `buy:*`, `device:*`, `check:*`.
 - Admin runtime handlers live in `src/vpnbot/handlers/bot_handlers_admin_runtime.py`; admin command handlers live in `src/vpnbot/handlers/bot_handlers_admin.py`; admin callbacks live in `src/vpnbot/handlers/bot_handlers_callbacks_admin.py`.
 - Critical router invariant: register specific user/admin message handlers before `register_fallback_handler()`. The fallback must remain last.
 - Website checkout/status backend lives in `website_api.py` and exposes `/api/health`, `/api/plans`, `/api/instructions`, `/api/checkout`, `/api/order/{order_id}`.
@@ -112,7 +117,7 @@ Before relying on docs for deployment:
 ## Known Technical Risks
 
 1. Marzban and DB can drift if access is edited manually in Marzban. The audit worker and guided admin actions exist; use guided actions carefully, first on known-safe stale/test findings.
-2. `bot_handlers_callbacks_user.py` is still large and should be split by domain before major callback changes.
+2. `bot_handlers_callbacks_user_payments.py` is now the largest user callback slice; payment callback changes still deserve extra caution and smoke tests.
 3. `bot_runtime.py` is improved but still owns several closures and runtime state; preserve router registration order when refactoring.
 4. `mypy` is enabled but some large modules are excluded/loosened. Treat type safety as partial.
 5. Marketing/legal claims on the site must match reality: uptime, logs, retention, support availability, refunds.

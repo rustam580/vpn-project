@@ -63,3 +63,27 @@ def test_reply_keyboard_labels_have_matching_message_handlers() -> None:
         assert label in keyboard_text
         assert label in handler_text
 
+
+def test_user_callback_handlers_are_split_by_domain() -> None:
+    handlers_dir = Path("src/vpnbot/handlers")
+    facade = (handlers_dir / "bot_handlers_callbacks_user.py").read_text(encoding="utf-8")
+    expected_registers = [
+        "register_quick_callbacks(",
+        "register_device_callbacks(",
+        "register_config_callbacks(",
+        "register_payment_callbacks(",
+    ]
+    for register in expected_registers:
+        assert register in facade
+
+    domain_prefixes = {
+        "bot_handlers_callbacks_user_quick.py": ["quick:"],
+        "bot_handlers_callbacks_user_devices.py": ["devrename:", "devreplace:", "devreplace_confirm:"],
+        "bot_handlers_callbacks_user_configs.py": ["cfg:"],
+        "bot_handlers_callbacks_user_payments.py": ["buyselect:", "buyplan:", "buy:", "device:", "check:"],
+    }
+    for filename, prefixes in domain_prefixes.items():
+        text = (handlers_dir / filename).read_text(encoding="utf-8")
+        for prefix in prefixes:
+            assert f'F.data.startswith("{prefix}")' in text
+

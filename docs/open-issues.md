@@ -35,8 +35,8 @@ Last updated: 2026-05-15
 
 5. P2 - Finish `bot_runtime.py` decomposition
 - Status: in_progress
-- Problem: `src/vpnbot/bot_runtime.py` is now ~761 lines (from original 1411). All inline `@router.message` handlers and the three biggest closures (`bind_web_order_to_user`, `replace_device_slot`, `list_replaceable_devices`) are extracted. What remains: smaller inline closures (`track_event`, `start_deploy`, `handle_grant_perm`, `guard_*`, `get_bot_username`) still live in `build_router`, and `bot_handlers_callbacks_user.py` (~829 lines) is still one large module.
-- Next action: extract remaining closures to `runtime_helpers.py` (use factories where mutable state like rate limiters or `bot_username_cache` is involved); split `bot_handlers_callbacks_user.py` by domain (subscription / devices / payments / referrals); then enable strict mypy on `bot_runtime.py` and `handlers/*`.
+- Problem: `src/vpnbot/bot_runtime.py` is now ~761 lines (from original 1411). All inline `@router.message` handlers and the three biggest closures (`bind_web_order_to_user`, `replace_device_slot`, `list_replaceable_devices`) are extracted. User callback handlers are now split by domain. What remains: smaller inline closures (`track_event`, `start_deploy`, `handle_grant_perm`, `guard_*`, `get_bot_username`) still live in `build_router`, and the payment callback slice is still the largest user callback module.
+- Next action: extract remaining closures to `runtime_helpers.py` (use factories where mutable state like rate limiters or `bot_username_cache` is involved); optionally split `bot_handlers_callbacks_user_payments.py` into plan purchase / device purchase / payment check; then enable stricter mypy on `bot_runtime.py` and handlers.
 - Owner: dev
 
 6. P2 - Refresh stale docs
@@ -46,6 +46,7 @@ Last updated: 2026-05-15
 - Owner: dev/ops
 
 ## Recently Closed
+- Split `bot_handlers_callbacks_user.py` by domain into quick/device/config/payment modules plus shared `UserCallbackDeps`; facade is now ~16 lines, with regression tests for callback prefix placement.
 - Fixed post-refactor router regressions: registered extracted user runtime handlers in `build_router`, moved catch-all fallback after specific user/admin message handlers, and added regression tests for handler wiring, fallback order, and reply-keyboard coverage.
 - Added guided Marzban/DB drift resolution: structured `DriftFinding` objects, action keyboards on admin sync audit, safe resolver functions (`recreate`, `drop_db_ref`, `retry_web_order`, `ignore`), ignored finding suppression, and resolver/keyboards unit tests.
 - Refactor of `build_router` (commits 8726e85, 77a57d8, 11d716c): extracted 25 inline handlers to `src/vpnbot/handlers/bot_handlers_user_runtime.py` and `bot_handlers_admin_runtime.py`; extracted 3 large pure helpers (`bind_web_order_to_user`, `replace_device_slot`, `list_replaceable_devices`) to `src/vpnbot/runtime_helpers.py` with 10 new unit tests in `tests/test_runtime_helpers.py`. `bot_runtime.py`: 1411 -> 742 lines (-47%). pytest: 72 -> 82 passing.
