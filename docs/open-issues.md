@@ -48,7 +48,7 @@ Last updated: 2026-05-16
 7. P2 - WebRTC fallback transport R&D
 - Status: in_progress
 - Problem: WebRTC/DataChannel may be useful as a reserve transport, but whitelist-resilience requires a carrier layer through already-allowed video/conference services, not only a self-hosted gateway. WB Stream probing works for guest join/token retrieval, but guest LiveKit data packets are blocked in the tested room (`can_publish_data=false`). Synthetic video-track delivery, one-frame encrypted byte delivery, multi-frame one-way delivery, reverse video ACK, sliding-window retry, and tuning sweeps work, so the likely WB route is media-frame encoding. This adds separate client/signaling/gateway/carrier work plus unclear carrier fragility, TURN cost, stability, support, and legal/product risks.
-- Next action: improve codec density/resilience (tile/QR-style redundancy inspired by olcRTC), then run repeated sweeps across frame geometry/FPS/window/retry; keep isolated from payments, Marzban, and public tariffs until closed beta criteria in `docs/webrtc-transport-research.md` are met.
+- Next action: run repeated binary-vs-tile2 sweeps, then improve codec resilience (tile redundancy / QR-style recovery inspired by olcRTC) across frame geometry/FPS/window/retry; keep isolated from payments, Marzban, and public tariffs until closed beta criteria in `docs/webrtc-transport-research.md` are met.
 - Owner: dev/research
 
 ## Recently Closed
@@ -58,6 +58,7 @@ Last updated: 2026-05-16
 - Added reverse video ACK probe: `1024` bytes delivered with 9/9 chunks acknowledged over a second WB Stream video track.
 - Added sliding-window WB video probe: windowed retransmit policy plus first field baselines (`1024` bytes ~104 B/s, `2048` bytes ~74 B/s).
 - Added WB Stream tuning sweep runner with repeated-run aggregates and first sweep notes. Best observed 1KB single run: window=6, fps=8, ack_fps=4, retry=2.5s, ~124 B/s; follow-up sweep showed high variance, so future comparisons should use median/p95 aggregates.
+- Added denser `tile2` video codec (2 bits per cell) and wired it into the sliding-window and tuning-sweep probes. First WB checks passed: `512` bytes in 2 chunks, `1024` bytes in 4 chunks, 0 retransmits.
 - Added carrier interface to the WebRTC PoC and kept `direct` as the baseline carrier adapter. Captured WB Stream/LiveKit carrier notes in `experiments/webrtc-gateway/WBSTREAM_NOTES.md`.
 - Reviewed olcRTC architecture notes and captured applicable lessons in `docs/webrtc-transport-research.md`: layered carrier/transport design, app-level encryption, smux-style multiplexing, payload chunking, SOCKS5 boundary, reconnect/backpressure, and Android socket-protection caveats.
 - Added isolated local WebRTC/DataChannel echo PoC under `experiments/webrtc-gateway/`: browser test page, Python `aiortc` gateway, `/offer`, `/metrics`, and local verification (`ping` -> `pong`, custom echo).

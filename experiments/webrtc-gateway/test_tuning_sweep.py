@@ -27,6 +27,19 @@ def test_build_cases_order_and_max_runs():
         max_runs=3,
     )
     assert [(case.payload_bytes, case.window_size) for case in cases] == [(512, 2), (512, 4), (1024, 2)]
+    assert {case.codec for case in cases} == {"binary"}
+
+
+def test_build_cases_can_expand_codecs():
+    cases = build_cases(
+        payloads=[512],
+        windows=[4],
+        retries=[2.5],
+        fps_values=[8],
+        ack_fps_values=[4],
+        codecs=["binary", "tile2"],
+    )
+    assert [case.codec for case in cases] == ["binary", "tile2"]
 
 
 def test_aggregate_records_groups_by_case_and_calculates_stats():

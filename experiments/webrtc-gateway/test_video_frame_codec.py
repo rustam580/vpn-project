@@ -8,11 +8,15 @@ from video_frame_codec import (
     VideoFrameReassembler,
     VideoFrameCodecError,
     decode_frame_rgba,
+    decode_tile2_frame_rgba,
     encode_frame_rgba,
     encode_payload_frames_rgba,
+    encode_tile2_frame_rgba,
+    encode_tile2_payload_frames_rgba,
     make_ack_payload,
     max_payload_bytes,
     parse_ack_payload,
+    tile2_max_payload_bytes,
 )
 
 SECRET = "rootvpn-lab-secret-for-tests"
@@ -50,6 +54,40 @@ def test_video_frame_codec_capacity_guard():
     too_large = b"x" * (max_payload_bytes() + 1)
     with pytest.raises(VideoFrameCodecError, match="does not fit"):
         encode_frame_rgba(too_large, secret=SECRET)
+
+
+def test_tile2_video_frame_codec_roundtrip_and_larger_capacity():
+    payload = b"hello over denser video tile frame"
+    frame = encode_tile2_frame_rgba(payload, secret=SECRET, nonce=123)
+    decoded = decode_tile2_frame_rgba(frame, secret=SECRET)
+    assert decoded.seq == 0
+    assert decoded.total == 1
+    assert decoded.payload == payload
+    assert tile2_max_payload_bytes() > max_payload_bytes()
+
+
+def test_tile2_video_frame_codec_capacity_guard():
+    too_large = b"x" * (tile2_max_payload_bytes() + 1)
+    with pytest.raises(VideoFrameCodecError, match="does not fit"):
+        encode_tile2_frame_rgba(too_large, secret=SECRET)
+
+
+def test_tile2_payload_frames_need_fewer_frames():
+    payload = b"chunked payload " * 80
+    binary_frames = encode_payload_frames_rgba(payload, secret=SECRET)
+    tile2_frames = encode_tile2_payload_frames_rgba(payload, secret=SECRET)
+    assert len(tile2_frames) < len(binary_frames)
+
+
+def test_tile2_video_frame_codec_survives_small_pixel_noise():
+    frame = bytearray(encode_tile2_frame_rgba(b"tile noise tolerant", secret=SECRET, nonce=123))
+    # Nudge a few pixels inside cells without crossing the nearest-level boundary.
+    for offset in range(0, 20 * DEFAULT_CELL_SIZE * 4, DEFAULT_CELL_SIZE * 4):
+        frame[offset] = min(255, frame[offset] + 8)
+        frame[offset + 1] = min(255, frame[offset + 1] + 8)
+        frame[offset + 2] = min(255, frame[offset + 2] + 8)
+    decoded = decode_tile2_frame_rgba(bytes(frame), secret=SECRET)
+    assert decoded.payload == b"tile noise tolerant"
 
 
 def test_video_frame_codec_survives_small_pixel_noise():

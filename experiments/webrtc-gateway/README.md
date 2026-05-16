@@ -244,6 +244,35 @@ Verified result on 2026-05-16:
 
 With `1024` bytes, the same settings completed with `0` retransmits and about `104` B/s.
 
+The `tile2` codec encodes two bits per visual cell using four brightness levels. It is denser than
+the default binary codec, but may be more sensitive to video compression artifacts:
+
+```powershell
+experiments/webrtc-gateway/.venv/Scripts/python experiments/webrtc-gateway/wbstream_livekit_frame_window.py `
+  https://stream.wb.ru/room/019e30d5-9b63-700e-8453-b514a5db7746 `
+  --payload-bytes 1024 `
+  --window-size 4 `
+  --retry-timeout-sec 2.5 `
+  --codec tile2
+```
+
+Verified `tile2` result on 2026-05-16:
+
+```json
+{
+  "ok": true,
+  "payload_bytes": 1024,
+  "max_payload_per_frame": 265,
+  "encoded_frames": 4,
+  "chunks_received": 4,
+  "acked_chunks": 4,
+  "data_frames_sent": 4,
+  "retransmits": 0,
+  "throughput_bps": 119.83,
+  "codec": "tile2"
+}
+```
+
 ## WB Stream Tuning Sweep
 
 Run a bounded parameter sweep. Keep the grid small: every case opens live WB Stream sessions.
@@ -256,6 +285,7 @@ experiments/webrtc-gateway/.venv/Scripts/python experiments/webrtc-gateway/wbstr
   --retries 2.5 `
   --fps 8 `
   --ack-fps 4 `
+  --codecs binary,tile2 `
   --repeats 3 `
   --json-out experiments/webrtc-gateway/last_tuning_sweep.json
 ```

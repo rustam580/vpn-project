@@ -10,7 +10,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from wbstream_livekit_frame_window import wbstream_video_window_probe
+from wbstream_livekit_frame_window import SUPPORTED_CODECS, wbstream_video_window_probe
+
+CaseValue = int | float | str
 
 
 @dataclass(frozen=True)
@@ -20,18 +22,19 @@ class SweepCase:
     retry_timeout_sec: float
     fps: int
     ack_fps: int
+    codec: str
 
     def label(self) -> str:
         return (
             f"payload={self.payload_bytes} window={self.window_size} "
-            f"retry={self.retry_timeout_sec:g}s fps={self.fps} ack_fps={self.ack_fps}"
+            f"retry={self.retry_timeout_sec:g}s fps={self.fps} ack_fps={self.ack_fps} codec={self.codec}"
         )
 
 
 @dataclass(frozen=True)
 class SweepRecord:
     ok: bool
-    case: dict[str, int | float]
+    case: dict[str, CaseValue]
     repeat_index: int
     elapsed_ms: int | None = None
     throughput_bps: float | None = None
@@ -46,7 +49,7 @@ class SweepRecord:
 
 @dataclass(frozen=True)
 class SweepAggregate:
-    case: dict[str, int | float]
+    case: dict[str, CaseValue]
     total_runs: int
     successful_runs: int
     failed_runs: int
@@ -109,8 +112,13 @@ def build_cases(
     retries: list[float],
     fps_values: list[int],
     ack_fps_values: list[int],
+    codecs: list[str] | None = None,
     max_runs: int | None = None,
 ) -> list[SweepCase]:
+    codecs = codecs or ["binary"]
+    unsupported = [codec for codec in codecs if codec not in SUPPORTED_CODECS]
+    if unsupported:
+        raise ValueError(f"unsupported codecs: {', '.join(unsupported)}")
     cases = [
         SweepCase(
             payload_bytes=payload,
@@ -118,25 +126,28 @@ def build_cases(
             retry_timeout_sec=retry,
             fps=fps,
             ack_fps=ack_fps,
+            codec=codec,
         )
         for payload in payloads
         for window in windows
         for retry in retries
         for fps in fps_values
         for ack_fps in ack_fps_values
+        for codec in codecs
     ]
     if max_runs is not None:
         cases = cases[:max_runs]
     return cases
 
 
-def _case_dict(case: SweepCase) -> dict[str, int | float]:
+def _case_dict(case: SweepCase) -> dict[str, CaseValue]:
     return {
         "payload_bytes": case.payload_bytes,
         "window_size": case.window_size,
         "retry_timeout_sec": case.retry_timeout_sec,
         "fps": case.fps,
         "ack_fps": case.ack_fps,
+        "codec": case.codec,
     }
 
 
@@ -161,13 +172,13 @@ def _median(values: list[float]) -> float | None:
     return float(statistics.median(values))
 
 
-def _case_key(case: dict[str, int | float]) -> str:
+def _case_key(case: dict[str, CaseValue]) -> str:
     return json.dumps(case, sort_keys=True, separators=(",", ":"))
 
 
 def aggregate_records(records: list[SweepRecord]) -> list[SweepAggregate]:
     by_case: dict[str, list[SweepRecord]] = {}
-    case_by_key: dict[str, dict[str, int | float]] = {}
+    case_by_key: dict[str, dict[str, CaseValue]] = {}
     for record in records:
         key = _case_key(record.case)
         by_case.setdefault(key, []).append(record)
@@ -251,6 +262,7 @@ async def run_sweep(
                     ack_fps=case.ack_fps,
                     window_size=case.window_size,
                     retry_timeout_sec=case.retry_timeout_sec,
+                    codec=case.codec,
                 )
                 data = result.safe_dict()
                 record = SweepRecord(
@@ -311,6 +323,7 @@ async def _amain() -> int:
     parser.add_argument("--retries", default="2.5", help="comma-separated retry timeouts in seconds")
     parser.add_argument("--fps", default="8", help="comma-separated data FPS values")
     parser.add_argument("--ack-fps", default="4", help="comma-separated ACK FPS values")
+    parser.add_argument("--codecs", default="binary", help="comma-separated codecs: binary,tile2")
     parser.add_argument("--timeout-sec", type=float, default=150.0)
     parser.add_argument("--pause-sec", type=float, default=2.0)
     parser.add_argument("--repeats", type=int, default=1, help="runs per parameter case")
@@ -326,6 +339,7 @@ async def _amain() -> int:
         retries=parse_float_list(args.retries),
         fps_values=parse_int_list(args.fps),
         ack_fps_values=parse_int_list(args.ack_fps),
+        codecs=[item.strip() for item in args.codecs.split(",") if item.strip()],
         max_runs=args.max_runs,
     )
     summary = await run_sweep(

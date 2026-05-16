@@ -47,6 +47,7 @@ What worked:
 - Multi-frame one-way byte payload works over video: `512` bytes took 5 encoded frames and ~7.5s; `1024` bytes took 9 encoded frames and ~8.0s in the tested room.
 - Reverse ACK over video works: `512` bytes completed with 5/5 chunks ACKed in ~17.8s; `1024` bytes completed with 9/9 chunks ACKed in ~13.1s.
 - Sliding-window ACK works: `1024` bytes with window 4 completed in ~9.8s with 0 retransmits (~104 B/s); `2048` bytes completed in ~27.6s with 16 retransmits (~74 B/s).
+- Denser `tile2` visual codec works over WB Stream. It encodes two bits per cell with four brightness levels. First live checks: `512` bytes used 2 chunks with 0 retransmits (~73 B/s); `1024` bytes used 4 chunks with 0 retransmits (~120 B/s). A later one-off binary-vs-tile2 sweep showed `tile2` can be more fragile (`512` bytes, 2 chunks, 3 retransmits, ~43 B/s), so do not promote it as the baseline until repeated sweeps and redundancy are added.
 - Tuning sweep tooling works. First 1KB sweep with fps=8/ack_fps=4 found window=6 best (`124.18 B/s`, 0 retransmits), but a follow-up sweep varied significantly (`39-54 B/s`). Treat WB Stream results as noisy and require repeated runs. First repeated-run smoke test (`512` bytes, window=4, fps=8, ack_fps=4, repeats=2) completed both runs with 0 retransmits and median throughput `64.29 B/s`.
 
 What did not work:
@@ -63,7 +64,7 @@ Implication:
 - Chunking/reassembly is implemented in `video_frame_codec.py` / `wbstream_livekit_frame_stream.py`. The current field probe is one-way carousel delivery with duplicate tolerance, not an ACK/retry transport.
 - ACK bitmap signaling is implemented in `wbstream_livekit_frame_ack.py`. It uses a reverse video track and stops retransmitting chunks once ACKed. This validates bidirectional media-frame signaling, but it is still not a tuned sliding-window transport.
 - Sliding-window sender policy is implemented in `video_window.py` and the WB field probe is `wbstream_livekit_frame_window.py`. The first tuning baseline is window=4, retry=2.5s.
-- `wbstream_livekit_tuning_sweep.py` runs bounded parameter grids and writes JSON summaries. Use `--repeats N` to get per-case aggregates (`min/median/p95/max` throughput, median elapsed time, median retransmits) before choosing a baseline.
+- `wbstream_livekit_tuning_sweep.py` runs bounded parameter grids and writes JSON summaries. Use `--codecs binary,tile2` and `--repeats N` to get per-case aggregates (`min/median/p95/max` throughput, median elapsed time, median retransmits) before choosing a baseline.
 
 ## Notes From `refactor/universal-carrier`
 

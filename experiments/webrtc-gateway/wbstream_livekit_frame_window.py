@@ -17,11 +17,15 @@ from video_frame_codec import (
     VideoFrameCodecError,
     VideoFrameReassembler,
     decode_frame_rgba,
+    decode_tile2_frame_rgba,
     encode_frame_rgba,
     encode_payload_frames_rgba,
+    encode_tile2_frame_rgba,
+    encode_tile2_payload_frames_rgba,
     make_ack_payload,
     max_payload_bytes,
     parse_ack_payload,
+    tile2_max_payload_bytes,
 )
 from video_window import SlidingWindowSender
 from wbstream_api import extract_room_id, probe_room
@@ -32,6 +36,9 @@ DEFAULT_WINDOW_SIZE = 4
 DEFAULT_RETRY_TIMEOUT_SEC = 2.5
 DEFAULT_SECRET = "rootvpn-lab-video-carrier-secret"
 DEFAULT_MESSAGE = "RootVPN windowed video carrier " * 40
+CODEC_BINARY = "binary"
+CODEC_TILE2 = "tile2"
+SUPPORTED_CODECS = {CODEC_BINARY, CODEC_TILE2}
 
 
 @dataclass(frozen=True)
@@ -60,6 +67,7 @@ class VideoWindowResult:
     window_size: int
     retry_timeout_sec: float
     throughput_bps: float
+    codec: str
 
     def safe_dict(self) -> dict[str, Any]:
         return {
@@ -87,6 +95,7 @@ class VideoWindowResult:
             "window_size": self.window_size,
             "retry_timeout_sec": self.retry_timeout_sec,
             "throughput_bps": round(self.throughput_bps, 2),
+            "codec": self.codec,
         }
 
 
@@ -120,6 +129,50 @@ def _build_payload(message: str, payload_bytes: int | None) -> bytes:
     return bytes(seed[idx % len(seed)] ^ (idx * 31 % 251) for idx in range(payload_bytes))
 
 
+def _encode_payload_frames(payload: bytes, *, secret: str, codec: str) -> list[bytes]:
+    if codec == CODEC_BINARY:
+        return encode_payload_frames_rgba(payload, secret=secret)
+    if codec == CODEC_TILE2:
+        return encode_tile2_payload_frames_rgba(payload, secret=secret)
+    raise ValueError(f"unsupported video frame codec: {codec}")
+
+
+def _encode_frame(payload: bytes, *, secret: str, codec: str) -> bytes:
+    if codec == CODEC_BINARY:
+        return encode_frame_rgba(payload, secret=secret)
+    if codec == CODEC_TILE2:
+        return encode_tile2_frame_rgba(payload, secret=secret)
+    raise ValueError(f"unsupported video frame codec: {codec}")
+
+
+def _decode_frame(frame: bytes, *, secret: str, width: int, height: int, codec: str):
+    if codec == CODEC_BINARY:
+        return decode_frame_rgba(
+            frame,
+            secret=secret,
+            width=width,
+            height=height,
+            cell_size=DEFAULT_CELL_SIZE,
+        )
+    if codec == CODEC_TILE2:
+        return decode_tile2_frame_rgba(
+            frame,
+            secret=secret,
+            width=width,
+            height=height,
+            cell_size=DEFAULT_CELL_SIZE,
+        )
+    raise ValueError(f"unsupported video frame codec: {codec}")
+
+
+def _max_payload_per_frame(codec: str) -> int:
+    if codec == CODEC_BINARY:
+        return max_payload_bytes()
+    if codec == CODEC_TILE2:
+        return tile2_max_payload_bytes()
+    raise ValueError(f"unsupported video frame codec: {codec}")
+
+
 async def wbstream_video_window_probe(
     room: str,
     *,
@@ -131,10 +184,13 @@ async def wbstream_video_window_probe(
     ack_fps: int = ACK_FPS,
     window_size: int = DEFAULT_WINDOW_SIZE,
     retry_timeout_sec: float = DEFAULT_RETRY_TIMEOUT_SEC,
+    codec: str = CODEC_BINARY,
 ) -> VideoWindowResult:
+    if codec not in SUPPORTED_CODECS:
+        raise ValueError(f"unsupported video frame codec: {codec}")
     room_id = extract_room_id(room)
     payload = _build_payload(message, payload_bytes)
-    data_frames = encode_payload_frames_rgba(payload, secret=secret)
+    data_frames = _encode_payload_frames(payload, secret=secret, codec=codec)
     total_chunks = len(data_frames)
     sender = SlidingWindowSender(
         total_chunks=total_chunks,
@@ -171,12 +227,12 @@ async def wbstream_video_window_probe(
             frame = event.frame.convert(rtc.VideoBufferType.RGBA)
             data_decode_attempts += 1
             try:
-                chunk = decode_frame_rgba(
+                chunk = _decode_frame(
                     bytes(frame.data),
                     secret=secret,
                     width=frame.width,
                     height=frame.height,
-                    cell_size=DEFAULT_CELL_SIZE,
+                    codec=codec,
                 )
                 maybe_payload = reassembler.add_chunk(chunk)
             except VideoFrameCodecError:
@@ -191,12 +247,12 @@ async def wbstream_video_window_probe(
             frame = event.frame.convert(rtc.VideoBufferType.RGBA)
             ack_decode_attempts += 1
             try:
-                chunk = decode_frame_rgba(
+                chunk = _decode_frame(
                     bytes(frame.data),
                     secret=secret,
                     width=frame.width,
                     height=frame.height,
-                    cell_size=DEFAULT_CELL_SIZE,
+                    codec=codec,
                 )
                 ack = parse_ack_payload(chunk.payload)
             except VideoFrameCodecError:
@@ -275,7 +331,7 @@ async def wbstream_video_window_probe(
             await asyncio.sleep(1.0)
             while not all_acked.done():
                 ack_payload = make_ack_payload(total_chunks, received_seqs)
-                ack_frame = encode_frame_rgba(ack_payload, secret=secret)
+                ack_frame = _encode_frame(ack_payload, secret=secret, codec=codec)
                 ack_source.capture_frame(
                     rtc.VideoFrame(DEFAULT_WIDTH, DEFAULT_HEIGHT, rtc.VideoBufferType.RGBA, ack_frame)
                 )
@@ -306,7 +362,7 @@ async def wbstream_video_window_probe(
             received_sha256=_sha256_hex(received),
             frame_width=DEFAULT_WIDTH,
             frame_height=DEFAULT_HEIGHT,
-            max_payload_per_frame=max_payload_bytes(),
+            max_payload_per_frame=_max_payload_per_frame(codec),
             encoded_frames=total_chunks,
             chunks_received=reassembler.chunks_received,
             acked_chunks=stats.acked_chunks,
@@ -320,6 +376,7 @@ async def wbstream_video_window_probe(
             window_size=stats.window_size,
             retry_timeout_sec=stats.retry_timeout_sec,
             throughput_bps=len(payload) / elapsed if elapsed > 0 else 0.0,
+            codec=codec,
         )
     finally:
         for task in list(push_tasks):
@@ -343,6 +400,7 @@ async def _amain() -> int:
     parser.add_argument("--ack-fps", type=int, default=ACK_FPS)
     parser.add_argument("--window-size", type=int, default=DEFAULT_WINDOW_SIZE)
     parser.add_argument("--retry-timeout-sec", type=float, default=DEFAULT_RETRY_TIMEOUT_SEC)
+    parser.add_argument("--codec", choices=sorted(SUPPORTED_CODECS), default=CODEC_BINARY)
     args = parser.parse_args()
 
     result = await wbstream_video_window_probe(
@@ -355,6 +413,7 @@ async def _amain() -> int:
         ack_fps=args.ack_fps,
         window_size=args.window_size,
         retry_timeout_sec=args.retry_timeout_sec,
+        codec=args.codec,
     )
     print(json.dumps(result.safe_dict(), ensure_ascii=False, indent=2))
     return 0

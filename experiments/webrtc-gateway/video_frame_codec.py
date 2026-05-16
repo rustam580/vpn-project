@@ -12,6 +12,7 @@ VERSION = 1
 DEFAULT_WIDTH = 320
 DEFAULT_HEIGHT = 240
 DEFAULT_CELL_SIZE = 8
+TILE2_LEVELS = (32, 96, 160, 224)
 TAG_SIZE = 16
 HEADER_STRUCT = struct.Struct("!4sBHHQH")
 HEADER_SIZE = HEADER_STRUCT.size
@@ -82,6 +83,17 @@ def frame_capacity_bytes(
     return ((width // cell_size) * (height // cell_size)) // 8
 
 
+def tile2_frame_capacity_bytes(
+    *,
+    width: int = DEFAULT_WIDTH,
+    height: int = DEFAULT_HEIGHT,
+    cell_size: int = DEFAULT_CELL_SIZE,
+) -> int:
+    if width <= 0 or height <= 0 or cell_size <= 0:
+        raise VideoFrameCodecError("width, height and cell_size must be positive")
+    return ((width // cell_size) * (height // cell_size) * 2) // 8
+
+
 def make_ack_payload(total: int, received: set[int] | frozenset[int]) -> bytes:
     if not 1 <= total <= 0xFFFF:
         raise VideoFrameCodecError("ack total must fit uint16")
@@ -117,6 +129,15 @@ def max_payload_bytes(
     cell_size: int = DEFAULT_CELL_SIZE,
 ) -> int:
     return frame_capacity_bytes(width=width, height=height, cell_size=cell_size) - HEADER_SIZE - TAG_SIZE
+
+
+def tile2_max_payload_bytes(
+    *,
+    width: int = DEFAULT_WIDTH,
+    height: int = DEFAULT_HEIGHT,
+    cell_size: int = DEFAULT_CELL_SIZE,
+) -> int:
+    return tile2_frame_capacity_bytes(width=width, height=height, cell_size=cell_size) - HEADER_SIZE - TAG_SIZE
 
 
 def _key_bytes(secret: str | bytes) -> bytes:
@@ -222,6 +243,24 @@ def _bits_to_bytes(bits: list[int]) -> bytes:
     return bytes(out)
 
 
+def _bytes_to_symbols2(data: bytes) -> list[int]:
+    symbols: list[int] = []
+    for byte in data:
+        for shift in range(6, -1, -2):
+            symbols.append((byte >> shift) & 0b11)
+    return symbols
+
+
+def _symbols2_to_bytes(symbols: list[int]) -> bytes:
+    out = bytearray()
+    for idx in range(0, len(symbols), 4):
+        byte = 0
+        for symbol in symbols[idx : idx + 4]:
+            byte = (byte << 2) | (symbol & 0b11)
+        out.append(byte)
+    return bytes(out)
+
+
 def encode_frame_rgba(
     payload: bytes,
     *,
@@ -254,6 +293,39 @@ def encode_frame_rgba(
     return bytes(frame)
 
 
+def encode_tile2_frame_rgba(
+    payload: bytes,
+    *,
+    secret: str | bytes,
+    width: int = DEFAULT_WIDTH,
+    height: int = DEFAULT_HEIGHT,
+    cell_size: int = DEFAULT_CELL_SIZE,
+    seq: int = 0,
+    total: int = 1,
+    nonce: int | None = None,
+) -> bytes:
+    capacity = tile2_frame_capacity_bytes(width=width, height=height, cell_size=cell_size)
+    envelope = _envelope_payload(payload, secret=secret, seq=seq, total=total, nonce=nonce, capacity=capacity)
+    symbols = _bytes_to_symbols2(envelope)
+    cols = width // cell_size
+    rows = height // cell_size
+    frame = bytearray(width * height * 4)
+
+    for y in range(height):
+        cell_y = min(y // cell_size, rows - 1)
+        for x in range(width):
+            cell_x = min(x // cell_size, cols - 1)
+            symbol_idx = cell_y * cols + cell_x
+            symbol = symbols[symbol_idx] if symbol_idx < len(symbols) else 0
+            value = TILE2_LEVELS[symbol]
+            offset = (y * width + x) * 4
+            frame[offset] = value
+            frame[offset + 1] = value
+            frame[offset + 2] = value
+            frame[offset + 3] = 255
+    return bytes(frame)
+
+
 def encode_payload_frames_rgba(
     payload: bytes,
     *,
@@ -273,6 +345,37 @@ def encode_payload_frames_rgba(
     total = len(chunks)
     return [
         encode_frame_rgba(
+            chunk,
+            secret=secret,
+            width=width,
+            height=height,
+            cell_size=cell_size,
+            seq=seq,
+            total=total,
+        )
+        for seq, chunk in enumerate(chunks)
+    ]
+
+
+def encode_tile2_payload_frames_rgba(
+    payload: bytes,
+    *,
+    secret: str | bytes,
+    width: int = DEFAULT_WIDTH,
+    height: int = DEFAULT_HEIGHT,
+    cell_size: int = DEFAULT_CELL_SIZE,
+) -> list[bytes]:
+    chunk_size = tile2_max_payload_bytes(width=width, height=height, cell_size=cell_size)
+    if chunk_size <= 0:
+        raise VideoFrameCodecError("frame geometry is too small for payload chunks")
+    chunks = [payload[idx : idx + chunk_size] for idx in range(0, len(payload), chunk_size)]
+    if not chunks:
+        chunks = [b""]
+    if len(chunks) > 0xFFFF:
+        raise VideoFrameCodecError("payload requires too many frames")
+    total = len(chunks)
+    return [
+        encode_tile2_frame_rgba(
             chunk,
             secret=secret,
             width=width,
@@ -316,3 +419,48 @@ def decode_frame_rgba(
 
     envelope = _bits_to_bytes(bits[: capacity * 8])
     return _decode_envelope(envelope, secret=secret)
+
+
+def decode_tile2_frame_rgba(
+    frame: bytes,
+    *,
+    secret: str | bytes,
+    width: int = DEFAULT_WIDTH,
+    height: int = DEFAULT_HEIGHT,
+    cell_size: int = DEFAULT_CELL_SIZE,
+) -> DecodedFrameChunk:
+    expected_len = width * height * 4
+    if len(frame) != expected_len:
+        raise VideoFrameCodecError(f"expected RGBA frame length {expected_len}, got {len(frame)}")
+    cols = width // cell_size
+    rows = height // cell_size
+    capacity = tile2_frame_capacity_bytes(width=width, height=height, cell_size=cell_size)
+    symbols: list[int] = []
+
+    for cell_y in range(rows):
+        for cell_x in range(cols):
+            total = 0
+            count = 0
+            y0 = cell_y * cell_size
+            x0 = cell_x * cell_size
+            for y in range(y0, y0 + cell_size):
+                for x in range(x0, x0 + cell_size):
+                    offset = (y * width + x) * 4
+                    total += frame[offset] + frame[offset + 1] + frame[offset + 2]
+                    count += 3
+            avg = total / count
+            symbols.append(_nearest_tile2_symbol(avg))
+
+    envelope = _symbols2_to_bytes(symbols[: capacity * 4])
+    return _decode_envelope(envelope, secret=secret)
+
+
+def _nearest_tile2_symbol(avg: float) -> int:
+    best_idx = 0
+    best_distance = float("inf")
+    for idx, level in enumerate(TILE2_LEVELS):
+        distance = abs(avg - level)
+        if distance < best_distance:
+            best_idx = idx
+            best_distance = distance
+    return best_idx
