@@ -256,8 +256,16 @@ experiments/webrtc-gateway/.venv/Scripts/python experiments/webrtc-gateway/wbstr
   --retries 2.5 `
   --fps 8 `
   --ack-fps 4 `
+  --repeats 3 `
   --json-out experiments/webrtc-gateway/last_tuning_sweep.json
 ```
+
+Use `--repeats N` for noisy real-carrier measurements. The JSON report includes:
+
+- `records`: every individual run;
+- `aggregates`: per-case min/median/p95/max throughput, median elapsed time, and median retransmits;
+- `best`: best single run;
+- `best_aggregate`: best case by median throughput.
 
 Window sweep on 2026-05-16:
 

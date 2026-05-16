@@ -57,7 +57,7 @@ Last updated: 2026-05-16
 - Added multi-frame WB video payload stream probe: `1024` bytes delivered in 9 chunks over the tested room, one-way carousel mode with duplicate-tolerant reassembly.
 - Added reverse video ACK probe: `1024` bytes delivered with 9/9 chunks acknowledged over a second WB Stream video track.
 - Added sliding-window WB video probe: windowed retransmit policy plus first field baselines (`1024` bytes ~104 B/s, `2048` bytes ~74 B/s).
-- Added WB Stream tuning sweep runner and first sweep notes. Best observed 1KB run: window=6, fps=8, ack_fps=4, retry=2.5s, ~124 B/s; follow-up sweep showed high variance.
+- Added WB Stream tuning sweep runner with repeated-run aggregates and first sweep notes. Best observed 1KB single run: window=6, fps=8, ack_fps=4, retry=2.5s, ~124 B/s; follow-up sweep showed high variance, so future comparisons should use median/p95 aggregates.
 - Added carrier interface to the WebRTC PoC and kept `direct` as the baseline carrier adapter. Captured WB Stream/LiveKit carrier notes in `experiments/webrtc-gateway/WBSTREAM_NOTES.md`.
 - Reviewed olcRTC architecture notes and captured applicable lessons in `docs/webrtc-transport-research.md`: layered carrier/transport design, app-level encryption, smux-style multiplexing, payload chunking, SOCKS5 boundary, reconnect/backpressure, and Android socket-protection caveats.
 - Added isolated local WebRTC/DataChannel echo PoC under `experiments/webrtc-gateway/`: browser test page, Python `aiortc` gateway, `/offer`, `/metrics`, and local verification (`ping` -> `pong`, custom echo).

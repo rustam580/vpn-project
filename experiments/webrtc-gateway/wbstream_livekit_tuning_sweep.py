@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import math
+import statistics
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -30,6 +32,7 @@ class SweepCase:
 class SweepRecord:
     ok: bool
     case: dict[str, int | float]
+    repeat_index: int
     elapsed_ms: int | None = None
     throughput_bps: float | None = None
     encoded_frames: int | None = None
@@ -42,6 +45,20 @@ class SweepRecord:
 
 
 @dataclass(frozen=True)
+class SweepAggregate:
+    case: dict[str, int | float]
+    total_runs: int
+    successful_runs: int
+    failed_runs: int
+    throughput_min_bps: float | None
+    throughput_median_bps: float | None
+    throughput_p95_bps: float | None
+    throughput_max_bps: float | None
+    elapsed_median_ms: float | None
+    retransmits_median: float | None
+
+
+@dataclass(frozen=True)
 class SweepSummary:
     ok: bool
     room: str
@@ -51,6 +68,8 @@ class SweepSummary:
     successful_runs: int
     failed_runs: int
     best: SweepRecord | None
+    best_aggregate: SweepAggregate | None
+    aggregates: list[SweepAggregate]
     records: list[SweepRecord]
 
     def safe_dict(self) -> dict[str, Any]:
@@ -63,6 +82,8 @@ class SweepSummary:
             "successful_runs": self.successful_runs,
             "failed_runs": self.failed_runs,
             "best": asdict(self.best) if self.best else None,
+            "best_aggregate": asdict(self.best_aggregate) if self.best_aggregate else None,
+            "aggregates": [asdict(aggregate) for aggregate in self.aggregates],
             "records": [asdict(record) for record in self.records],
         }
 
@@ -126,10 +147,84 @@ def _best_record(records: list[SweepRecord]) -> SweepRecord | None:
     return max(successful, key=lambda record: record.throughput_bps or 0.0)
 
 
+def _percentile_nearest_rank(values: list[float], percentile: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    rank = max(1, math.ceil((percentile / 100.0) * len(ordered)))
+    return ordered[min(rank, len(ordered)) - 1]
+
+
+def _median(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return float(statistics.median(values))
+
+
+def _case_key(case: dict[str, int | float]) -> str:
+    return json.dumps(case, sort_keys=True, separators=(",", ":"))
+
+
+def aggregate_records(records: list[SweepRecord]) -> list[SweepAggregate]:
+    by_case: dict[str, list[SweepRecord]] = {}
+    case_by_key: dict[str, dict[str, int | float]] = {}
+    for record in records:
+        key = _case_key(record.case)
+        by_case.setdefault(key, []).append(record)
+        case_by_key[key] = record.case
+
+    aggregates: list[SweepAggregate] = []
+    for key in sorted(by_case):
+        group = by_case[key]
+        successful = [record for record in group if record.ok]
+        throughputs = [
+            float(record.throughput_bps)
+            for record in successful
+            if record.throughput_bps is not None
+        ]
+        elapsed = [
+            float(record.elapsed_ms)
+            for record in successful
+            if record.elapsed_ms is not None
+        ]
+        retransmits = [
+            float(record.retransmits)
+            for record in successful
+            if record.retransmits is not None
+        ]
+        aggregates.append(
+            SweepAggregate(
+                case=case_by_key[key],
+                total_runs=len(group),
+                successful_runs=len(successful),
+                failed_runs=len(group) - len(successful),
+                throughput_min_bps=min(throughputs) if throughputs else None,
+                throughput_median_bps=_median(throughputs),
+                throughput_p95_bps=_percentile_nearest_rank(throughputs, 95),
+                throughput_max_bps=max(throughputs) if throughputs else None,
+                elapsed_median_ms=_median(elapsed),
+                retransmits_median=_median(retransmits),
+            )
+        )
+    return aggregates
+
+
+def _best_aggregate(aggregates: list[SweepAggregate]) -> SweepAggregate | None:
+    successful = [
+        aggregate
+        for aggregate in aggregates
+        if aggregate.successful_runs > 0 and aggregate.throughput_median_bps is not None
+    ]
+    if not successful:
+        return None
+    return max(successful, key=lambda aggregate: aggregate.throughput_median_bps or 0.0)
+
+
 async def run_sweep(
     room: str,
     *,
     cases: list[SweepCase],
+    repeats: int,
     timeout_sec: float,
     pause_sec: float,
 ) -> SweepSummary:
@@ -137,44 +232,60 @@ async def run_sweep(
     perf_started = time.perf_counter()
     records: list[SweepRecord] = []
 
-    for index, case in enumerate(cases, start=1):
-        print(f"[{index}/{len(cases)}] {case.label()}", flush=True)
-        try:
-            result = await wbstream_video_window_probe(
-                room,
-                payload_bytes=case.payload_bytes,
-                timeout_sec=timeout_sec,
-                fps=case.fps,
-                ack_fps=case.ack_fps,
-                window_size=case.window_size,
-                retry_timeout_sec=case.retry_timeout_sec,
-            )
-            data = result.safe_dict()
-            record = SweepRecord(
-                ok=True,
-                case=_case_dict(case),
-                elapsed_ms=int(data["elapsed_ms"]),
-                throughput_bps=float(data["throughput_bps"]),
-                encoded_frames=int(data["encoded_frames"]),
-                data_frames_sent=int(data["data_frames_sent"]),
-                retransmits=int(data["retransmits"]),
-                ack_frames_sent=int(data["ack_frames_sent"]),
-                data_decode_attempts=int(data["data_decode_attempts"]),
-                ack_decode_attempts=int(data["ack_decode_attempts"]),
-            )
+    total_runs = len(cases) * repeats
+    run_index = 0
+    for case_index, case in enumerate(cases, start=1):
+        for repeat_index in range(1, repeats + 1):
+            run_index += 1
             print(
-                f"  ok throughput={record.throughput_bps:.2f} B/s "
-                f"elapsed={record.elapsed_ms}ms retransmits={record.retransmits}",
+                f"[{run_index}/{total_runs}] case={case_index}/{len(cases)} "
+                f"repeat={repeat_index}/{repeats} {case.label()}",
                 flush=True,
             )
-        except Exception as exc:
-            record = SweepRecord(ok=False, case=_case_dict(case), error=f"{type(exc).__name__}: {exc}")
-            print(f"  fail {record.error}", flush=True)
-        records.append(record)
-        if index != len(cases) and pause_sec > 0:
-            await asyncio.sleep(pause_sec)
+            try:
+                result = await wbstream_video_window_probe(
+                    room,
+                    payload_bytes=case.payload_bytes,
+                    timeout_sec=timeout_sec,
+                    fps=case.fps,
+                    ack_fps=case.ack_fps,
+                    window_size=case.window_size,
+                    retry_timeout_sec=case.retry_timeout_sec,
+                )
+                data = result.safe_dict()
+                record = SweepRecord(
+                    ok=True,
+                    case=_case_dict(case),
+                    repeat_index=repeat_index,
+                    elapsed_ms=int(data["elapsed_ms"]),
+                    throughput_bps=float(data["throughput_bps"]),
+                    encoded_frames=int(data["encoded_frames"]),
+                    data_frames_sent=int(data["data_frames_sent"]),
+                    retransmits=int(data["retransmits"]),
+                    ack_frames_sent=int(data["ack_frames_sent"]),
+                    data_decode_attempts=int(data["data_decode_attempts"]),
+                    ack_decode_attempts=int(data["ack_decode_attempts"]),
+                )
+                print(
+                    f"  ok throughput={record.throughput_bps:.2f} B/s "
+                    f"elapsed={record.elapsed_ms}ms retransmits={record.retransmits}",
+                    flush=True,
+                )
+            except Exception as exc:
+                record = SweepRecord(
+                    ok=False,
+                    case=_case_dict(case),
+                    repeat_index=repeat_index,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+                print(f"  fail {record.error}", flush=True)
+            records.append(record)
+            if run_index != total_runs and pause_sec > 0:
+                await asyncio.sleep(pause_sec)
 
     best = _best_record(records)
+    aggregates = aggregate_records(records)
+    best_aggregate = _best_aggregate(aggregates)
     elapsed_ms = int((time.perf_counter() - perf_started) * 1000)
     successful = len([record for record in records if record.ok])
     return SweepSummary(
@@ -186,6 +297,8 @@ async def run_sweep(
         successful_runs=successful,
         failed_runs=len(records) - successful,
         best=best,
+        best_aggregate=best_aggregate,
+        aggregates=aggregates,
         records=records,
     )
 
@@ -200,9 +313,12 @@ async def _amain() -> int:
     parser.add_argument("--ack-fps", default="4", help="comma-separated ACK FPS values")
     parser.add_argument("--timeout-sec", type=float, default=150.0)
     parser.add_argument("--pause-sec", type=float, default=2.0)
+    parser.add_argument("--repeats", type=int, default=1, help="runs per parameter case")
     parser.add_argument("--max-runs", type=int)
     parser.add_argument("--json-out", help="optional output path for full JSON results")
     args = parser.parse_args()
+    if args.repeats < 1:
+        raise SystemExit("--repeats must be >= 1")
 
     cases = build_cases(
         payloads=parse_int_list(args.payloads),
@@ -212,7 +328,13 @@ async def _amain() -> int:
         ack_fps_values=parse_int_list(args.ack_fps),
         max_runs=args.max_runs,
     )
-    summary = await run_sweep(args.room, cases=cases, timeout_sec=args.timeout_sec, pause_sec=args.pause_sec)
+    summary = await run_sweep(
+        args.room,
+        cases=cases,
+        repeats=args.repeats,
+        timeout_sec=args.timeout_sec,
+        pause_sec=args.pause_sec,
+    )
     payload = summary.safe_dict()
     text = json.dumps(payload, ensure_ascii=False, indent=2)
     print(text)
