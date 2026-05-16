@@ -28,6 +28,42 @@ class DecodedFrameChunk:
     payload: bytes
 
 
+class VideoFrameReassembler:
+    def __init__(self, *, secret: str | bytes) -> None:
+        self._secret = secret
+        self._chunks: dict[int, bytes] = {}
+        self._total: int | None = None
+
+    @property
+    def chunks_received(self) -> int:
+        return len(self._chunks)
+
+    @property
+    def total(self) -> int | None:
+        return self._total
+
+    def add_chunk(self, chunk: DecodedFrameChunk) -> bytes | None:
+        if self._total is None:
+            self._total = chunk.total
+        elif self._total != chunk.total:
+            raise VideoFrameCodecError("mixed frame totals in stream")
+        self._chunks.setdefault(chunk.seq, chunk.payload)
+        if len(self._chunks) != self._total:
+            return None
+        return b"".join(self._chunks[idx] for idx in range(self._total))
+
+    def add_frame_rgba(
+        self,
+        frame: bytes,
+        *,
+        width: int = DEFAULT_WIDTH,
+        height: int = DEFAULT_HEIGHT,
+        cell_size: int = DEFAULT_CELL_SIZE,
+    ) -> bytes | None:
+        chunk = decode_frame_rgba(frame, secret=self._secret, width=width, height=height, cell_size=cell_size)
+        return self.add_chunk(chunk)
+
+
 def frame_capacity_bytes(
     *,
     width: int = DEFAULT_WIDTH,
@@ -181,6 +217,37 @@ def encode_frame_rgba(
             frame[offset + 2] = value
             frame[offset + 3] = 255
     return bytes(frame)
+
+
+def encode_payload_frames_rgba(
+    payload: bytes,
+    *,
+    secret: str | bytes,
+    width: int = DEFAULT_WIDTH,
+    height: int = DEFAULT_HEIGHT,
+    cell_size: int = DEFAULT_CELL_SIZE,
+) -> list[bytes]:
+    chunk_size = max_payload_bytes(width=width, height=height, cell_size=cell_size)
+    if chunk_size <= 0:
+        raise VideoFrameCodecError("frame geometry is too small for payload chunks")
+    chunks = [payload[idx : idx + chunk_size] for idx in range(0, len(payload), chunk_size)]
+    if not chunks:
+        chunks = [b""]
+    if len(chunks) > 0xFFFF:
+        raise VideoFrameCodecError("payload requires too many frames")
+    total = len(chunks)
+    return [
+        encode_frame_rgba(
+            chunk,
+            secret=secret,
+            width=width,
+            height=height,
+            cell_size=cell_size,
+            seq=seq,
+            total=total,
+        )
+        for seq, chunk in enumerate(chunks)
+    ]
 
 
 def decode_frame_rgba(

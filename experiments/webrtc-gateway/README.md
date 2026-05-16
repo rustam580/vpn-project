@@ -153,3 +153,30 @@ Current limitations:
 - one frame = one small payload only;
 - default lab secret is not production key management;
 - no chunking, retransmit, ordering, congestion control, or SOCKS/VPN tunnel yet.
+
+## WB Stream Multi-Frame Payload
+
+For payloads larger than one frame, use the multi-frame stream probe. It splits payload into
+encrypted/authenticated chunks, repeats frames as a carousel, and reassembles by `seq/total`.
+
+```powershell
+experiments/webrtc-gateway/.venv/Scripts/python experiments/webrtc-gateway/wbstream_livekit_frame_stream.py `
+  https://stream.wb.ru/room/019e30d5-9b63-700e-8453-b514a5db7746 `
+  --payload-bytes 1024
+```
+
+Verified result on 2026-05-16:
+
+```json
+{
+  "ok": true,
+  "payload_bytes": 1024,
+  "encoded_frames": 9,
+  "chunks_received": 9,
+  "decode_attempts": 14,
+  "elapsed_ms": 8003
+}
+```
+
+This is still a one-way lab stream. It has duplicate tolerance via chunk de-duplication, but no
+ACK/retry channel yet.

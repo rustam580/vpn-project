@@ -5,9 +5,11 @@ import pytest
 from video_frame_codec import (
     DEFAULT_CELL_SIZE,
     DEFAULT_WIDTH,
+    VideoFrameReassembler,
     VideoFrameCodecError,
     decode_frame_rgba,
     encode_frame_rgba,
+    encode_payload_frames_rgba,
     max_payload_bytes,
 )
 
@@ -57,3 +59,29 @@ def test_video_frame_codec_survives_small_pixel_noise():
         frame[offset + 2] = 127
     decoded = decode_frame_rgba(bytes(frame), secret=SECRET)
     assert decoded.payload == b"noise tolerant"
+
+
+def test_video_frame_reassembler_roundtrip_out_of_order_with_duplicates():
+    payload = b"chunked payload " * 40
+    frames = encode_payload_frames_rgba(payload, secret=SECRET)
+    assert len(frames) > 1
+    reassembler = VideoFrameReassembler(secret=SECRET)
+
+    assert reassembler.add_frame_rgba(frames[1]) is None
+    assert reassembler.add_frame_rgba(frames[1]) is None
+    result = reassembler.add_frame_rgba(frames[0])
+    for frame in frames[2:]:
+        result = reassembler.add_frame_rgba(frame)
+
+    assert result == payload
+    assert reassembler.chunks_received == len(frames)
+    assert reassembler.total == len(frames)
+
+
+def test_video_frame_reassembler_rejects_mixed_totals():
+    first = encode_frame_rgba(b"a", secret=SECRET, seq=0, total=2, nonce=1)
+    second = encode_frame_rgba(b"b", secret=SECRET, seq=0, total=1, nonce=2)
+    reassembler = VideoFrameReassembler(secret=SECRET)
+    assert reassembler.add_frame_rgba(first) is None
+    with pytest.raises(VideoFrameCodecError, match="mixed"):
+        reassembler.add_frame_rgba(second)
