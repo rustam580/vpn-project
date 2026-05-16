@@ -213,3 +213,33 @@ Verified result on 2026-05-16:
 
 This confirms reverse media-frame signaling works. The next step is a real sliding window/retry
 policy and repeated throughput runs, not a production tunnel.
+
+## WB Stream Sliding Window Probe
+
+The windowed probe sends only a bounded number of unacknowledged chunks and retransmits timed-out
+chunks instead of looping the whole payload.
+
+```powershell
+experiments/webrtc-gateway/.venv/Scripts/python experiments/webrtc-gateway/wbstream_livekit_frame_window.py `
+  https://stream.wb.ru/room/019e30d5-9b63-700e-8453-b514a5db7746 `
+  --payload-bytes 2048 `
+  --window-size 4 `
+  --retry-timeout-sec 2.5
+```
+
+Verified result on 2026-05-16:
+
+```json
+{
+  "ok": true,
+  "payload_bytes": 2048,
+  "encoded_frames": 18,
+  "chunks_received": 18,
+  "acked_chunks": 18,
+  "data_frames_sent": 34,
+  "retransmits": 16,
+  "throughput_bps": 74.32
+}
+```
+
+With `1024` bytes, the same settings completed with `0` retransmits and about `104` B/s.
