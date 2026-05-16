@@ -25,6 +25,34 @@ Observed flow:
 5. Connect to LiveKit at `wss://rtc-el-01.wb.ru`.
 6. Send payloads as reliable LiveKit data packets with topic `olcrtc`.
 
+## RootVPN Lab Findings On 2026-05-16
+
+Manual room tested:
+
+```text
+https://stream.wb.ru/room/019e30d5-9b63-700e-8453-b514a5db7746
+```
+
+What worked:
+
+- Guest registration works.
+- Joining an existing room works.
+- Room connection details return LiveKit endpoint `wss://rtc-el-02.wb.ru`.
+- Two lab guest participants can see each other.
+- Synthetic video publishing works: a `160x120` RGBA frame published by one guest was received by another guest in ~6.1s.
+
+What did not work:
+
+- LiveKit `publish_data()` from guest participants did not deliver packets.
+- Token permissions showed `can_publish_data=false` for the lab guests.
+- Guest room creation failed with `HTTP 400: Guests are not allowed to create room`.
+
+Implication:
+
+- For this WB Stream room/account path, the next viable carrier is media-track based, not LiveKit data packets.
+- A future byte transport should encode small encrypted chunks into video frames or audio frames, with explicit rate limits and a kill switch.
+- Do not build a customer-facing tariff around this until a closed beta proves reconnect, latency, throughput, and account-risk behavior.
+
 olcRTC's recommended URI shape for WB Stream + DataChannel:
 
 ```text

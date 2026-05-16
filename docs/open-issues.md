@@ -1,6 +1,6 @@
 ﻿# Open Issues
 
-Last updated: 2026-05-15
+Last updated: 2026-05-16
 
 ## Priority Legend
 - P0: blocks sales or legal-safe launch
@@ -47,11 +47,12 @@ Last updated: 2026-05-15
 
 7. P2 - WebRTC fallback transport R&D
 - Status: in_progress
-- Problem: WebRTC/DataChannel may be useful as a reserve transport, but whitelist-resilience requires a carrier layer through already-allowed video/conference services, not only a self-hosted gateway. This adds separate client/signaling/gateway/carrier work plus unclear carrier fragility, TURN cost, stability, support, and legal/product risks. Phase 1 local direct echo PoC now exists and is verified.
-- Next action: add short-lived signed token auth to signaling, then implement one lab-only WB Stream adapter against an explicit room ID/URL. Keep it isolated from payments, Marzban, and public tariffs until closed beta criteria in `docs/webrtc-transport-research.md` are met.
+- Problem: WebRTC/DataChannel may be useful as a reserve transport, but whitelist-resilience requires a carrier layer through already-allowed video/conference services, not only a self-hosted gateway. WB Stream probing works for guest join/token retrieval, but guest LiveKit data packets are blocked in the tested room (`can_publish_data=false`). Synthetic video-track delivery works, so the likely WB route is media-frame encoding. This adds separate client/signaling/gateway/carrier work plus unclear carrier fragility, TURN cost, stability, support, and legal/product risks.
+- Next action: prototype encrypted byte chunks over WB Stream video frames in the lab, measure throughput/latency/reconnect behavior, and keep it isolated from payments, Marzban, and public tariffs until closed beta criteria in `docs/webrtc-transport-research.md` are met.
 - Owner: dev/research
 
 ## Recently Closed
+- Added WB Stream R&D probes under `experiments/webrtc-gateway/`: guest room token retrieval, LiveKit data-packet ping probe, and synthetic video-track carrier probe. Tested room `019e30d5-9b63-700e-8453-b514a5db7746`: data packets are blocked for guests, video carrier works.
 - Added carrier interface to the WebRTC PoC and kept `direct` as the baseline carrier adapter. Captured WB Stream/LiveKit carrier notes in `experiments/webrtc-gateway/WBSTREAM_NOTES.md`.
 - Reviewed olcRTC architecture notes and captured applicable lessons in `docs/webrtc-transport-research.md`: layered carrier/transport design, app-level encryption, smux-style multiplexing, payload chunking, SOCKS5 boundary, reconnect/backpressure, and Android socket-protection caveats.
 - Added isolated local WebRTC/DataChannel echo PoC under `experiments/webrtc-gateway/`: browser test page, Python `aiortc` gateway, `/offer`, `/metrics`, and local verification (`ping` -> `pong`, custom echo).
