@@ -40,6 +40,7 @@ What worked:
 - Room connection details return LiveKit endpoint `wss://rtc-el-02.wb.ru`.
 - Two lab guest participants can see each other.
 - Synthetic video publishing works: a `160x120` RGBA frame published by one guest was received by another guest in ~6.1s.
+- Encrypted/authenticated one-frame byte payload works over video: `RootVPN WB video bytes OK` was encoded into a `320x240` frame and decoded by a second guest in ~6.3s.
 
 What did not work:
 
@@ -51,6 +52,7 @@ Implication:
 
 - For this WB Stream room/account path, the next viable carrier is media-track based, not LiveKit data packets.
 - A future byte transport should encode small encrypted chunks into video frames or audio frames, with explicit rate limits and a kill switch.
+- The first working byte path is implemented in `wbstream_livekit_frame_message.py` using high-contrast video cells plus HMAC-based envelope encryption/authentication. This is still a lab codec, not production cryptography/key management.
 - Do not build a customer-facing tariff around this until a closed beta proves reconnect, latency, throughput, and account-risk behavior.
 
 olcRTC's recommended URI shape for WB Stream + DataChannel:

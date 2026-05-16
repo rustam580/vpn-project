@@ -123,3 +123,33 @@ Expected result:
 ```
 
 If this works, the next R&D step is byte encoding over media frames, not LiveKit data packets.
+
+## WB Stream Encrypted Frame Message
+
+The next lab probe encodes one encrypted/authenticated payload into high-contrast video cells and
+decodes it from the received video frame:
+
+```powershell
+experiments/webrtc-gateway/.venv/Scripts/python experiments/webrtc-gateway/wbstream_livekit_frame_message.py `
+  https://stream.wb.ru/room/019e30d5-9b63-700e-8453-b514a5db7746 `
+  --message "RootVPN WB video bytes OK"
+```
+
+Verified result on 2026-05-16:
+
+```json
+{
+  "ok": true,
+  "message": "RootVPN WB video bytes OK",
+  "frame_width": 320,
+  "frame_height": 240,
+  "max_payload_bytes": 115,
+  "decode_attempts": 1
+}
+```
+
+Current limitations:
+
+- one frame = one small payload only;
+- default lab secret is not production key management;
+- no chunking, retransmit, ordering, congestion control, or SOCKS/VPN tunnel yet.
