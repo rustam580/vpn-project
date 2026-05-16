@@ -10,7 +10,9 @@ from video_frame_codec import (
     decode_frame_rgba,
     encode_frame_rgba,
     encode_payload_frames_rgba,
+    make_ack_payload,
     max_payload_bytes,
+    parse_ack_payload,
 )
 
 SECRET = "rootvpn-lab-secret-for-tests"
@@ -85,3 +87,22 @@ def test_video_frame_reassembler_rejects_mixed_totals():
     assert reassembler.add_frame_rgba(first) is None
     with pytest.raises(VideoFrameCodecError, match="mixed"):
         reassembler.add_frame_rgba(second)
+
+
+def test_ack_payload_roundtrip():
+    ack = parse_ack_payload(make_ack_payload(10, {0, 2, 9}))
+    assert ack.total == 10
+    assert ack.received == frozenset({0, 2, 9})
+
+
+def test_ack_payload_rejects_out_of_range_seq():
+    with pytest.raises(VideoFrameCodecError, match="out of range"):
+        make_ack_payload(3, {3})
+
+
+def test_ack_payload_can_be_sent_as_video_frame():
+    payload = make_ack_payload(9, {0, 1, 8})
+    frame = encode_frame_rgba(payload, secret=SECRET, nonce=456)
+    decoded = decode_frame_rgba(frame, secret=SECRET)
+    ack = parse_ack_payload(decoded.payload)
+    assert ack.received == frozenset({0, 1, 8})

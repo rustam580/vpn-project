@@ -42,6 +42,7 @@ What worked:
 - Synthetic video publishing works: a `160x120` RGBA frame published by one guest was received by another guest in ~6.1s.
 - Encrypted/authenticated one-frame byte payload works over video: `RootVPN WB video bytes OK` was encoded into a `320x240` frame and decoded by a second guest in ~6.3s.
 - Multi-frame one-way byte payload works over video: `512` bytes took 5 encoded frames and ~7.5s; `1024` bytes took 9 encoded frames and ~8.0s in the tested room.
+- Reverse ACK over video works: `512` bytes completed with 5/5 chunks ACKed in ~17.8s; `1024` bytes completed with 9/9 chunks ACKed in ~13.1s.
 
 What did not work:
 
@@ -55,6 +56,7 @@ Implication:
 - A future byte transport should encode small encrypted chunks into video frames or audio frames, with explicit rate limits and a kill switch.
 - The first working byte path is implemented in `wbstream_livekit_frame_message.py` using high-contrast video cells plus HMAC-based envelope encryption/authentication. This is still a lab codec, not production cryptography/key management.
 - Chunking/reassembly is implemented in `video_frame_codec.py` / `wbstream_livekit_frame_stream.py`. The current field probe is one-way carousel delivery with duplicate tolerance, not an ACK/retry transport.
+- ACK bitmap signaling is implemented in `wbstream_livekit_frame_ack.py`. It uses a reverse video track and stops retransmitting chunks once ACKed. This validates bidirectional media-frame signaling, but it is still not a tuned sliding-window transport.
 - Do not build a customer-facing tariff around this until a closed beta proves reconnect, latency, throughput, and account-risk behavior.
 
 olcRTC's recommended URI shape for WB Stream + DataChannel:

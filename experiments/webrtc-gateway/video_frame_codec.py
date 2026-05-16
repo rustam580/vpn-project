@@ -7,6 +7,7 @@ import struct
 from dataclasses import dataclass
 
 MAGIC = b"RVV1"
+ACK_MAGIC = b"RVA1"
 VERSION = 1
 DEFAULT_WIDTH = 320
 DEFAULT_HEIGHT = 240
@@ -19,6 +20,12 @@ MIN_KEY_BYTES = 16
 
 class VideoFrameCodecError(ValueError):
     pass
+
+
+@dataclass(frozen=True)
+class AckFrame:
+    total: int
+    received: frozenset[int]
 
 
 @dataclass(frozen=True)
@@ -73,6 +80,34 @@ def frame_capacity_bytes(
     if width <= 0 or height <= 0 or cell_size <= 0:
         raise VideoFrameCodecError("width, height and cell_size must be positive")
     return ((width // cell_size) * (height // cell_size)) // 8
+
+
+def make_ack_payload(total: int, received: set[int] | frozenset[int]) -> bytes:
+    if not 1 <= total <= 0xFFFF:
+        raise VideoFrameCodecError("ack total must fit uint16")
+    bitmap = bytearray((total + 7) // 8)
+    for seq in received:
+        if not 0 <= seq < total:
+            raise VideoFrameCodecError("ack seq out of range")
+        bitmap[seq // 8] |= 1 << (7 - (seq % 8))
+    return ACK_MAGIC + total.to_bytes(2, "big") + bytes(bitmap)
+
+
+def parse_ack_payload(payload: bytes) -> AckFrame:
+    if len(payload) < 6 or payload[:4] != ACK_MAGIC:
+        raise VideoFrameCodecError("invalid ack payload")
+    total = int.from_bytes(payload[4:6], "big")
+    if not 1 <= total <= 0xFFFF:
+        raise VideoFrameCodecError("invalid ack total")
+    bitmap = payload[6:]
+    expected_len = (total + 7) // 8
+    if len(bitmap) != expected_len:
+        raise VideoFrameCodecError("invalid ack bitmap length")
+    received: set[int] = set()
+    for seq in range(total):
+        if bitmap[seq // 8] & (1 << (7 - (seq % 8))):
+            received.add(seq)
+    return AckFrame(total=total, received=frozenset(received))
 
 
 def max_payload_bytes(

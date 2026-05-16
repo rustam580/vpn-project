@@ -180,3 +180,36 @@ Verified result on 2026-05-16:
 
 This is still a one-way lab stream. It has duplicate tolerance via chunk de-duplication, but no
 ACK/retry channel yet.
+
+## WB Stream Video ACK Probe
+
+The ACK probe publishes two video tracks:
+
+- sender -> receiver: encrypted data chunks;
+- receiver -> sender: encrypted ACK bitmap frames.
+
+The sender stops retransmitting chunks after they are acknowledged.
+
+```powershell
+experiments/webrtc-gateway/.venv/Scripts/python experiments/webrtc-gateway/wbstream_livekit_frame_ack.py `
+  https://stream.wb.ru/room/019e30d5-9b63-700e-8453-b514a5db7746 `
+  --payload-bytes 1024
+```
+
+Verified result on 2026-05-16:
+
+```json
+{
+  "ok": true,
+  "payload_bytes": 1024,
+  "encoded_frames": 9,
+  "chunks_received": 9,
+  "acked_chunks": 9,
+  "data_frames_sent": 10,
+  "ack_frames_sent": 5,
+  "elapsed_ms": 13066
+}
+```
+
+This confirms reverse media-frame signaling works. The next step is a real sliding window/retry
+policy and repeated throughput runs, not a production tunnel.
