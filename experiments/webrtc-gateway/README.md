@@ -243,3 +243,30 @@ Verified result on 2026-05-16:
 ```
 
 With `1024` bytes, the same settings completed with `0` retransmits and about `104` B/s.
+
+## WB Stream Tuning Sweep
+
+Run a bounded parameter sweep. Keep the grid small: every case opens live WB Stream sessions.
+
+```powershell
+experiments/webrtc-gateway/.venv/Scripts/python experiments/webrtc-gateway/wbstream_livekit_tuning_sweep.py `
+  https://stream.wb.ru/room/019e30d5-9b63-700e-8453-b514a5db7746 `
+  --payloads 1024 `
+  --windows 2,4,6,8 `
+  --retries 2.5 `
+  --fps 8 `
+  --ack-fps 4 `
+  --json-out experiments/webrtc-gateway/last_tuning_sweep.json
+```
+
+Window sweep on 2026-05-16:
+
+| Payload | Window | Retry | FPS | ACK FPS | Throughput | Retransmits |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1024 | 2 | 2.5s | 8 | 4 | 43.08 B/s | 2 |
+| 1024 | 4 | 2.5s | 8 | 4 | 70.48 B/s | 0 |
+| 1024 | 6 | 2.5s | 8 | 4 | 124.18 B/s | 0 |
+| 1024 | 8 | 2.5s | 8 | 4 | 119.30 B/s | 0 |
+
+FPS/ACK-FPS sweep right after that was worse and more variable (`39-54 B/s`), so treat one-off
+measurements as noisy. Prefer repeated sweeps before drawing product conclusions.

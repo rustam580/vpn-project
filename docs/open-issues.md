@@ -47,8 +47,8 @@ Last updated: 2026-05-16
 
 7. P2 - WebRTC fallback transport R&D
 - Status: in_progress
-- Problem: WebRTC/DataChannel may be useful as a reserve transport, but whitelist-resilience requires a carrier layer through already-allowed video/conference services, not only a self-hosted gateway. WB Stream probing works for guest join/token retrieval, but guest LiveKit data packets are blocked in the tested room (`can_publish_data=false`). Synthetic video-track delivery, one-frame encrypted byte delivery, multi-frame one-way delivery, reverse video ACK, and sliding-window retry work, so the likely WB route is media-frame encoding. This adds separate client/signaling/gateway/carrier work plus unclear carrier fragility, TURN cost, stability, support, and legal/product risks.
-- Next action: run repeated tuning sweeps for window size, retry timeout, FPS, ACK FPS, frame geometry, and payload cell size; keep isolated from payments, Marzban, and public tariffs until closed beta criteria in `docs/webrtc-transport-research.md` are met.
+- Problem: WebRTC/DataChannel may be useful as a reserve transport, but whitelist-resilience requires a carrier layer through already-allowed video/conference services, not only a self-hosted gateway. WB Stream probing works for guest join/token retrieval, but guest LiveKit data packets are blocked in the tested room (`can_publish_data=false`). Synthetic video-track delivery, one-frame encrypted byte delivery, multi-frame one-way delivery, reverse video ACK, sliding-window retry, and tuning sweeps work, so the likely WB route is media-frame encoding. This adds separate client/signaling/gateway/carrier work plus unclear carrier fragility, TURN cost, stability, support, and legal/product risks.
+- Next action: improve codec density/resilience (tile/QR-style redundancy inspired by olcRTC), then run repeated sweeps across frame geometry/FPS/window/retry; keep isolated from payments, Marzban, and public tariffs until closed beta criteria in `docs/webrtc-transport-research.md` are met.
 - Owner: dev/research
 
 ## Recently Closed
@@ -57,6 +57,7 @@ Last updated: 2026-05-16
 - Added multi-frame WB video payload stream probe: `1024` bytes delivered in 9 chunks over the tested room, one-way carousel mode with duplicate-tolerant reassembly.
 - Added reverse video ACK probe: `1024` bytes delivered with 9/9 chunks acknowledged over a second WB Stream video track.
 - Added sliding-window WB video probe: windowed retransmit policy plus first field baselines (`1024` bytes ~104 B/s, `2048` bytes ~74 B/s).
+- Added WB Stream tuning sweep runner and first sweep notes. Best observed 1KB run: window=6, fps=8, ack_fps=4, retry=2.5s, ~124 B/s; follow-up sweep showed high variance.
 - Added carrier interface to the WebRTC PoC and kept `direct` as the baseline carrier adapter. Captured WB Stream/LiveKit carrier notes in `experiments/webrtc-gateway/WBSTREAM_NOTES.md`.
 - Reviewed olcRTC architecture notes and captured applicable lessons in `docs/webrtc-transport-research.md`: layered carrier/transport design, app-level encryption, smux-style multiplexing, payload chunking, SOCKS5 boundary, reconnect/backpressure, and Android socket-protection caveats.
 - Added isolated local WebRTC/DataChannel echo PoC under `experiments/webrtc-gateway/`: browser test page, Python `aiortc` gateway, `/offer`, `/metrics`, and local verification (`ping` -> `pong`, custom echo).

@@ -16,4 +16,5 @@ node_modules/
 # WebRTC local experiment runtime artifacts
 experiments/webrtc-gateway/*.log
 experiments/webrtc-gateway/.venv/
+experiments/webrtc-gateway/last_*.json
 

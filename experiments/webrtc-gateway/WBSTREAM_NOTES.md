@@ -9,6 +9,9 @@ Source files reviewed:
 - `internal/provider/wbstream/provider.go`
 - `internal/carrier/carrier.go`
 - `internal/transport/datachannel/transport.go`
+- `internal/transport/videochannel/transport.go` from branch `refactor/universal-carrier`
+- `internal/transport/videochannel/visual.go` from branch `refactor/universal-carrier`
+- `internal/e2e/tunnel_test.go` from branch `refactor/universal-carrier`
 - `docs/uri.md`
 - `docs/fast.md`
 
@@ -44,6 +47,7 @@ What worked:
 - Multi-frame one-way byte payload works over video: `512` bytes took 5 encoded frames and ~7.5s; `1024` bytes took 9 encoded frames and ~8.0s in the tested room.
 - Reverse ACK over video works: `512` bytes completed with 5/5 chunks ACKed in ~17.8s; `1024` bytes completed with 9/9 chunks ACKed in ~13.1s.
 - Sliding-window ACK works: `1024` bytes with window 4 completed in ~9.8s with 0 retransmits (~104 B/s); `2048` bytes completed in ~27.6s with 16 retransmits (~74 B/s).
+- Tuning sweep tooling works. First 1KB sweep with fps=8/ack_fps=4 found window=6 best (`124.18 B/s`, 0 retransmits), but a follow-up sweep varied significantly (`39-54 B/s`). Treat WB Stream results as noisy and require repeated runs.
 
 What did not work:
 
@@ -59,6 +63,17 @@ Implication:
 - Chunking/reassembly is implemented in `video_frame_codec.py` / `wbstream_livekit_frame_stream.py`. The current field probe is one-way carousel delivery with duplicate tolerance, not an ACK/retry transport.
 - ACK bitmap signaling is implemented in `wbstream_livekit_frame_ack.py`. It uses a reverse video track and stops retransmitting chunks once ACKed. This validates bidirectional media-frame signaling, but it is still not a tuned sliding-window transport.
 - Sliding-window sender policy is implemented in `video_window.py` and the WB field probe is `wbstream_livekit_frame_window.py`. The first tuning baseline is window=4, retry=2.5s.
+- `wbstream_livekit_tuning_sweep.py` runs bounded parameter grids and writes JSON summaries.
+
+## Notes From `refactor/universal-carrier`
+
+Useful architecture lessons from the newer olcRTC branch:
+
+- Carrier and transport are separated and tested as a matrix; unstable carrier/transport combinations are expected and logged, not hidden.
+- `videochannel` is message-oriented and reliable at the transport API boundary, but internally it uses fragmentation, CRC, ACK registry, max send attempts, and ACK timeout.
+- Visual codecs include QR and tile modes. Tile mode with Reed-Solomon style redundancy is likely a better next direction than our simple black/white cell codec.
+- Real E2E tests mark some carrier/transport combinations as expected unstable. RootVPN should copy this habit before any closed beta.
+- Default high-throughput video settings in olcRTC are much larger than our lab frame (`1920x1080`, `30fps`, bitrate around `2M`), so our current `320x240@8fps` numbers are only a conservative baseline.
 - Do not build a customer-facing tariff around this until a closed beta proves reconnect, latency, throughput, and account-risk behavior.
 
 olcRTC's recommended URI shape for WB Stream + DataChannel:
