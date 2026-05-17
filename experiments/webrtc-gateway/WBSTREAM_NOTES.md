@@ -114,6 +114,21 @@ conflicting overlaps. This is deliberately smaller than a real SOCKS/VPN tunnel:
 probes a stable byte-stream primitive to carry over `tile2` frames before adding connection
 multiplexing, flow control, reconnect/rejoin, or application protocols.
 
+`wbstream_livekit_frame_window.py --stream-mode` now wraps payloads in this byte-stream framing
+before encoding them into video frames. `--connect-attempts N` retries guest/token setup for one-off
+field probes, mirroring the sweep runner's per-run retry behavior.
+
+Attempted field probe on the 2026-05-17 room with:
+
+```text
+payload=2048 codec=tile2 data_repeats=1 window=4 stream_id=77 connect_attempts=2
+```
+
+Result: WB returned `HTTP 403: guests cannot create rooms` during connection-details retrieval.
+This indicates the manual room was no longer usable for guest field measurements. The stream-mode
+code path compiled and local stream-over-tile2 tests pass, but live stream-mode validation needs a
+fresh room.
+
 ## Notes From `refactor/universal-carrier`
 
 Useful architecture lessons from the newer olcRTC branch:

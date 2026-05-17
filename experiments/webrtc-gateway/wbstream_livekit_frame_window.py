@@ -10,6 +10,7 @@ from typing import Any
 
 from livekit import rtc
 
+from stream_protocol import StreamProtocolError, StreamReassembler, segment_stream_payload
 from video_frame_codec import (
     DEFAULT_CELL_SIZE,
     DEFAULT_HEIGHT,
@@ -35,6 +36,7 @@ ACK_FPS = 4
 DEFAULT_WINDOW_SIZE = 4
 DEFAULT_RETRY_TIMEOUT_SEC = 2.5
 DEFAULT_DATA_REPEATS = 1
+DEFAULT_CONNECT_ATTEMPTS = 1
 DEFAULT_SECRET = "rootvpn-lab-video-carrier-secret"
 DEFAULT_MESSAGE = "RootVPN windowed video carrier " * 40
 CODEC_BINARY = "binary"
@@ -70,6 +72,11 @@ class VideoWindowResult:
     throughput_bps: float
     codec: str
     data_repeats: int
+    stream_mode: bool
+    stream_id: int | None
+    stream_segments_received: int
+    connect_attempts: int
+    setup_transient_errors: list[str]
 
     def safe_dict(self) -> dict[str, Any]:
         return {
@@ -99,6 +106,11 @@ class VideoWindowResult:
             "throughput_bps": round(self.throughput_bps, 2),
             "codec": self.codec,
             "data_repeats": self.data_repeats,
+            "stream_mode": self.stream_mode,
+            "stream_id": self.stream_id,
+            "stream_segments_received": self.stream_segments_received,
+            "connect_attempts": self.connect_attempts,
+            "setup_transient_errors": self.setup_transient_errors,
         }
 
 
@@ -140,11 +152,18 @@ def _encode_payload_frames(payload: bytes, *, secret: str, codec: str) -> list[b
     raise ValueError(f"unsupported video frame codec: {codec}")
 
 
-def _encode_frame(payload: bytes, *, secret: str, codec: str) -> bytes:
+def _encode_frame(
+    payload: bytes,
+    *,
+    secret: str,
+    codec: str,
+    seq: int = 0,
+    total: int = 1,
+) -> bytes:
     if codec == CODEC_BINARY:
-        return encode_frame_rgba(payload, secret=secret)
+        return encode_frame_rgba(payload, secret=secret, seq=seq, total=total)
     if codec == CODEC_TILE2:
-        return encode_tile2_frame_rgba(payload, secret=secret)
+        return encode_tile2_frame_rgba(payload, secret=secret, seq=seq, total=total)
     raise ValueError(f"unsupported video frame codec: {codec}")
 
 
@@ -176,6 +195,32 @@ def _max_payload_per_frame(codec: str) -> int:
     raise ValueError(f"unsupported video frame codec: {codec}")
 
 
+async def _probe_room_pair_with_attempts(
+    room_id: str,
+    *,
+    timeout_sec: float,
+    connect_attempts: int,
+) -> tuple[Any, Any, int, list[str]]:
+    transient_errors: list[str] = []
+    for attempt in range(1, connect_attempts + 1):
+        try:
+            details_a, details_b = await asyncio.gather(
+                probe_room(room_id, display_name="RootVPN Window A", timeout_sec=timeout_sec),
+                probe_room(room_id, display_name="RootVPN Window B", timeout_sec=timeout_sec),
+            )
+            if details_a.server_url != details_b.server_url:
+                raise RuntimeError(
+                    f"WB Stream returned different LiveKit servers: {details_a.server_url} != {details_b.server_url}"
+                )
+            return details_a, details_b, attempt, transient_errors
+        except Exception as exc:
+            if attempt >= connect_attempts:
+                raise
+            transient_errors.append(f"{type(exc).__name__}: {exc}")
+            await asyncio.sleep(1.0)
+    raise RuntimeError("unreachable connect attempts state")
+
+
 async def wbstream_video_window_probe(
     room: str,
     *,
@@ -189,14 +234,35 @@ async def wbstream_video_window_probe(
     retry_timeout_sec: float = DEFAULT_RETRY_TIMEOUT_SEC,
     codec: str = CODEC_BINARY,
     data_repeats: int = DEFAULT_DATA_REPEATS,
+    stream_mode: bool = False,
+    stream_id: int = 1,
+    connect_attempts: int = DEFAULT_CONNECT_ATTEMPTS,
 ) -> VideoWindowResult:
     if codec not in SUPPORTED_CODECS:
         raise ValueError(f"unsupported video frame codec: {codec}")
     if data_repeats <= 0:
         raise ValueError("data_repeats must be positive")
+    if connect_attempts <= 0:
+        raise ValueError("connect_attempts must be positive")
     room_id = extract_room_id(room)
     payload = _build_payload(message, payload_bytes)
-    data_frames = _encode_payload_frames(payload, secret=secret, codec=codec)
+    stream_packets = (
+        segment_stream_payload(
+            payload,
+            stream_id=stream_id,
+            max_packet_bytes=_max_payload_per_frame(codec),
+        )
+        if stream_mode
+        else []
+    )
+    data_frames = (
+        [
+            _encode_frame(packet, secret=secret, codec=codec, seq=seq, total=len(stream_packets))
+            for seq, packet in enumerate(stream_packets)
+        ]
+        if stream_mode
+        else _encode_payload_frames(payload, secret=secret, codec=codec)
+    )
     total_chunks = len(data_frames)
     sender = SlidingWindowSender(
         total_chunks=total_chunks,
@@ -205,14 +271,11 @@ async def wbstream_video_window_probe(
     )
     started = time.perf_counter()
 
-    details_a, details_b = await asyncio.gather(
-        probe_room(room_id, display_name="RootVPN Window A", timeout_sec=timeout_sec),
-        probe_room(room_id, display_name="RootVPN Window B", timeout_sec=timeout_sec),
+    details_a, details_b, used_connect_attempts, setup_errors = await _probe_room_pair_with_attempts(
+        room_id,
+        timeout_sec=timeout_sec,
+        connect_attempts=connect_attempts,
     )
-    if details_a.server_url != details_b.server_url:
-        raise RuntimeError(
-            f"WB Stream returned different LiveKit servers: {details_a.server_url} != {details_b.server_url}"
-        )
 
     room_a = rtc.Room()
     room_b = rtc.Room()
@@ -220,6 +283,7 @@ async def wbstream_video_window_probe(
     received_payload: asyncio.Future[bytes] = loop.create_future()
     all_acked: asyncio.Future[None] = loop.create_future()
     reassembler = VideoFrameReassembler(secret=secret)
+    stream_reassembler = StreamReassembler(stream_id=stream_id) if stream_mode else None
     received_seqs: set[int] = set()
     stream_tasks: set[asyncio.Task[None]] = set()
     push_tasks: set[asyncio.Task[None]] = set()
@@ -240,8 +304,13 @@ async def wbstream_video_window_probe(
                     height=frame.height,
                     codec=codec,
                 )
-                maybe_payload = reassembler.add_chunk(chunk)
-            except VideoFrameCodecError:
+                if stream_mode:
+                    if stream_reassembler is None:
+                        raise RuntimeError("stream reassembler is not initialized")
+                    maybe_payload = stream_reassembler.add_packet(chunk.payload)
+                else:
+                    maybe_payload = reassembler.add_chunk(chunk)
+            except (VideoFrameCodecError, StreamProtocolError):
                 continue
             received_seqs.add(chunk.seq)
             if maybe_payload is not None and not received_payload.done():
@@ -376,7 +445,7 @@ async def wbstream_video_window_probe(
             frame_height=DEFAULT_HEIGHT,
             max_payload_per_frame=_max_payload_per_frame(codec),
             encoded_frames=total_chunks,
-            chunks_received=reassembler.chunks_received,
+            chunks_received=len(received_seqs) if stream_mode else reassembler.chunks_received,
             acked_chunks=stats.acked_chunks,
             data_decode_attempts=data_decode_attempts,
             ack_decode_attempts=ack_decode_attempts,
@@ -390,6 +459,11 @@ async def wbstream_video_window_probe(
             throughput_bps=len(payload) / elapsed if elapsed > 0 else 0.0,
             codec=codec,
             data_repeats=data_repeats,
+            stream_mode=stream_mode,
+            stream_id=stream_id if stream_mode else None,
+            stream_segments_received=stream_reassembler.segments_received if stream_reassembler else 0,
+            connect_attempts=used_connect_attempts,
+            setup_transient_errors=setup_errors,
         )
     finally:
         for task in list(push_tasks):
@@ -415,6 +489,9 @@ async def _amain() -> int:
     parser.add_argument("--retry-timeout-sec", type=float, default=DEFAULT_RETRY_TIMEOUT_SEC)
     parser.add_argument("--codec", choices=sorted(SUPPORTED_CODECS), default=CODEC_BINARY)
     parser.add_argument("--data-repeats", type=int, default=DEFAULT_DATA_REPEATS)
+    parser.add_argument("--stream-mode", action="store_true", help="wrap payload in stream_protocol frames")
+    parser.add_argument("--stream-id", type=int, default=1)
+    parser.add_argument("--connect-attempts", type=int, default=DEFAULT_CONNECT_ATTEMPTS)
     args = parser.parse_args()
 
     result = await wbstream_video_window_probe(
@@ -429,6 +506,9 @@ async def _amain() -> int:
         retry_timeout_sec=args.retry_timeout_sec,
         codec=args.codec,
         data_repeats=args.data_repeats,
+        stream_mode=args.stream_mode,
+        stream_id=args.stream_id,
+        connect_attempts=args.connect_attempts,
     )
     print(json.dumps(result.safe_dict(), ensure_ascii=False, indent=2))
     return 0

@@ -316,6 +316,9 @@ Use `--run-attempts 2` or higher when the provider occasionally fails before the
 (`ClientConnectorError`, temporary WB endpoint hiccup). The report records `attempt_count` and
 `transient_errors` per run.
 
+For one-off field probes, `wbstream_livekit_frame_window.py` also supports `--connect-attempts N`.
+This retries WB guest/token setup before the media tracks are created.
+
 Window sweep on 2026-05-16:
 
 | Payload | Window | Retry | FPS | ACK FPS | Throughput | Retransmits |
@@ -370,3 +373,20 @@ send continuous byte streams over the current `tile2` video carrier. Unit tests 
 - gap waiting;
 - conflict/overlap rejection;
 - byte-stream packets carried inside `tile2` video frames.
+
+Field probe shape:
+
+```powershell
+experiments/webrtc-gateway/.venv/Scripts/python experiments/webrtc-gateway/wbstream_livekit_frame_window.py `
+  https://stream.wb.ru/room/<room-id> `
+  --payload-bytes 2048 `
+  --codec tile2 `
+  --window-size 4 `
+  --stream-mode `
+  --stream-id 77 `
+  --connect-attempts 2
+```
+
+If WB returns `HTTP 403: guests cannot create rooms`, the manual room is no longer usable for guest
+field measurements. Create a fresh room and retry; this is a provider/session setup issue, not a
+stream framing failure.
