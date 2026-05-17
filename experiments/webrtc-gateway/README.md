@@ -444,3 +444,23 @@ SOCKS greeting/request bytes
 
 This still does not open a listening port and does not connect to external targets. It validates the
 control/data message contract before a real local listener or WB carrier is attached.
+
+`local_socks_server.py` adds the next localhost-only harness:
+
+```text
+127.0.0.1 SOCKS5 client
+-> LocalSocksServer
+-> proxy OPEN/DATA/CLOSE messages
+-> InMemoryProxyCarrier
+-> FakeProxyEgress
+-> response bytes back to the SOCKS client
+```
+
+Safety boundaries:
+
+- binds only to loopback (`127.0.0.1`, `localhost`, or `::1`);
+- does not dial external targets;
+- handles one bounded payload per connection;
+- uses fake egress only.
+
+This is the client-facing shape of the future bridge without becoming a public proxy.

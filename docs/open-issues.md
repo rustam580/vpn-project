@@ -1,6 +1,6 @@
 ﻿# Open Issues
 
-Last updated: 2026-05-16
+Last updated: 2026-05-17
 
 ## Priority Legend
 - P0: blocks sales or legal-safe launch
@@ -47,11 +47,13 @@ Last updated: 2026-05-16
 
 7. P2 - WebRTC fallback transport R&D
 - Status: in_progress
-- Problem: WebRTC/DataChannel may be useful as a reserve transport, but whitelist-resilience requires a carrier layer through already-allowed video/conference services, not only a self-hosted gateway. WB Stream probing works for guest join/token retrieval, but guest LiveKit data packets are blocked in the tested room (`can_publish_data=false`). Synthetic video-track delivery, one-frame encrypted byte delivery, multi-frame one-way delivery, reverse video ACK, sliding-window retry, and tuning sweeps work, so the likely WB route is media-frame encoding. This adds separate client/signaling/gateway/carrier work plus unclear carrier fragility, TURN cost, stability, support, and legal/product risks.
-- Next action: add an actual localhost-only SOCKS listener backed by `local_bridge.py` and a fake egress, then swap the fake carrier for WB `--stream-mode`. Then add session rejoin handling beyond initial `--connect-attempts`. Keep isolated from payments, Marzban, and public tariffs until closed beta criteria in `docs/webrtc-transport-research.md` are met.
+- Problem: WebRTC/DataChannel may be useful as a reserve transport, but whitelist-resilience requires a carrier layer through already-allowed video/conference services, not only a self-hosted gateway. WB Stream probing works for guest join/token retrieval, but guest LiveKit data packets are blocked in the tested room (`can_publish_data=false`). Synthetic video-track delivery, one-frame encrypted byte delivery, multi-frame one-way delivery, reverse video ACK, sliding-window retry, stream-mode byte reassembly, and tuning sweeps work, so the likely WB route is media-frame encoding. Local SOCKS shape now exists as a loopback-only fake-egress harness. Remaining risks: carrier fragility, session/rejoin handling, flow control, route auth, account risk, support burden, and legal/product positioning.
+- Next action: swap the `local_socks_server.py` fake carrier for a WB stream-mode carrier adapter in lab mode. Then add route auth/allow-list, session rejoin beyond initial `--connect-attempts`, and flow-control before any real egress. Keep isolated from payments, Marzban, and public tariffs until closed beta criteria in `docs/webrtc-transport-research.md` are met.
 - Owner: dev/research
 
 ## Recently Closed
+- Added `local_socks_server.py`, a localhost-only SOCKS5 listener harness backed by `InMemoryProxyCarrier` + `FakeProxyEgress`. It binds only to loopback, handles one bounded payload, does not dial external targets, and gives the WebRTC R&D track a real client-facing adapter shape without becoming a public proxy.
+- Reviewed `TheAirBlow/Turnable` and recorded applicable architecture lessons: explicit layers, route/user validation, local socket engine boundary, multiplexed flows, KCP-style reliability, and future multi-peer scaling.
 - Added WB Stream R&D probes under `experiments/webrtc-gateway/`: guest room token retrieval, LiveKit data-packet ping probe, and synthetic video-track carrier probe. Tested room `019e30d5-9b63-700e-8453-b514a5db7746`: data packets are blocked for guests, video carrier works.
 - Added `video_frame_codec.py` and `wbstream_livekit_frame_message.py`: encrypted/authenticated one-frame payload delivery over WB Stream video works in the tested room (`RootVPN WB video bytes OK`, 320x240 frame, max payload 115 bytes).
 - Added multi-frame WB video payload stream probe: `1024` bytes delivered in 9 chunks over the tested room, one-way carousel mode with duplicate-tolerant reassembly.

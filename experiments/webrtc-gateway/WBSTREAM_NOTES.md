@@ -193,6 +193,36 @@ Useful architecture lessons from the newer olcRTC branch:
 - Default high-throughput video settings in olcRTC are much larger than our lab frame (`1920x1080`, `30fps`, bitrate around `2M`), so our current `320x240@8fps` numbers are only a conservative baseline.
 - Do not build a customer-facing tariff around this until a closed beta proves reconnect, latency, throughput, and account-risk behavior.
 
+## Notes From `TheAirBlow/Turnable`
+
+Turnable is not a drop-in dependency for RootVPN, but its architecture is directly relevant to
+this R&D track:
+
+- It separates platform/provider, connection, transport, protocol, engine, and service layers.
+  RootVPN should keep the same separation instead of letting the WB experiment become one large
+  script.
+- It treats local sockets as an engine boundary and remote destinations as explicit routes. This
+  supports the RootVPN decision to start with a localhost SOCKS adapter and route policy, not an
+  arbitrary open proxy.
+- It uses multiplexed logical flows over one or more carrier connections. RootVPN now has
+  `connection_id` in `proxy_messages.py`, but does not yet have a fair scheduler, flow-control, or
+  per-flow buffers.
+- It wraps TCP over a reliability transport (`kcp`) and keeps UDP lower-overhead. RootVPN's current
+  video-window ACK layer is enough for lab payloads, but real browsing needs congestion/flow
+  control before beta.
+- It supports multiple peer connections per session to work around carrier speed limits. For
+  RootVPN this maps to future multi-room/multi-track experiments after the single-track SOCKS path
+  is stable.
+- It validates route/user config before runtime. RootVPN should add explicit auth + allowed routes
+  before any public beta, even if the first beta only allows a small fixed egress route.
+
+Immediate implementation impact:
+
+1. Keep `local_socks_server.py` loopback-only and fake-egress-only for now.
+2. Next swap `InMemoryProxyCarrier` for a WB stream-mode carrier adapter.
+3. Then add route auth and a bounded allow-list before real egress.
+4. Only after that evaluate multiplexing, KCP-like reliability, and multi-track scaling.
+
 olcRTC's recommended URI shape for WB Stream + DataChannel:
 
 ```text
