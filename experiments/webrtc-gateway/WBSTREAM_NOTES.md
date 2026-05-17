@@ -129,6 +129,37 @@ This indicates the manual room was no longer usable for guest field measurements
 code path compiled and local stream-over-tile2 tests pass, but live stream-mode validation needs a
 fresh room.
 
+Fresh-room stream-mode validation succeeded later with:
+
+```text
+https://stream.wb.ru/room/019e3672-db30-748e-987e-659d44b72a99
+```
+
+Baseline:
+
+```text
+codec=tile2
+data_repeats=1
+window=4
+retry_timeout_sec=2.5
+fps=8
+ack_fps=4
+stream_id=77
+connect_attempts=2
+```
+
+Results:
+
+- `2048` bytes: 9 stream/video chunks, 0 retransmits, `220.67 B/s`.
+- `4096` bytes: 17 chunks, 0 retransmits, `406.03 B/s`.
+- `8192` bytes: 34 chunks, 0 retransmits, `608.41 B/s`.
+- `16384` bytes: 67 chunks, 0 retransmits, `1098.37 B/s`.
+
+This validates the full current lab stack: logical byte stream -> stream packets -> `tile2` video
+frames -> WB media track -> ACKed sliding-window delivery -> stream reassembly. The next useful
+prototype is a local SOCKS-like adapter that maps TCP-ish byte streams onto this primitive, still
+strictly isolated from production.
+
 ## Notes From `refactor/universal-carrier`
 
 Useful architecture lessons from the newer olcRTC branch:

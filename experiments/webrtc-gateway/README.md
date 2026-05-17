@@ -390,3 +390,21 @@ experiments/webrtc-gateway/.venv/Scripts/python experiments/webrtc-gateway/wbstr
 If WB returns `HTTP 403: guests cannot create rooms`, the manual room is no longer usable for guest
 field measurements. Create a fresh room and retry; this is a provider/session setup issue, not a
 stream framing failure.
+
+Fresh-room stream-mode validation on 2026-05-17:
+
+| Payload | Stream segments | Retransmits | Throughput |
+|---:|---:|---:|---:|
+| 2048 | 9 | 0 | 220.67 B/s |
+| 4096 | 17 | 0 | 406.03 B/s |
+| 8192 | 34 | 0 | 608.41 B/s |
+| 16384 | 67 | 0 | 1098.37 B/s |
+
+This validates the path:
+
+```text
+byte stream -> stream_protocol packets -> tile2 video frames -> WB media track -> reassembled bytes
+```
+
+The next R&D step is a local SOCKS-like prototype that uses this stream framing as its payload
+primitive, still without touching production users, payments, or Marzban.
