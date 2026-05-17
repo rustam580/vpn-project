@@ -338,3 +338,16 @@ Fresh-room check on 2026-05-17:
 | 512 | tile2 | 2 | 44.90 B/s | 0 | slower from duplicate frame cost |
 | 1024 | binary | 1 | 113.17 B/s | 0 | repeats=2 |
 | 1024 | tile2 | 1 | 146.03 B/s | 0 | repeats=2; current best R&D baseline candidate |
+| 2048 | tile2 | 1 | 242.54 B/s | 0 | window=4, repeats=2; best of windows 4/6/8 |
+| 4096 | tile2 | 1 | 253.83 B/s | 1.0 median | window=4, repeats=2; provider setup needed second attempts |
+
+Current lab baseline candidate:
+
+```text
+codec=tile2
+data_repeats=1
+window=4
+retry_timeout_sec=2.5
+fps=8
+ack_fps=4
+```

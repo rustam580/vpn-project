@@ -81,6 +81,24 @@ Implication:
   - With `--run-attempts 2`, all 512-byte cases completed; best one-off was `tile2,data_repeats=1` at `65.69 B/s`.
   - `1024` bytes, `binary`, `data_repeats=1`, repeats=2: median `113.17 B/s`, 0 retransmits.
   - `1024` bytes, `tile2`, `data_repeats=1`, repeats=2: median `146.03 B/s`, 0 retransmits. Current best R&D baseline candidate.
+  - `2048` bytes, `tile2`, `data_repeats=1`, windows 4/6/8, repeats=2: 6/6 successful, 0 retransmits. Best median was window=4 at `242.54 B/s`.
+  - `4096` bytes, `tile2`, `data_repeats=1`, window=4, repeats=2: 2/2 successful, median `253.83 B/s`, retransmits median `1.0`; both runs needed a second attempt because the first provider connection attempt failed with `ClientConnectorError`.
+
+Current baseline candidate:
+
+```text
+codec=tile2
+data_repeats=1
+window=4
+retry_timeout_sec=2.5
+fps=8
+ack_fps=4
+```
+
+The media-frame transport itself looks stable up to 4096-byte lab payloads in the fresh room. The
+weakest observed layer is provider/session setup reliability (`stream.wb.ru` connection errors and
+occasional LiveKit validation/signaling timeouts), not chunk decode once both participants are in
+the room.
 
 ## Notes From `refactor/universal-carrier`
 
