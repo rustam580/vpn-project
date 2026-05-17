@@ -351,3 +351,22 @@ retry_timeout_sec=2.5
 fps=8
 ack_fps=4
 ```
+
+## Experimental Byte-Stream Framing
+
+`stream_protocol.py` adds the first message format above raw video-frame payloads:
+
+- `stream_id`: logical byte stream;
+- `offset`: byte offset inside that stream;
+- `fin`: marks the final segment;
+- payload bytes.
+
+It is still not a SOCKS/VPN tunnel. It is a small framing/reassembly layer that lets future probes
+send continuous byte streams over the current `tile2` video carrier. Unit tests verify:
+
+- encode/decode roundtrip;
+- out-of-order reassembly;
+- duplicate tolerance;
+- gap waiting;
+- conflict/overlap rejection;
+- byte-stream packets carried inside `tile2` video frames.

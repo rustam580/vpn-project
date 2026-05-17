@@ -48,7 +48,7 @@ Last updated: 2026-05-16
 7. P2 - WebRTC fallback transport R&D
 - Status: in_progress
 - Problem: WebRTC/DataChannel may be useful as a reserve transport, but whitelist-resilience requires a carrier layer through already-allowed video/conference services, not only a self-hosted gateway. WB Stream probing works for guest join/token retrieval, but guest LiveKit data packets are blocked in the tested room (`can_publish_data=false`). Synthetic video-track delivery, one-frame encrypted byte delivery, multi-frame one-way delivery, reverse video ACK, sliding-window retry, and tuning sweeps work, so the likely WB route is media-frame encoding. This adds separate client/signaling/gateway/carrier work plus unclear carrier fragility, TURN cost, stability, support, and legal/product risks.
-- Next action: design the first byte-stream protocol on top of the current `tile2,data_repeats=1,window=4` baseline, plus session-setup retry/rejoin handling for WB provider hiccups. Keep isolated from payments, Marzban, and public tariffs until closed beta criteria in `docs/webrtc-transport-research.md` are met.
+- Next action: wire `stream_protocol.py` into a WB field probe that sends several logical stream segments over the current `tile2,data_repeats=1,window=4` baseline, plus session-setup retry/rejoin handling for WB provider hiccups. Keep isolated from payments, Marzban, and public tariffs until closed beta criteria in `docs/webrtc-transport-research.md` are met.
 - Owner: dev/research
 
 ## Recently Closed
@@ -62,6 +62,7 @@ Last updated: 2026-05-16
 - Added explicit `data_repeats` redundancy knob to the sliding-window and tuning-sweep probes. It repeats due data chunks without counting duplicates as timeout retransmits.
 - Fresh WB room 2026-05-17 showed `tile2,data_repeats=1` as the best current candidate for 1024-byte payloads: median ~146 B/s, 0 retransmits, versus binary median ~113 B/s.
 - Larger fresh-room sweeps passed: `2048` bytes with `tile2,data_repeats=1,window=4` median ~242.5 B/s and 0 retransmits; `4096` bytes median ~253.8 B/s with median 1 retransmit. Provider setup hiccups remain visible (`stream.wb.ru` connection errors), so session retry/rejoin is now more important than raw chunk codec work.
+- Added experimental byte-stream framing in `stream_protocol.py`: logical `stream_id`, byte `offset`, `fin`, out-of-order reassembly, duplicate tolerance, overlap/conflict rejection, and tests carrying stream packets through `tile2` video frames.
 - Added carrier interface to the WebRTC PoC and kept `direct` as the baseline carrier adapter. Captured WB Stream/LiveKit carrier notes in `experiments/webrtc-gateway/WBSTREAM_NOTES.md`.
 - Reviewed olcRTC architecture notes and captured applicable lessons in `docs/webrtc-transport-research.md`: layered carrier/transport design, app-level encryption, smux-style multiplexing, payload chunking, SOCKS5 boundary, reconnect/backpressure, and Android socket-protection caveats.
 - Added isolated local WebRTC/DataChannel echo PoC under `experiments/webrtc-gateway/`: browser test page, Python `aiortc` gateway, `/offer`, `/metrics`, and local verification (`ping` -> `pong`, custom echo).

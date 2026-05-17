@@ -100,6 +100,20 @@ weakest observed layer is provider/session setup reliability (`stream.wb.ru` con
 occasional LiveKit validation/signaling timeouts), not chunk decode once both participants are in
 the room.
 
+## Byte-Stream Layer
+
+`stream_protocol.py` is the first layer above raw video-frame payloads. It frames logical byte
+streams as:
+
+```text
+stream_id + offset + flags(fin) + payload
+```
+
+The reassembler tolerates out-of-order delivery and exact duplicates, waits for gaps, and rejects
+conflicting overlaps. This is deliberately smaller than a real SOCKS/VPN tunnel: it gives future
+probes a stable byte-stream primitive to carry over `tile2` frames before adding connection
+multiplexing, flow control, reconnect/rejoin, or application protocols.
+
 ## Notes From `refactor/universal-carrier`
 
 Useful architecture lessons from the newer olcRTC branch:
