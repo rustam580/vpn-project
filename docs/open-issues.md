@@ -48,7 +48,7 @@ Last updated: 2026-05-16
 7. P2 - WebRTC fallback transport R&D
 - Status: in_progress
 - Problem: WebRTC/DataChannel may be useful as a reserve transport, but whitelist-resilience requires a carrier layer through already-allowed video/conference services, not only a self-hosted gateway. WB Stream probing works for guest join/token retrieval, but guest LiveKit data packets are blocked in the tested room (`can_publish_data=false`). Synthetic video-track delivery, one-frame encrypted byte delivery, multi-frame one-way delivery, reverse video ACK, sliding-window retry, and tuning sweeps work, so the likely WB route is media-frame encoding. This adds separate client/signaling/gateway/carrier work plus unclear carrier fragility, TURN cost, stability, support, and legal/product risks.
-- Next action: add an in-process/local-only SOCKS bridge harness that uses `socks5_proto.py` and `proxy_messages.py`, first against a fake in-memory carrier, then against WB `--stream-mode`. Then add session rejoin handling beyond initial `--connect-attempts`. Keep isolated from payments, Marzban, and public tariffs until closed beta criteria in `docs/webrtc-transport-research.md` are met.
+- Next action: add an actual localhost-only SOCKS listener backed by `local_bridge.py` and a fake egress, then swap the fake carrier for WB `--stream-mode`. Then add session rejoin handling beyond initial `--connect-attempts`. Keep isolated from payments, Marzban, and public tariffs until closed beta criteria in `docs/webrtc-transport-research.md` are met.
 - Owner: dev/research
 
 ## Recently Closed
@@ -66,6 +66,7 @@ Last updated: 2026-05-16
 - Wired `stream_protocol.py` into `wbstream_livekit_frame_window.py --stream-mode` and added `--connect-attempts` for one-off field probes. Live validation needs a fresh WB room; the previous 2026-05-17 room returned `HTTP 403: guests cannot create rooms`.
 - Fresh WB room stream-mode validation passed for 2048/4096/8192/16384-byte payloads with 0 retransmits; 16KB reached ~1098 B/s through the full byte-stream -> tile2 video -> WB media -> reassembly path.
 - Added protocol-only SOCKS-like bridge pieces: `socks5_proto.py` for no-auth SOCKS5 CONNECT parsing and `proxy_messages.py` for internal OPEN/DATA/CLOSE/ERROR messages. Tests carry proxy messages through stream_protocol and tile2 frames.
+- Added `local_bridge.py`, an in-process fake bridge harness: SOCKS bytes -> parser -> proxy messages -> in-memory carrier -> fake egress -> DATA/CLOSE response.
 - Added carrier interface to the WebRTC PoC and kept `direct` as the baseline carrier adapter. Captured WB Stream/LiveKit carrier notes in `experiments/webrtc-gateway/WBSTREAM_NOTES.md`.
 - Reviewed olcRTC architecture notes and captured applicable lessons in `docs/webrtc-transport-research.md`: layered carrier/transport design, app-level encryption, smux-style multiplexing, payload chunking, SOCKS5 boundary, reconnect/backpressure, and Android socket-protection caveats.
 - Added isolated local WebRTC/DataChannel echo PoC under `experiments/webrtc-gateway/`: browser test page, Python `aiortc` gateway, `/offer`, `/metrics`, and local verification (`ping` -> `pong`, custom echo).

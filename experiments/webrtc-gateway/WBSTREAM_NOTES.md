@@ -177,6 +177,11 @@ TCP bytes -> ProxyData -> StreamFrame -> tile2 frame
 EOF/error -> ProxyClose/ProxyError -> StreamFrame -> tile2 frame
 ```
 
+`local_bridge.py` now provides an in-process fake bridge harness. It parses SOCKS greeting/CONNECT
+bytes, emits proxy messages, sends them through an `InMemoryProxyCarrier`, and receives fake egress
+DATA/CLOSE replies. This is the last safe local-only step before adding an actual localhost
+listener and a real carrier adapter.
+
 ## Notes From `refactor/universal-carrier`
 
 Useful architecture lessons from the newer olcRTC branch:

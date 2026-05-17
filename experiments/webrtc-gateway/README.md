@@ -429,3 +429,18 @@ local SOCKS5 CONNECT
 
 There is still no always-on local listener and no remote egress bridge in this step. Those should be
 added only after the protocol pieces stay small and testable.
+
+`local_bridge.py` adds the first in-process harness:
+
+```text
+SOCKS greeting/request bytes
+-> socks5_proto parser
+-> proxy OPEN/DATA/CLOSE messages
+-> InMemoryProxyCarrier
+-> FakeProxyEgress
+-> proxy DATA/CLOSE response
+-> SOCKS success reply + response bytes
+```
+
+This still does not open a listening port and does not connect to external targets. It validates the
+control/data message contract before a real local listener or WB carrier is attached.
