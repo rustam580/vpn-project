@@ -160,6 +160,23 @@ frames -> WB media track -> ACKed sliding-window delivery -> stream reassembly. 
 prototype is a local SOCKS-like adapter that maps TCP-ish byte streams onto this primitive, still
 strictly isolated from production.
 
+## SOCKS-Like Protocol Skeleton
+
+Added protocol-only local proxy pieces:
+
+- `socks5_proto.py`: no-auth SOCKS5 greeting and CONNECT parser, plus basic reply builders.
+- `proxy_messages.py`: internal `OPEN`, `DATA`, `CLOSE`, and `ERROR` messages.
+- Tests carry proxy messages through `stream_protocol.py` and `tile2` video frames.
+
+This deliberately stops short of opening a real local listener or egressing traffic. The goal is to
+keep the mapping testable first:
+
+```text
+SOCKS CONNECT -> ProxyOpen -> StreamFrame -> tile2 frame
+TCP bytes -> ProxyData -> StreamFrame -> tile2 frame
+EOF/error -> ProxyClose/ProxyError -> StreamFrame -> tile2 frame
+```
+
 ## Notes From `refactor/universal-carrier`
 
 Useful architecture lessons from the newer olcRTC branch:

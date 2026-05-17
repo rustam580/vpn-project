@@ -408,3 +408,24 @@ byte stream -> stream_protocol packets -> tile2 video frames -> WB media track -
 
 The next R&D step is a local SOCKS-like prototype that uses this stream framing as its payload
 primitive, still without touching production users, payments, or Marzban.
+
+## SOCKS-Like Proxy Protocol Skeleton
+
+The first local-proxy pieces are intentionally protocol-only:
+
+- `socks5_proto.py`: parses no-auth SOCKS5 greeting and CONNECT requests for IPv4/domain/IPv6;
+- `proxy_messages.py`: encodes internal `OPEN`, `DATA`, `CLOSE`, and `ERROR` messages;
+- tests verify proxy messages carried through `stream_protocol.py` and `tile2` video frames.
+
+Current planned stack:
+
+```text
+local SOCKS5 CONNECT
+-> proxy OPEN/DATA/CLOSE messages
+-> stream_protocol packets
+-> tile2 video frames
+-> WB media carrier
+```
+
+There is still no always-on local listener and no remote egress bridge in this step. Those should be
+added only after the protocol pieces stay small and testable.
