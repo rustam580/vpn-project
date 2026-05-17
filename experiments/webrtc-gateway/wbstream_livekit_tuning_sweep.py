@@ -38,6 +38,8 @@ class SweepRecord:
     ok: bool
     case: dict[str, CaseValue]
     repeat_index: int
+    attempt_count: int
+    transient_errors: list[str]
     elapsed_ms: int | None = None
     throughput_bps: float | None = None
     encoded_frames: int | None = None
@@ -246,6 +248,7 @@ async def run_sweep(
     *,
     cases: list[SweepCase],
     repeats: int,
+    run_attempts: int,
     timeout_sec: float,
     pause_sec: float,
 ) -> SweepSummary:
@@ -263,45 +266,62 @@ async def run_sweep(
                 f"repeat={repeat_index}/{repeats} {case.label()}",
                 flush=True,
             )
-            try:
-                result = await wbstream_video_window_probe(
-                    room,
-                    payload_bytes=case.payload_bytes,
-                    timeout_sec=timeout_sec,
-                    fps=case.fps,
-                    ack_fps=case.ack_fps,
-                    window_size=case.window_size,
-                    retry_timeout_sec=case.retry_timeout_sec,
-                    codec=case.codec,
-                    data_repeats=case.data_repeats,
-                )
-                data = result.safe_dict()
-                record = SweepRecord(
-                    ok=True,
-                    case=_case_dict(case),
-                    repeat_index=repeat_index,
-                    elapsed_ms=int(data["elapsed_ms"]),
-                    throughput_bps=float(data["throughput_bps"]),
-                    encoded_frames=int(data["encoded_frames"]),
-                    data_frames_sent=int(data["data_frames_sent"]),
-                    retransmits=int(data["retransmits"]),
-                    ack_frames_sent=int(data["ack_frames_sent"]),
-                    data_decode_attempts=int(data["data_decode_attempts"]),
-                    ack_decode_attempts=int(data["ack_decode_attempts"]),
-                )
-                print(
-                    f"  ok throughput={record.throughput_bps:.2f} B/s "
-                    f"elapsed={record.elapsed_ms}ms retransmits={record.retransmits}",
-                    flush=True,
-                )
-            except Exception as exc:
-                record = SweepRecord(
-                    ok=False,
-                    case=_case_dict(case),
-                    repeat_index=repeat_index,
-                    error=f"{type(exc).__name__}: {exc}",
-                )
-                print(f"  fail {record.error}", flush=True)
+            transient_errors: list[str] = []
+            record: SweepRecord | None = None
+            for attempt in range(1, run_attempts + 1):
+                try:
+                    result = await wbstream_video_window_probe(
+                        room,
+                        payload_bytes=case.payload_bytes,
+                        timeout_sec=timeout_sec,
+                        fps=case.fps,
+                        ack_fps=case.ack_fps,
+                        window_size=case.window_size,
+                        retry_timeout_sec=case.retry_timeout_sec,
+                        codec=case.codec,
+                        data_repeats=case.data_repeats,
+                    )
+                    data = result.safe_dict()
+                    record = SweepRecord(
+                        ok=True,
+                        case=_case_dict(case),
+                        repeat_index=repeat_index,
+                        attempt_count=attempt,
+                        transient_errors=transient_errors,
+                        elapsed_ms=int(data["elapsed_ms"]),
+                        throughput_bps=float(data["throughput_bps"]),
+                        encoded_frames=int(data["encoded_frames"]),
+                        data_frames_sent=int(data["data_frames_sent"]),
+                        retransmits=int(data["retransmits"]),
+                        ack_frames_sent=int(data["ack_frames_sent"]),
+                        data_decode_attempts=int(data["data_decode_attempts"]),
+                        ack_decode_attempts=int(data["ack_decode_attempts"]),
+                    )
+                    print(
+                        f"  ok attempt={attempt}/{run_attempts} throughput={record.throughput_bps:.2f} B/s "
+                        f"elapsed={record.elapsed_ms}ms retransmits={record.retransmits}",
+                        flush=True,
+                    )
+                    break
+                except Exception as exc:
+                    error = f"{type(exc).__name__}: {exc}"
+                    if attempt < run_attempts:
+                        transient_errors.append(error)
+                        print(f"  retry attempt={attempt}/{run_attempts} {error}", flush=True)
+                        if pause_sec > 0:
+                            await asyncio.sleep(pause_sec)
+                        continue
+                    record = SweepRecord(
+                        ok=False,
+                        case=_case_dict(case),
+                        repeat_index=repeat_index,
+                        attempt_count=attempt,
+                        transient_errors=transient_errors,
+                        error=error,
+                    )
+                    print(f"  fail attempt={attempt}/{run_attempts} {record.error}", flush=True)
+            if record is None:
+                raise RuntimeError("sweep run produced no record")
             records.append(record)
             if run_index != total_runs and pause_sec > 0:
                 await asyncio.sleep(pause_sec)
@@ -339,11 +359,14 @@ async def _amain() -> int:
     parser.add_argument("--timeout-sec", type=float, default=150.0)
     parser.add_argument("--pause-sec", type=float, default=2.0)
     parser.add_argument("--repeats", type=int, default=1, help="runs per parameter case")
+    parser.add_argument("--run-attempts", type=int, default=1, help="attempts per run for transient carrier errors")
     parser.add_argument("--max-runs", type=int)
     parser.add_argument("--json-out", help="optional output path for full JSON results")
     args = parser.parse_args()
     if args.repeats < 1:
         raise SystemExit("--repeats must be >= 1")
+    if args.run_attempts < 1:
+        raise SystemExit("--run-attempts must be >= 1")
 
     cases = build_cases(
         payloads=parse_int_list(args.payloads),
@@ -359,6 +382,7 @@ async def _amain() -> int:
         args.room,
         cases=cases,
         repeats=args.repeats,
+        run_attempts=args.run_attempts,
         timeout_sec=args.timeout_sec,
         pause_sec=args.pause_sec,
     )

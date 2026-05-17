@@ -36,6 +36,12 @@ Manual room tested:
 https://stream.wb.ru/room/019e30d5-9b63-700e-8453-b514a5db7746
 ```
 
+Fresh room tested on 2026-05-17:
+
+```text
+https://stream.wb.ru/room/019e3617-5902-7a10-896f-949571b5cd19
+```
+
 What worked:
 
 - Guest registration works.
@@ -67,6 +73,14 @@ Implication:
 - `wbstream_livekit_tuning_sweep.py` runs bounded parameter grids and writes JSON summaries. Use `--codecs binary,tile2` and `--repeats N` to get per-case aggregates (`min/median/p95/max` throughput, median elapsed time, median retransmits) before choosing a baseline.
 - `--data-repeats N` is implemented in the sliding-window probe and sweep. It repeats each due data chunk multiple times without counting those duplicates as retransmits, so it can measure explicit redundancy cost separately from timeout-driven retries.
 - Later live checks may fail with `HTTP 403: guests cannot create rooms` if the manual WB room is gone or no longer joinable; create a fresh room before treating this as a codec/transport failure.
+- Fresh-room matrix on 2026-05-17:
+  - `512` bytes, `binary`, `data_repeats=1`: 1/2 successful in the first sweep due a transient `stream.wb.ru` connection error; successful run was `68.35 B/s`.
+  - `512` bytes, `binary`, `data_repeats=2`: 2/2 successful, median `56.81 B/s`, 0 retransmits.
+  - `512` bytes, `tile2`, `data_repeats=1`: 2/2 successful, median `63.03 B/s`, 0 retransmits.
+  - `512` bytes, `tile2`, `data_repeats=2`: 1/2 successful in first sweep due transient provider error; successful run was `65.53 B/s`.
+  - With `--run-attempts 2`, all 512-byte cases completed; best one-off was `tile2,data_repeats=1` at `65.69 B/s`.
+  - `1024` bytes, `binary`, `data_repeats=1`, repeats=2: median `113.17 B/s`, 0 retransmits.
+  - `1024` bytes, `tile2`, `data_repeats=1`, repeats=2: median `146.03 B/s`, 0 retransmits. Current best R&D baseline candidate.
 
 ## Notes From `refactor/universal-carrier`
 

@@ -312,6 +312,10 @@ Use `--repeats N` for noisy real-carrier measurements. The JSON report includes:
 - `best`: best single run;
 - `best_aggregate`: best case by median throughput.
 
+Use `--run-attempts 2` or higher when the provider occasionally fails before the media test starts
+(`ClientConnectorError`, temporary WB endpoint hiccup). The report records `attempt_count` and
+`transient_errors` per run.
+
 Window sweep on 2026-05-16:
 
 | Payload | Window | Retry | FPS | ACK FPS | Throughput | Retransmits |
@@ -323,3 +327,14 @@ Window sweep on 2026-05-16:
 
 FPS/ACK-FPS sweep right after that was worse and more variable (`39-54 B/s`), so treat one-off
 measurements as noisy. Prefer repeated sweeps before drawing product conclusions.
+
+Fresh-room check on 2026-05-17:
+
+| Payload | Codec | Repeats | Median throughput | Retransmits | Note |
+|---:|---|---:|---:|---:|---|
+| 512 | binary | 1 | 63.25 B/s | 0 | `--run-attempts 2`, one run |
+| 512 | binary | 2 | 61.65 B/s | 0 | repeat overhead did not help |
+| 512 | tile2 | 1 | 65.69 B/s | 0 | best 512-byte one-off |
+| 512 | tile2 | 2 | 44.90 B/s | 0 | slower from duplicate frame cost |
+| 1024 | binary | 1 | 113.17 B/s | 0 | repeats=2 |
+| 1024 | tile2 | 1 | 146.03 B/s | 0 | repeats=2; current best R&D baseline candidate |
