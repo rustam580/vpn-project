@@ -34,6 +34,7 @@ FPS = 8
 ACK_FPS = 4
 DEFAULT_WINDOW_SIZE = 4
 DEFAULT_RETRY_TIMEOUT_SEC = 2.5
+DEFAULT_DATA_REPEATS = 1
 DEFAULT_SECRET = "rootvpn-lab-video-carrier-secret"
 DEFAULT_MESSAGE = "RootVPN windowed video carrier " * 40
 CODEC_BINARY = "binary"
@@ -68,6 +69,7 @@ class VideoWindowResult:
     retry_timeout_sec: float
     throughput_bps: float
     codec: str
+    data_repeats: int
 
     def safe_dict(self) -> dict[str, Any]:
         return {
@@ -96,6 +98,7 @@ class VideoWindowResult:
             "retry_timeout_sec": self.retry_timeout_sec,
             "throughput_bps": round(self.throughput_bps, 2),
             "codec": self.codec,
+            "data_repeats": self.data_repeats,
         }
 
 
@@ -185,9 +188,12 @@ async def wbstream_video_window_probe(
     window_size: int = DEFAULT_WINDOW_SIZE,
     retry_timeout_sec: float = DEFAULT_RETRY_TIMEOUT_SEC,
     codec: str = CODEC_BINARY,
+    data_repeats: int = DEFAULT_DATA_REPEATS,
 ) -> VideoWindowResult:
     if codec not in SUPPORTED_CODECS:
         raise ValueError(f"unsupported video frame codec: {codec}")
+    if data_repeats <= 0:
+        raise ValueError("data_repeats must be positive")
     room_id = extract_room_id(room)
     payload = _build_payload(message, payload_bytes)
     data_frames = _encode_payload_frames(payload, secret=secret, codec=codec)
@@ -320,11 +326,17 @@ async def wbstream_video_window_probe(
                 for seq in due:
                     if all_acked.done():
                         break
-                    data_source.capture_frame(
-                        rtc.VideoFrame(DEFAULT_WIDTH, DEFAULT_HEIGHT, rtc.VideoBufferType.RGBA, data_frames[seq])
-                    )
-                    sender.mark_sent(seq, time.perf_counter())
-                    await asyncio.sleep(1.0 / fps)
+                    for repeat_index in range(data_repeats):
+                        if all_acked.done():
+                            break
+                        data_source.capture_frame(
+                            rtc.VideoFrame(DEFAULT_WIDTH, DEFAULT_HEIGHT, rtc.VideoBufferType.RGBA, data_frames[seq])
+                        )
+                        if repeat_index == 0:
+                            sender.mark_sent(seq, time.perf_counter())
+                        else:
+                            sender.mark_duplicate_sent(seq)
+                        await asyncio.sleep(1.0 / fps)
 
         async def push_ack_frames() -> None:
             nonlocal ack_frames_sent
@@ -377,6 +389,7 @@ async def wbstream_video_window_probe(
             retry_timeout_sec=stats.retry_timeout_sec,
             throughput_bps=len(payload) / elapsed if elapsed > 0 else 0.0,
             codec=codec,
+            data_repeats=data_repeats,
         )
     finally:
         for task in list(push_tasks):
@@ -401,6 +414,7 @@ async def _amain() -> int:
     parser.add_argument("--window-size", type=int, default=DEFAULT_WINDOW_SIZE)
     parser.add_argument("--retry-timeout-sec", type=float, default=DEFAULT_RETRY_TIMEOUT_SEC)
     parser.add_argument("--codec", choices=sorted(SUPPORTED_CODECS), default=CODEC_BINARY)
+    parser.add_argument("--data-repeats", type=int, default=DEFAULT_DATA_REPEATS)
     args = parser.parse_args()
 
     result = await wbstream_video_window_probe(
@@ -414,6 +428,7 @@ async def _amain() -> int:
         window_size=args.window_size,
         retry_timeout_sec=args.retry_timeout_sec,
         codec=args.codec,
+        data_repeats=args.data_repeats,
     )
     print(json.dumps(result.safe_dict(), ensure_ascii=False, indent=2))
     return 0

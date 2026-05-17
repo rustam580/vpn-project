@@ -273,6 +273,20 @@ Verified `tile2` result on 2026-05-16:
 }
 ```
 
+For fragile codecs or noisy carrier conditions, `--data-repeats N` sends each data chunk multiple
+times before moving on. This increases frame cost but can reduce decode misses:
+
+```powershell
+experiments/webrtc-gateway/.venv/Scripts/python experiments/webrtc-gateway/wbstream_livekit_frame_window.py `
+  https://stream.wb.ru/room/019e30d5-9b63-700e-8453-b514a5db7746 `
+  --payload-bytes 512 `
+  --codec tile2 `
+  --data-repeats 2
+```
+
+The old WB room may expire or stop allowing guest connection details. If the probe fails with
+`guests cannot create rooms`, open a fresh room manually and pass the new room URL.
+
 ## WB Stream Tuning Sweep
 
 Run a bounded parameter sweep. Keep the grid small: every case opens live WB Stream sessions.
@@ -286,6 +300,7 @@ experiments/webrtc-gateway/.venv/Scripts/python experiments/webrtc-gateway/wbstr
   --fps 8 `
   --ack-fps 4 `
   --codecs binary,tile2 `
+  --data-repeats 1,2 `
   --repeats 3 `
   --json-out experiments/webrtc-gateway/last_tuning_sweep.json
 ```

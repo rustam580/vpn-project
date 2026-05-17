@@ -29,6 +29,14 @@ def test_sliding_window_retries_timed_out_inflight():
     assert sender.stats.retransmits == 1
 
 
+def test_sliding_window_duplicate_send_counts_frame_not_retransmit():
+    sender = SlidingWindowSender(total_chunks=2, window_size=1, retry_timeout_sec=3.0)
+    sender.mark_sent(0, 0.0)
+    sender.mark_duplicate_sent(0)
+    assert sender.stats.frames_sent == 2
+    assert sender.stats.retransmits == 0
+
+
 def test_sliding_window_ignores_invalid_ack_and_completes():
     sender = SlidingWindowSender(total_chunks=2, window_size=2, retry_timeout_sec=3.0)
     assert sender.update_ack({0, 1, 999}) == 2

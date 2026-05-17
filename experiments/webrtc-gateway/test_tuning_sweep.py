@@ -28,6 +28,7 @@ def test_build_cases_order_and_max_runs():
     )
     assert [(case.payload_bytes, case.window_size) for case in cases] == [(512, 2), (512, 4), (1024, 2)]
     assert {case.codec for case in cases} == {"binary"}
+    assert {case.data_repeats for case in cases} == {1}
 
 
 def test_build_cases_can_expand_codecs():
@@ -38,15 +39,29 @@ def test_build_cases_can_expand_codecs():
         fps_values=[8],
         ack_fps_values=[4],
         codecs=["binary", "tile2"],
+        data_repeats_values=[1, 2],
     )
-    assert [case.codec for case in cases] == ["binary", "tile2"]
+    assert [(case.codec, case.data_repeats) for case in cases] == [
+        ("binary", 1),
+        ("binary", 2),
+        ("tile2", 1),
+        ("tile2", 2),
+    ]
 
 
 def test_aggregate_records_groups_by_case_and_calculates_stats():
     records = [
         SweepRecord(
             ok=True,
-            case={"payload_bytes": 1024, "window_size": 4, "retry_timeout_sec": 2.5, "fps": 8, "ack_fps": 4},
+            case={
+                "payload_bytes": 1024,
+                "window_size": 4,
+                "retry_timeout_sec": 2.5,
+                "fps": 8,
+                "ack_fps": 4,
+                "codec": "binary",
+                "data_repeats": 1,
+            },
             repeat_index=1,
             elapsed_ms=10000,
             throughput_bps=100.0,
@@ -54,7 +69,15 @@ def test_aggregate_records_groups_by_case_and_calculates_stats():
         ),
         SweepRecord(
             ok=True,
-            case={"payload_bytes": 1024, "window_size": 4, "retry_timeout_sec": 2.5, "fps": 8, "ack_fps": 4},
+            case={
+                "payload_bytes": 1024,
+                "window_size": 4,
+                "retry_timeout_sec": 2.5,
+                "fps": 8,
+                "ack_fps": 4,
+                "codec": "binary",
+                "data_repeats": 1,
+            },
             repeat_index=2,
             elapsed_ms=12000,
             throughput_bps=80.0,
@@ -62,7 +85,15 @@ def test_aggregate_records_groups_by_case_and_calculates_stats():
         ),
         SweepRecord(
             ok=False,
-            case={"payload_bytes": 1024, "window_size": 4, "retry_timeout_sec": 2.5, "fps": 8, "ack_fps": 4},
+            case={
+                "payload_bytes": 1024,
+                "window_size": 4,
+                "retry_timeout_sec": 2.5,
+                "fps": 8,
+                "ack_fps": 4,
+                "codec": "binary",
+                "data_repeats": 1,
+            },
             repeat_index=3,
             error="timeout",
         ),

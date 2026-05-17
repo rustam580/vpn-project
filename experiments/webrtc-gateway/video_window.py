@@ -83,3 +83,10 @@ class SlidingWindowSender:
             self.retransmits += 1
         self.inflight[seq] = now
         self.frames_sent += 1
+
+    def mark_duplicate_sent(self, seq: int) -> None:
+        if not 0 <= seq < self.total_chunks:
+            raise ValueError("seq out of range")
+        if seq in self.acked:
+            return
+        self.frames_sent += 1

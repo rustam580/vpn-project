@@ -23,11 +23,13 @@ class SweepCase:
     fps: int
     ack_fps: int
     codec: str
+    data_repeats: int
 
     def label(self) -> str:
         return (
             f"payload={self.payload_bytes} window={self.window_size} "
-            f"retry={self.retry_timeout_sec:g}s fps={self.fps} ack_fps={self.ack_fps} codec={self.codec}"
+            f"retry={self.retry_timeout_sec:g}s fps={self.fps} ack_fps={self.ack_fps} "
+            f"codec={self.codec} data_repeats={self.data_repeats}"
         )
 
 
@@ -113,12 +115,17 @@ def build_cases(
     fps_values: list[int],
     ack_fps_values: list[int],
     codecs: list[str] | None = None,
+    data_repeats_values: list[int] | None = None,
     max_runs: int | None = None,
 ) -> list[SweepCase]:
     codecs = codecs or ["binary"]
+    data_repeats_values = data_repeats_values or [1]
     unsupported = [codec for codec in codecs if codec not in SUPPORTED_CODECS]
     if unsupported:
         raise ValueError(f"unsupported codecs: {', '.join(unsupported)}")
+    invalid_repeats = [value for value in data_repeats_values if value <= 0]
+    if invalid_repeats:
+        raise ValueError("data repeats must be positive")
     cases = [
         SweepCase(
             payload_bytes=payload,
@@ -127,6 +134,7 @@ def build_cases(
             fps=fps,
             ack_fps=ack_fps,
             codec=codec,
+            data_repeats=data_repeats,
         )
         for payload in payloads
         for window in windows
@@ -134,6 +142,7 @@ def build_cases(
         for fps in fps_values
         for ack_fps in ack_fps_values
         for codec in codecs
+        for data_repeats in data_repeats_values
     ]
     if max_runs is not None:
         cases = cases[:max_runs]
@@ -148,6 +157,7 @@ def _case_dict(case: SweepCase) -> dict[str, CaseValue]:
         "fps": case.fps,
         "ack_fps": case.ack_fps,
         "codec": case.codec,
+        "data_repeats": case.data_repeats,
     }
 
 
@@ -263,6 +273,7 @@ async def run_sweep(
                     window_size=case.window_size,
                     retry_timeout_sec=case.retry_timeout_sec,
                     codec=case.codec,
+                    data_repeats=case.data_repeats,
                 )
                 data = result.safe_dict()
                 record = SweepRecord(
@@ -324,6 +335,7 @@ async def _amain() -> int:
     parser.add_argument("--fps", default="8", help="comma-separated data FPS values")
     parser.add_argument("--ack-fps", default="4", help="comma-separated ACK FPS values")
     parser.add_argument("--codecs", default="binary", help="comma-separated codecs: binary,tile2")
+    parser.add_argument("--data-repeats", default="1", help="comma-separated data-frame repeat counts")
     parser.add_argument("--timeout-sec", type=float, default=150.0)
     parser.add_argument("--pause-sec", type=float, default=2.0)
     parser.add_argument("--repeats", type=int, default=1, help="runs per parameter case")
@@ -340,6 +352,7 @@ async def _amain() -> int:
         fps_values=parse_int_list(args.fps),
         ack_fps_values=parse_int_list(args.ack_fps),
         codecs=[item.strip() for item in args.codecs.split(",") if item.strip()],
+        data_repeats_values=parse_int_list(args.data_repeats),
         max_runs=args.max_runs,
     )
     summary = await run_sweep(

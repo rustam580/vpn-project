@@ -65,6 +65,8 @@ Implication:
 - ACK bitmap signaling is implemented in `wbstream_livekit_frame_ack.py`. It uses a reverse video track and stops retransmitting chunks once ACKed. This validates bidirectional media-frame signaling, but it is still not a tuned sliding-window transport.
 - Sliding-window sender policy is implemented in `video_window.py` and the WB field probe is `wbstream_livekit_frame_window.py`. The first tuning baseline is window=4, retry=2.5s.
 - `wbstream_livekit_tuning_sweep.py` runs bounded parameter grids and writes JSON summaries. Use `--codecs binary,tile2` and `--repeats N` to get per-case aggregates (`min/median/p95/max` throughput, median elapsed time, median retransmits) before choosing a baseline.
+- `--data-repeats N` is implemented in the sliding-window probe and sweep. It repeats each due data chunk multiple times without counting those duplicates as retransmits, so it can measure explicit redundancy cost separately from timeout-driven retries.
+- Later live checks may fail with `HTTP 403: guests cannot create rooms` if the manual WB room is gone or no longer joinable; create a fresh room before treating this as a codec/transport failure.
 
 ## Notes From `refactor/universal-carrier`
 
