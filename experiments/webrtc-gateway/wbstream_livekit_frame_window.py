@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import binascii
 import json
 import time
 from dataclasses import dataclass
@@ -144,6 +145,14 @@ def _build_payload(message: str, payload_bytes: int | None) -> bytes:
     return bytes(seed[idx % len(seed)] ^ (idx * 31 % 251) for idx in range(payload_bytes))
 
 
+def _select_payload(*, payload: bytes | None, message: str, payload_bytes: int | None) -> bytes:
+    if payload is not None:
+        if payload_bytes is not None:
+            raise ValueError("payload and payload_bytes are mutually exclusive")
+        return payload
+    return _build_payload(message, payload_bytes)
+
+
 def _encode_payload_frames(payload: bytes, *, secret: str, codec: str) -> list[bytes]:
     if codec == CODEC_BINARY:
         return encode_payload_frames_rgba(payload, secret=secret)
@@ -224,6 +233,7 @@ async def _probe_room_pair_with_attempts(
 async def wbstream_video_window_probe(
     room: str,
     *,
+    payload: bytes | None = None,
     message: str = DEFAULT_MESSAGE,
     payload_bytes: int | None = None,
     secret: str = DEFAULT_SECRET,
@@ -245,7 +255,7 @@ async def wbstream_video_window_probe(
     if connect_attempts <= 0:
         raise ValueError("connect_attempts must be positive")
     room_id = extract_room_id(room)
-    payload = _build_payload(message, payload_bytes)
+    payload = _select_payload(payload=payload, message=message, payload_bytes=payload_bytes)
     stream_packets = (
         segment_stream_payload(
             payload,
@@ -481,6 +491,7 @@ async def _amain() -> int:
     parser.add_argument("room", help="WB Stream room ID or URL")
     parser.add_argument("--message", default=DEFAULT_MESSAGE)
     parser.add_argument("--payload-bytes", type=int)
+    parser.add_argument("--payload-hex", help="send exact payload bytes encoded as hex")
     parser.add_argument("--secret", default=DEFAULT_SECRET)
     parser.add_argument("--timeout-sec", type=float, default=120.0)
     parser.add_argument("--fps", type=int, default=FPS)
@@ -496,6 +507,7 @@ async def _amain() -> int:
 
     result = await wbstream_video_window_probe(
         args.room,
+        payload=binascii.unhexlify(args.payload_hex) if args.payload_hex else None,
         message=args.message,
         payload_bytes=args.payload_bytes,
         secret=args.secret,

@@ -219,9 +219,38 @@ this R&D track:
 Immediate implementation impact:
 
 1. Keep `local_socks_server.py` loopback-only and fake-egress-only for now.
-2. Next swap `InMemoryProxyCarrier` for a WB stream-mode carrier adapter.
-3. Then add route auth and a bounded allow-list before real egress.
-4. Only after that evaluate multiplexing, KCP-like reliability, and multi-track scaling.
+2. Use `proxy_packet_bundle.py` as the explicit boundary between SOCKS/proxy messages and carrier
+   payload bytes.
+3. Use `wbstream_proxy_carrier.py` to deliver proxy packet bundles over WB stream-mode in lab
+   tests. Its `exchange()` method intentionally fails until a remote endpoint can return response
+   bundles.
+4. Then add route auth and a bounded allow-list before real egress.
+5. Only after that evaluate multiplexing, KCP-like reliability, and multi-track scaling.
+
+## WB Stream Proxy Carrier Boundary
+
+`wbstream_proxy_carrier.py` is the first adapter-shaped step from local SOCKS toward WB Stream:
+
+```text
+ProxyOpen/ProxyData/ProxyClose packets
+-> RPB1 bundle
+-> wbstream_video_window_probe(payload=bundle, stream_mode=True)
+-> tile2 video-frame transport
+```
+
+This is still not a complete proxy bridge because there is no remote egress participant yet. The
+missing half is:
+
+```text
+remote WB participant
+-> decode RPB1 bundle
+-> enforce allowed route policy
+-> fake/real egress
+-> encode response RPB1 bundle
+-> send back over reverse stream
+```
+
+Keep the adapter delivery-only until that remote endpoint is implemented and tested.
 
 olcRTC's recommended URI shape for WB Stream + DataChannel:
 

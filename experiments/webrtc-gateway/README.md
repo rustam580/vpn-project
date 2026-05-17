@@ -464,3 +464,17 @@ Safety boundaries:
 - uses fake egress only.
 
 This is the client-facing shape of the future bridge without becoming a public proxy.
+
+`proxy_packet_bundle.py` and `wbstream_proxy_carrier.py` add the first WB-facing adapter boundary:
+
+```text
+proxy packets
+-> proxy packet bundle
+-> wbstream_video_window_probe(payload=<bundle>, stream_mode=True)
+-> tile2 video frames over WB Stream
+```
+
+`WBStreamProxyCarrier.deliver_packets()` is delivery-only. It proves that proxy packets can be
+carried over the current WB stream-mode path, but `exchange()` deliberately raises until a remote
+egress endpoint exists to decode bundles, apply route policy, and return response bundles. In other
+words: the carrier is getting real; the tunnel is still lab-only.
