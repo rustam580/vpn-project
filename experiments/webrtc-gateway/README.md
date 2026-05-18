@@ -478,3 +478,18 @@ proxy packets
 carried over the current WB stream-mode path, but `exchange()` deliberately raises until a remote
 egress endpoint exists to decode bundles, apply route policy, and return response bundles. In other
 words: the carrier is getting real; the tunnel is still lab-only.
+
+`remote_proxy_endpoint.py` adds that missing remote lab half at the protocol boundary:
+
+```text
+RPB1 request bundle
+-> decode proxy OPEN/DATA/CLOSE packets
+-> enforce explicit host:port route policy
+-> fake egress handler
+-> proxy DATA/CLOSE or ERROR packets
+-> RPB1 response bundle
+```
+
+It still does not dial the network by itself and does not implement reverse WB media delivery. This
+keeps the experiment safe while proving the exact request/response contract the future server-side
+WB participant must run.

@@ -238,8 +238,8 @@ ProxyOpen/ProxyData/ProxyClose packets
 -> tile2 video-frame transport
 ```
 
-This is still not a complete proxy bridge because there is no remote egress participant yet. The
-missing half is:
+This is still not a complete proxy bridge because there is no reverse WB response path yet. The
+server-side protocol half now exists in `remote_proxy_endpoint.py`:
 
 ```text
 remote WB participant
@@ -250,9 +250,64 @@ remote WB participant
 -> send back over reverse stream
 ```
 
-Keep the adapter delivery-only until that remote endpoint is implemented and tested.
+Current safety boundary:
 
-olcRTC's recommended URI shape for WB Stream + DataChannel:
+- `remote_proxy_endpoint.py` does not dial the network itself;
+- an injected fake egress handler performs the response;
+- explicit host:port allow-list is enforced before egress is called;
+- `WBStreamProxyCarrier.exchange()` still raises until reverse WB media delivery exists.
+
+This gives us a tested RPB1 request/response contract without creating an unauthenticated proxy.
+
+Fresh room field smoke, 2026-05-18:
+
+Room: `https://stream.wb.ru/room/019e3ab0-e4c1-7d0b-8ea4-7df731ec636d`
+
+Command shape:
+
+```text
+wbstream_livekit_frame_window.py <room>
+  --stream-mode --codec tile2 --data-repeats 1 --window-size 4
+  --retry-timeout-sec 2.5 --fps 8 --ack-fps 4 --connect-attempts 3
+```
+
+Results:
+
+- `2048` bytes: ok, 9/9 chunks, 0 retransmits, ~151 B/s, setup on first attempt.
+- `8192` bytes: ok, 34/34 chunks, 4 retransmits, ~399 B/s, setup on first attempt.
+
+This validates the fresh room and current tile2 stream-mode path, but does not change the product
+status: still lab-only, no real egress, no auth, no reconnect supervisor, no account-risk baseline.
+
+## olcRTC vp8channel Findings
+
+The `openlibrecommunity/olcrtc` `refactor/universal-carrier` branch uses `vp8channel` as the fast
+route where DataChannel is unavailable. It is not a visual tile codec. It publishes already-encoded
+VP8-looking samples:
+
+```text
+valid VP8 keyframe prefix
+-> binding token
+-> sender epoch + CRC
+-> raw KCP packet bytes
+```
+
+Key implementation details observed:
+
+- Go/Pion publishes a `TrackLocalStaticSample` with `MimeTypeVP8`.
+- KCP provides reliable ordered delivery, retransmits, stream mode, and backpressure.
+- Default max payload is `60 * 1024`; e2e examples tune VP8 FPS/batch rather than tile density.
+- Epoch headers let peers detect session restart and reset KCP.
+- Their e2e matrix marks Telemost/Jitsi `vp8channel` as expected-pass and WB Stream DataChannel as
+  expected-fail; WB media routes remain the relevant family to test for RootVPN.
+
+Python implication: our current LiveKit path publishes raw video frames and lets the SDK encode
+them. That is good for `tile2`, but it is the wrong API shape for injecting a custom VP8 bitstream.
+Before trying a Python port, verify that the Python LiveKit/aiortc stack can publish encoded VP8
+samples directly. Otherwise, the pragmatic vp8 path is a Go/Pion sidecar or upstream olcRTC backend
+spike, while Python keeps handling lab protocol, route policy, and product integration experiments.
+
+Historical olcRTC URI shape observed for WB Stream + DataChannel:
 
 ```text
 olcrtc://wbstream?datachannel@<room-id>#<32-byte-hex-key>%<client-id>$<comment>
@@ -260,10 +315,12 @@ olcrtc://wbstream?datachannel@<room-id>#<32-byte-hex-key>%<client-id>$<comment>
 
 Operationally useful facts:
 
-- `wbstream + datachannel` is documented as the recommended fast path.
+- Do not treat `wbstream + datachannel` as the RootVPN fast path. Our WB room tests found guest
+  LiveKit data packets blocked (`can_publish_data=false`), and olcRTC's current e2e expectation
+  marks `wbstream/datachannel` as expected-fail.
 - Room ID and client ID must match between server and client.
-- The implementation uses queueing and exposes send-queue/backpressure concepts.
-- DataChannel transport advertises a max payload of `12 * 1024` bytes; RootVPN should chunk lower than that.
+- The DataChannel implementation is still useful as a design reference because it exposes
+  send-queue/backpressure concepts and advertises a max payload of `12 * 1024` bytes.
 - The real service path is through WB/LiveKit, not through our self-hosted `/offer` route.
 
 ## RootVPN Implementation Plan

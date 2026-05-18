@@ -1,6 +1,6 @@
 # WebRTC Transport Research
 
-Last updated: 2026-05-15
+Last updated: 2026-05-18
 
 ## Decision
 
@@ -69,6 +69,14 @@ Useful ideas to learn from, without copying code into the main RootVPN product:
 - Keep carrier and transport concepts separate. A "carrier" is the WebRTC service/path; a "transport" is the encoding over that carrier. This keeps experiments swappable.
 - Plan for reconnects, keepalive, backpressure, and queue visibility from the first non-echo PoC.
 - For Android, `VpnService.protect()`-style socket protection matters if the WebRTC client runs inside a VPN-style app, otherwise the tunnel can recursively route itself.
+
+Additional `vp8channel` review from `openlibrecommunity/olcrtc` branch `refactor/universal-carrier`:
+
+- `vp8channel` is not visual QR/tile encoding. It publishes valid-looking VP8 samples with a small VP8 keyframe prefix, a binding/epoch header, and raw KCP packet bytes.
+- The Go implementation relies on Pion `TrackLocalStaticSample` with `MimeTypeVP8`, so it can send prebuilt encoded samples directly.
+- KCP supplies reliable ordered delivery, retransmits, stream mode, and backpressure; this is a stronger architecture than adding more custom ACK logic above visual frames.
+- A direct Python port is uncertain because the current RootVPN WB lab path publishes raw video frames through LiveKit and lets the SDK encode them. That path may destroy arbitrary VP8 bitstream injection.
+- Pragmatic next step: keep Python `tile2` as a protocol lab, but evaluate a Go/Pion vp8 sidecar or olcRTC backend spike before spending time on a pure-Python vp8 implementation.
 
 Important cautions:
 
@@ -159,6 +167,14 @@ Phase 4: Proxy PoC
 - Add a minimal stream multiplexer or evaluate an existing permissive-license multiplexer.
 - Gateway forwards to upstream and returns responses.
 - Measure latency, throughput, reconnect behaviour, and memory per active stream.
+
+Current status inside `experiments/webrtc-gateway/`:
+
+- `socks5_proto.py`, `proxy_messages.py`, `local_bridge.py`, and `local_socks_server.py` provide a loopback-only fake-egress SOCKS shape.
+- `proxy_packet_bundle.py` defines the `RPB1` carrier boundary for proxy packets.
+- `wbstream_proxy_carrier.py` can deliver request bundles over WB stream-mode video frames.
+- `remote_proxy_endpoint.py` now decodes request bundles, enforces explicit route policy, runs fake egress, and returns response bundles.
+- Missing before real egress: reverse WB response delivery, auth tokens, reconnect/session supervisor, flow control, traffic accounting, and account-risk baseline.
 
 Phase 5: Closed beta
 - One or two admin-owned devices only.
