@@ -76,7 +76,7 @@ Additional `vp8channel` review from `openlibrecommunity/olcrtc` branch `refactor
 - The Go implementation relies on Pion `TrackLocalStaticSample` with `MimeTypeVP8`, so it can send prebuilt encoded samples directly.
 - KCP supplies reliable ordered delivery, retransmits, stream mode, and backpressure; this is a stronger architecture than adding more custom ACK logic above visual frames.
 - A direct Python port is uncertain because the current RootVPN WB lab path publishes raw video frames through LiveKit and lets the SDK encode them. That path may destroy arbitrary VP8 bitstream injection.
-- Pragmatic next step: keep Python `tile2` as a protocol lab, but evaluate a Go/Pion vp8 sidecar or olcRTC backend spike before spending time on a pure-Python vp8 implementation.
+- Decision: keep Python `tile2` as a protocol lab, but use an isolated `olcrtc` Go/Pion sidecar as the first Rescue Beta candidate. The primary profile is `wbstream + vp8channel`; `scripts/generate_olcrtc_rescue_configs.py` generates matching server/client YAML and `olcrtc://` URI.
 
 Important cautions:
 
