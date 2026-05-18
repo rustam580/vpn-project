@@ -55,6 +55,12 @@ def admin_panel_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="🩺 Ops отчет", callback_data="admin:ops")],
             [InlineKeyboardButton(text="📡 Xray ошибки", callback_data="admin:xray_errors")],
             [InlineKeyboardButton(text="🧭 Marzban/DB аудит", callback_data="admin:sync_audit")],
+            [
+                InlineKeyboardButton(
+                    text="🆘 Rescue Beta",
+                    switch_inline_query_current_chat="/rescue ",
+                )
+            ],
             [InlineKeyboardButton(text="🚀 Обновить и проверить", callback_data="admin:deploy")],
             [InlineKeyboardButton(text="🔎 Найти пользователя", callback_data="admin:find_user")],
             [InlineKeyboardButton(text="➕ Устройство", callback_data="admin:device_add")],

@@ -12,12 +12,11 @@ Primary profile:
 wbstream + vp8channel
 ```
 
-Why this, not the current Python `tile2` path:
+Why this path:
 
 - The business goal is "internet still works when only whitelisted services work".
 - WB Stream is closer to that real condition than a self-hosted WebRTC gateway.
 - `vp8channel` is already a byte tunnel over valid-looking VP8 samples with KCP reliability.
-- The Python `tile2` path is useful R&D, but current measured speed is still hundreds of B/s to ~1 KB/s.
 - `olcrtc` already has client/server modes, SOCKS5, encryption, smux, liveness, lifecycle rotation, and Docker/Podman wrappers.
 
 ## Boundary
@@ -25,6 +24,15 @@ Why this, not the current Python `tile2` path:
 Keep this outside the production RootVPN bot/site/Marzban flow until closed beta criteria are met.
 
 Do not advertise it as a public tariff yet. Treat it as admin-only Rescue Beta.
+
+## Field Status
+
+2026-05-18 validation:
+
+- Lab/LDPlayer: Olcbox TUN routed browser traffic through the test VPS `104.238.29.239`; `2ip.ru` showed the VPS IP, and Speedtest reported about `6.19 Mbps` download with about `404 ms` ping.
+- Real mobile field check in Anapa, RU: during a whitelist-like mobile restriction, the tester confirmed non-whitelisted apps/pages did not load on mobile data without VPN, then loaded after importing the RootVPN Rescue Beta URI and starting Olcbox.
+
+Interpretation: the core Rescue Beta hypothesis is confirmed for one real-world sample. Next work is packaging and reliability, not proving the basic tunnel concept again.
 
 ## License
 
@@ -47,9 +55,23 @@ Outputs:
 - `out/olcrtc-rescue/server.yaml`
 - `out/olcrtc-rescue/client.yaml`
 - `out/olcrtc-rescue/uri.txt`
+- `out/olcrtc-rescue/room-url.txt`
+- `out/olcrtc-rescue/session.json`
 
 For `wbstream`, full URLs like `https://stream.wb.ru/room/<id>` are normalized to `<id>` because
 the upstream auth provider joins rooms by room ID.
+
+You can also try automatic WB room creation:
+
+```powershell
+python scripts/generate_olcrtc_rescue_configs.py `
+  --create-wb-room `
+  --client-id olcbox `
+  --out-dir out/olcrtc-rescue
+```
+
+As of 2026-05-18, guest room creation can fail with `Guests are not allowed to create room`.
+That means product automation needs an authenticated room broker or a pre-created room pool.
 
 Defaults:
 
@@ -79,6 +101,47 @@ curl --socks5-hostname 127.0.0.1:8808 https://icanhazip.com
 ```
 
 Success means the returned IP is the server egress IP and ordinary TCP over SOCKS works.
+
+## Server Service Shape
+
+For closed beta, run each session as a managed service instead of an interactive shell:
+
+```bash
+install -D -m 0644 experiments/olcrtc-rescue/systemd/olcrtc-rescue@.service \
+  /etc/systemd/system/olcrtc-rescue@.service
+
+mkdir -p /etc/rootvpn/rescue/<session-id>
+cp out/olcrtc-rescue/server.yaml /etc/rootvpn/rescue/<session-id>/server.yaml
+
+systemctl daemon-reload
+systemctl enable --now olcrtc-rescue@<session-id>
+journalctl -u olcrtc-rescue@<session-id> -f
+```
+
+For the first beta, use one active device per session/room. Increase sharing only after reconnect and throughput metrics prove it is safe.
+
+## Bot Auto-Deploy
+
+Admin command:
+
+```text
+/rescue <telegram_id> <wb_room_url>
+```
+
+By default the bot prepares artifacts, sends the user URI/instructions, and returns a replayable
+deploy command to the operator. Automatic deploy is opt-in via `.env`:
+
+```dotenv
+OLCRTC_RESCUE_AUTO_DEPLOY=1
+OLCRTC_RESCUE_DEPLOY_HOST=root@104.238.29.239
+OLCRTC_RESCUE_REMOTE_ROOT=/etc/rootvpn/rescue
+OLCRTC_RESCUE_INSTALL_SERVICE=1
+OLCRTC_RESCUE_DEPLOY_TIMEOUT_SEC=60
+```
+
+Auto-deploy uses non-interactive SSH/SCP options (`BatchMode=yes`, short connect timeout), so the
+bot does not hang on password prompts. Configure SSH keys from the bot host to the Rescue VPS before
+turning it on.
 
 ## RootVPN Integration Target
 

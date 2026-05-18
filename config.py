@@ -521,6 +521,22 @@ def _load_xray_quality_block() -> dict[str, Any]:
     }
 
 
+def _load_olcrtc_rescue_block() -> dict[str, Any]:
+    return {
+        "olcrtc_rescue_auto_deploy": env_bool("OLCRTC_RESCUE_AUTO_DEPLOY", False),
+        "olcrtc_rescue_deploy_host": os.getenv("OLCRTC_RESCUE_DEPLOY_HOST", "").strip(),
+        "olcrtc_rescue_remote_root": os.getenv(
+            "OLCRTC_RESCUE_REMOTE_ROOT",
+            "/etc/rootvpn/rescue",
+        ).strip(),
+        "olcrtc_rescue_install_service": env_bool("OLCRTC_RESCUE_INSTALL_SERVICE", True),
+        "olcrtc_rescue_deploy_timeout_sec": max(
+            5,
+            int(os.getenv("OLCRTC_RESCUE_DEPLOY_TIMEOUT_SEC", "60")),
+        ),
+    }
+
+
 @dataclass(frozen=True)
 class Settings:
     bot_token: str
@@ -596,6 +612,11 @@ class Settings:
     xray_quality_monitor_window_min: int
     xray_quality_monitor_threshold: int
     xray_quality_monitor_show: int
+    olcrtc_rescue_auto_deploy: bool
+    olcrtc_rescue_deploy_host: str
+    olcrtc_rescue_remote_root: str
+    olcrtc_rescue_install_service: bool
+    olcrtc_rescue_deploy_timeout_sec: int
 
     @staticmethod
     def load() -> "Settings":
@@ -618,6 +639,7 @@ class Settings:
         fields.update(_load_sub_migration_block())
         fields.update(_load_marzban_sync_audit_block())
         fields.update(_load_xray_quality_block())
+        fields.update(_load_olcrtc_rescue_block())
         return Settings(**fields)
 
     def cryptobot_enabled(self) -> bool:

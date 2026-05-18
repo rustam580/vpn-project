@@ -477,6 +477,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             pending_broadcast_format=pending_broadcast_format,
             pending_broadcast_buttons=pending_broadcast_buttons,
             pending_broadcast_text=pending_broadcast_text,
+            track_event=track_event,
         ),
     )
 

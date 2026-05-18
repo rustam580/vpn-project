@@ -4,6 +4,7 @@ import pytest
 
 from scripts.generate_olcrtc_rescue_configs import (
     OlcRtcRescueConfig,
+    build_session_metadata,
     build_client_yaml,
     build_server_yaml,
     build_uri,
@@ -45,6 +46,33 @@ def test_generates_olcrtc_uri_with_vp8_payload():
         "olcrtc://wbstream?vp8channel<vp8-fps=60&vp8-batch=64>"
         "@room-1#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa$RootVPN Test"
     )
+
+
+def test_generates_olcrtc_uri_with_optional_client_id():
+    config = OlcRtcRescueConfig(room_id="https://stream.wb.ru/room/room-1", key_hex=KEY)
+
+    uri = build_uri(config, label="RootVPN Test", client_id="olcbox")
+
+    assert uri == (
+        "olcrtc://wbstream?vp8channel<vp8-fps=60&vp8-batch=64>"
+        "@room-1#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa%olcbox$RootVPN Test"
+    )
+
+
+def test_build_session_metadata_contains_operator_artifacts():
+    config = OlcRtcRescueConfig(room_id="https://stream.wb.ru/room/room-1", key_hex=KEY)
+
+    metadata = build_session_metadata(config, label="RootVPN Test", client_id="tg_1", created_room=True)
+
+    assert metadata["created_room"] is True
+    assert metadata["room_id"] == "room-1"
+    assert metadata["room_url"] == "https://stream.wb.ru/room/room-1"
+    assert metadata["server_config"] == "server.yaml"
+    assert metadata["client_config"] == "client.yaml"
+    assert metadata["client_id"] == "tg_1"
+    assert metadata["traffic"]["max_payload_size"] == 0
+    assert metadata["vp8"] == {"fps": 60, "batch_size": 64}
+    assert "%tg_1$RootVPN Test" in metadata["uri"]
 
 
 def test_rejects_bad_key():

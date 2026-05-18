@@ -76,7 +76,7 @@ Additional `vp8channel` review from `openlibrecommunity/olcrtc` branch `refactor
 - The Go implementation relies on Pion `TrackLocalStaticSample` with `MimeTypeVP8`, so it can send prebuilt encoded samples directly.
 - KCP supplies reliable ordered delivery, retransmits, stream mode, and backpressure; this is a stronger architecture than adding more custom ACK logic above visual frames.
 - A direct Python port is uncertain because the current RootVPN WB lab path publishes raw video frames through LiveKit and lets the SDK encode them. That path may destroy arbitrary VP8 bitstream injection.
-- Decision: keep Python `tile2` as a protocol lab, but use an isolated `olcrtc` Go/Pion sidecar as the first Rescue Beta candidate. The primary profile is `wbstream + vp8channel`; `scripts/generate_olcrtc_rescue_configs.py` generates matching server/client YAML and `olcrtc://` URI.
+- Decision: use an isolated `olcrtc` Go/Pion sidecar as the Rescue Beta candidate. The primary profile is `wbstream + vp8channel`; `scripts/generate_olcrtc_rescue_configs.py` generates matching server/client YAML and `olcrtc://` URI. The older Python WebRTC gateway experiment was removed on 2026-05-18 to keep the product path focused on `olcrtc`.
 
 Important cautions:
 
@@ -168,13 +168,18 @@ Phase 4: Proxy PoC
 - Gateway forwards to upstream and returns responses.
 - Measure latency, throughput, reconnect behaviour, and memory per active stream.
 
-Current status inside `experiments/webrtc-gateway/`:
+Retired experiment:
 
-- `socks5_proto.py`, `proxy_messages.py`, `local_bridge.py`, and `local_socks_server.py` provide a loopback-only fake-egress SOCKS shape.
-- `proxy_packet_bundle.py` defines the `RPB1` carrier boundary for proxy packets.
-- `wbstream_proxy_carrier.py` can deliver request bundles over WB stream-mode video frames.
-- `remote_proxy_endpoint.py` now decodes request bundles, enforces explicit route policy, runs fake egress, and returns response bundles.
-- Missing before real egress: reverse WB response delivery, auth tokens, reconnect/session supervisor, flow control, traffic accounting, and account-risk baseline.
+- The older Python WebRTC gateway experiment was removed on 2026-05-18.
+- Reason: RootVPN is no longer trying to outbuild `olcrtc` transport internals; the product path is to wrap, operate, and package `olcrtc` cleanly.
+- Historical learnings remain useful: carrier fragility, room lifecycle, reconnect supervision, per-user keys, and Android TUN UX matter more than inventing a custom media codec.
+
+Current status for `experiments/olcrtc-rescue/`:
+
+- 2026-05-18 lab validation on LDPlayer: Olcbox TUN routed Chrome traffic through `wbstream + vp8channel` to the test VPS `104.238.29.239`; `2ip.ru` showed the VPS IP, and `speedtest.net` reached about `6.19 Mbps` download with about `404 ms` ping.
+- 2026-05-18 field validation in Anapa, RU, on real mobile internet during an active whitelist-like restriction: the tester first confirmed non-whitelisted apps/pages did not load on mobile data without a VPN, then imported the RootVPN Rescue Beta `olcrtc://wbstream?...` URI in Olcbox and reported the same apps/pages loaded on mobile data.
+- This validates the core product hypothesis for one carrier/operator/location sample: whole-device Android traffic can be carried through a whitelisted WB Stream/WebRTC path to a RootVPN VPS egress.
+- This does not yet validate production readiness. The remaining blockers are client packaging, room/account lifecycle, reconnect supervision, per-user auth, monitoring, and multi-operator field coverage.
 
 Phase 5: Closed beta
 - One or two admin-owned devices only.
@@ -199,6 +204,7 @@ Consider turning this into a paid beta only if:
 
 - closed beta works for at least 7 days without manual intervention;
 - median setup time is acceptable for users;
+- at least 3 real mobile-network field checks pass across different operators/regions during active restrictions;
 - relay/TURN traffic cost is understood;
 - the support script is simple enough for non-technical customers;
 - monitoring can alert on gateway failure before users complain;
@@ -218,7 +224,7 @@ Stop the experiment if:
 
 Recommended implementation path:
 
-- keep initial code under `experiments/webrtc-gateway/` or a separate private repository;
+- keep Rescue Beta code under `experiments/olcrtc-rescue/` until promoted;
 - do not wire it into `website_api.py`, payments, or Marzban until Phase 2 succeeds;
 - do not deploy it on the main bot/VPN host without resource limits.
 

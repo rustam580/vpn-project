@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
+import json
 import secrets
+import sys
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
+
+from aiohttp import ClientSession, ClientTimeout
 
 
 DEFAULT_CARRIER = "wbstream"
@@ -21,6 +28,9 @@ DEFAULT_MAX_SESSION_DURATION = "2h"
 DEFAULT_TRAFFIC_MAX_PAYLOAD_SIZE = 0
 DEFAULT_TRAFFIC_MIN_DELAY = "5ms"
 DEFAULT_TRAFFIC_MAX_DELAY = "30ms"
+WB_API_BASE = "https://stream.wb.ru"
+WB_DEVICE_TYPE = "PARTICIPANT_DEVICE_TYPE_WEB_DESKTOP"
+WB_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) RootVPN-Rescue-Beta/0.1"
 
 
 @dataclass(frozen=True)
@@ -80,6 +90,16 @@ class OlcRtcRescueConfig:
         if self.vp8_batch <= 0:
             raise ValueError("vp8_batch must be positive")
 
+    @property
+    def room_url(self) -> str:
+        if self.carrier == "wbstream":
+            return f"https://stream.wb.ru/room/{normalize_room_id(self.room_id, carrier=self.carrier)}"
+        return self.room_id
+
+
+class WBRoomCreateError(RuntimeError):
+    pass
+
 
 def new_key_hex() -> str:
     return secrets.token_hex(32)
@@ -102,13 +122,14 @@ socks:
     return _common_yaml(normalized, mode="cnc") + socks_block
 
 
-def build_uri(config: OlcRtcRescueConfig, *, label: str = "RootVPN Rescue Beta") -> str:
+def build_uri(config: OlcRtcRescueConfig, *, label: str = "RootVPN Rescue Beta", client_id: str = "") -> str:
     config = config.normalized()
     config.validate()
     payload = ""
     if config.transport == "vp8channel":
         payload = f"<vp8-fps={config.vp8_fps}&vp8-batch={config.vp8_batch}>"
-    return f"olcrtc://{config.carrier}?{config.transport}{payload}@{config.room_id}#{config.key_hex}${label}"
+    client = f"%{client_id}" if client_id else ""
+    return f"olcrtc://{config.carrier}?{config.transport}{payload}@{config.room_id}#{config.key_hex}{client}${label}"
 
 
 def normalize_room_id(room_id: str, *, carrier: str) -> str:
@@ -158,16 +179,128 @@ def q(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def _write_outputs(config: OlcRtcRescueConfig, out_dir: Path, *, label: str) -> None:
+def build_session_metadata(
+    config: OlcRtcRescueConfig,
+    *,
+    label: str,
+    client_id: str = "",
+    created_room: bool = False,
+) -> dict[str, Any]:
+    normalized = config.normalized()
+    normalized.validate()
+    return {
+        "generated_at": datetime.now(tz=UTC).isoformat(),
+        "label": label,
+        "created_room": created_room,
+        "carrier": normalized.carrier,
+        "transport": normalized.transport,
+        "room_id": normalized.room_id,
+        "room_url": normalized.room_url,
+        "client_id": client_id,
+        "uri": build_uri(normalized, label=label, client_id=client_id),
+        "server_config": "server.yaml",
+        "client_config": "client.yaml",
+        "traffic": {
+            "max_payload_size": normalized.traffic_max_payload_size,
+            "min_delay": normalized.traffic_min_delay,
+            "max_delay": normalized.traffic_max_delay,
+        },
+        "vp8": {
+            "fps": normalized.vp8_fps,
+            "batch_size": normalized.vp8_batch,
+        },
+    }
+
+
+def _write_outputs(
+    config: OlcRtcRescueConfig,
+    out_dir: Path,
+    *,
+    label: str,
+    client_id: str = "",
+    created_room: bool = False,
+) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "server.yaml").write_text(build_server_yaml(config), encoding="utf-8")
-    (out_dir / "client.yaml").write_text(build_client_yaml(config), encoding="utf-8")
-    (out_dir / "uri.txt").write_text(build_uri(config, label=label) + "\n", encoding="utf-8")
+    normalized = config.normalized()
+    (out_dir / "server.yaml").write_text(build_server_yaml(normalized), encoding="utf-8")
+    (out_dir / "client.yaml").write_text(build_client_yaml(normalized), encoding="utf-8")
+    (out_dir / "uri.txt").write_text(build_uri(normalized, label=label, client_id=client_id) + "\n", encoding="utf-8")
+    (out_dir / "room-url.txt").write_text(normalized.room_url + "\n", encoding="utf-8")
+    metadata = build_session_metadata(normalized, label=label, client_id=client_id, created_room=created_room)
+    (out_dir / "session.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def write_outputs(
+    config: OlcRtcRescueConfig,
+    out_dir: Path,
+    *,
+    label: str,
+    client_id: str = "",
+    created_room: bool = False,
+) -> None:
+    _write_outputs(config, out_dir, label=label, client_id=client_id, created_room=created_room)
+
+
+async def create_wbstream_room(
+    *,
+    display_name: str = "RootVPN Rescue",
+    timeout_sec: float = 20.0,
+) -> str:
+    timeout = ClientTimeout(total=timeout_sec)
+    async with ClientSession(timeout=timeout, headers={"User-Agent": WB_USER_AGENT}) as session:
+        access_token = await _wb_register_guest(session, display_name=display_name)
+        return await _wb_create_room(session, access_token=access_token)
+
+
+async def _wb_register_guest(session: ClientSession, *, display_name: str) -> str:
+    payload = {
+        "displayName": display_name,
+        "device": {
+            "deviceName": "RootVPN Rescue",
+            "deviceType": WB_DEVICE_TYPE,
+        },
+    }
+    async with session.post(f"{WB_API_BASE}/auth/api/v1/auth/user/guest-register", json=payload) as response:
+        body = await _wb_expect_json(response, label="guest-register")
+    token = str(body.get("accessToken") or "").strip()
+    if not token:
+        raise WBRoomCreateError(f"guest-register response has no accessToken: {body}")
+    return token
+
+
+async def _wb_create_room(session: ClientSession, *, access_token: str) -> str:
+    payload = {
+        "roomType": "ROOM_TYPE_ALL_ON_SCREEN",
+        "roomPrivacy": "ROOM_PRIVACY_FREE",
+    }
+    async with session.post(
+        f"{WB_API_BASE}/api-room/api/v2/room",
+        json=payload,
+        headers={"Authorization": f"Bearer {access_token}"},
+    ) as response:
+        body = await _wb_expect_json(response, label="create-room")
+    room_id = str(body.get("roomId") or "").strip()
+    if not room_id:
+        raise WBRoomCreateError(f"create-room response has no roomId: {body}")
+    return room_id
+
+
+async def _wb_expect_json(response, *, label: str) -> dict[str, Any]:
+    text = await response.text()
+    if response.status < 200 or response.status >= 300:
+        raise WBRoomCreateError(f"{label} failed: HTTP {response.status}: {text[:1000]}")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise WBRoomCreateError(f"{label} returned non-json: {text[:1000]}") from exc
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate RootVPN olcRTC Rescue Beta lab configs")
-    parser.add_argument("room_id", help="WB Stream room id or URL")
+    parser.add_argument("room_id", nargs="?", help="WB Stream room id or URL")
+    parser.add_argument("--create-wb-room", action="store_true", help="create a fresh WB Stream room automatically")
+    parser.add_argument("--wb-display-name", default="RootVPN Rescue", help="display name used for WB guest room creation")
+    parser.add_argument("--wb-timeout-sec", type=float, default=20.0)
     parser.add_argument("--out-dir", default="out/olcrtc-rescue", help="directory for server.yaml/client.yaml/uri.txt")
     parser.add_argument("--key", default="", help="64-hex shared key; generated when omitted")
     parser.add_argument("--carrier", default=DEFAULT_CARRIER)
@@ -177,15 +310,35 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--socks-port", type=int, default=DEFAULT_SOCKS_PORT)
     parser.add_argument("--vp8-fps", type=int, default=DEFAULT_VP8_FPS)
     parser.add_argument("--vp8-batch", type=int, default=DEFAULT_VP8_BATCH)
+    parser.add_argument("--client-id", default="", help="optional olcRTC URI client id, e.g. olcbox or tg_123")
     parser.add_argument("--label", default="RootVPN Rescue Beta")
     parser.add_argument("--debug", action="store_true")
     return parser.parse_args()
 
 
-def main() -> int:
+async def _amain() -> int:
     args = _parse_args()
+    if args.create_wb_room and args.carrier != "wbstream":
+        raise SystemExit("--create-wb-room can only be used with --carrier wbstream")
+    if not args.create_wb_room and not args.room_id:
+        raise SystemExit("room_id is required unless --create-wb-room is used")
+    room_id = args.room_id
+    created_room = False
+    if args.create_wb_room:
+        try:
+            room_id = await create_wbstream_room(display_name=args.wb_display_name, timeout_sec=args.wb_timeout_sec)
+            created_room = True
+        except WBRoomCreateError as exc:
+            print(
+                "Could not create WB Stream room automatically. "
+                "WB guest room creation may be disabled; use a manually created room URL "
+                "or an authenticated room-broker account.",
+                file=sys.stderr,
+            )
+            raise SystemExit(str(exc)) from exc
+
     config = OlcRtcRescueConfig(
-        room_id=args.room_id,
+        room_id=room_id or "",
         key_hex=args.key or new_key_hex(),
         carrier=args.carrier,
         transport=args.transport,
@@ -196,10 +349,16 @@ def main() -> int:
         vp8_batch=args.vp8_batch,
         debug=args.debug,
     )
-    _write_outputs(config, Path(args.out_dir), label=args.label)
+    _write_outputs(config, Path(args.out_dir), label=args.label, client_id=args.client_id, created_room=created_room)
     print(f"Wrote olcRTC Rescue Beta configs to {args.out_dir}")
-    print(build_uri(config, label=args.label))
+    if created_room:
+        print(config.normalized().room_url)
+    print(build_uri(config, label=args.label, client_id=args.client_id))
     return 0
+
+
+def main() -> int:
+    return asyncio.run(_amain())
 
 
 if __name__ == "__main__":
