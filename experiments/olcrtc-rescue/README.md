@@ -61,7 +61,7 @@ Defaults:
 - local SOCKS: `127.0.0.1:8808`
 - liveness: `10s` interval, `5s` timeout, `3` failures
 - lifecycle rotation: `2h`
-- traffic cap: `4096` bytes with `5ms..30ms` pacing
+- traffic cap: transport default (`max_payload_size: 0`) with `5ms..30ms` pacing
 
 ## Run Shape
 

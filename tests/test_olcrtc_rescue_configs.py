@@ -31,7 +31,7 @@ def test_generates_wbstream_vp8_server_and_client_yaml():
     assert "fps: 60" in server
     assert "batch_size: 64" in server
     assert "max_session_duration: 2h" in server
-    assert "max_payload_size: 4096" in server
+    assert "max_payload_size: 0" in server
     assert 'host: "127.0.0.1"' in client
     assert "port: 8808" in client
 
