@@ -210,6 +210,43 @@ https://stream.wb.ru/room/019e...
 Keep WB cookies/profile/token storage inside that broker process, not in the Telegram bot. The bot
 only consumes room URLs and manages deployment.
 
+### Token-Based Broker Script
+
+This repo includes a minimal broker script:
+
+- `scripts/create_wb_room_broker.py`
+- `experiments/olcrtc-rescue/bin/create-wb-room`
+
+Install the wrapper on the bot server:
+
+```bash
+install -d -m 700 /opt/rootvpn /etc/rootvpn
+install -m 700 experiments/olcrtc-rescue/bin/create-wb-room /opt/rootvpn/create-wb-room
+```
+
+Store a WB Stream access token outside git:
+
+```bash
+printf '%s\n' 'PASTE_WB_ACCESS_TOKEN_HERE' >/etc/rootvpn/wbstream-access-token
+chmod 600 /etc/rootvpn/wbstream-access-token
+```
+
+Smoke test:
+
+```bash
+/opt/rootvpn/create-wb-room --count 1
+```
+
+Expected stdout:
+
+```json
+{"generated_at":"...","rooms":[{"room_id":"...","room_url":"https://stream.wb.ru/room/..."}]}
+```
+
+If the token expires, the broker will fail and watchdog will alert. Replace the token, then rerun
+the smoke test. A future Playwright/profile broker can replace this script without changing the
+Telegram bot contract, as long as it prints room URLs to stdout.
+
 ## RootVPN Integration Target
 
 If the lab works for 7 days:

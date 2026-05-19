@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOTVPN_BOT_DIR="${ROOTVPN_BOT_DIR:-/opt/vpn-bot}"
+PYTHON_BIN="${ROOTVPN_BOT_DIR}/.venv/bin/python"
+
+if [ ! -x "$PYTHON_BIN" ]; then
+  PYTHON_BIN="python3"
+fi
+
+exec "$PYTHON_BIN" "$ROOTVPN_BOT_DIR/scripts/create_wb_room_broker.py" "$@"
