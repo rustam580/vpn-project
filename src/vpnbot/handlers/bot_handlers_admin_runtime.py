@@ -6,7 +6,7 @@ from typing import Any, Awaitable, Callable
 
 from aiogram import F, Router
 from aiogram.filters import Command
-from aiogram.types import LinkPreviewOptions, Message
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions, Message
 
 from src.vpnbot.keyboards.bot_keyboards import admin_panel_keyboard
 from src.vpnbot.message_utils import split_message
@@ -15,12 +15,22 @@ from src.vpnbot.olcrtc_rescue import (
     build_rescue_admin_summary,
     build_rescue_user_message,
     create_local_session,
+    fetch_rescue_status,
     parse_rescue_command_args,
     run_steps_async,
+    validate_session_id,
 )
 from src.vpnbot.permissions import is_admin
 
 NO_LINK_PREVIEW = LinkPreviewOptions(is_disabled=True)
+
+
+def rescue_status_keyboard(session_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔎 Статус Rescue", callback_data=f"admin:rescue_status:{session_id}")]
+        ]
+    )
 
 
 @dataclass
@@ -171,6 +181,40 @@ def register_admin_runtime_handlers(*, router: Router, deps: AdminRuntimeDeps) -
         admin_text += f"\n\n{deploy_text}"
         admin_text += "\n\nuser_delivery: " + ("sent" if delivered else "not_sent")
         for chunk in split_message(admin_text, limit=3500):
+            await message.answer(chunk, link_preview_options=NO_LINK_PREVIEW)
+        await message.answer(
+            f"Статус сессии: {session.session_id}",
+            reply_markup=rescue_status_keyboard(session.session_id),
+        )
+
+    @router.message(Command("rescue_status"))
+    async def rescue_status_cmd(message: Message) -> None:
+        if not await guard_message_rate_limit(message):
+            return
+        if not message.from_user or not is_admin(int(message.from_user.id), settings):
+            await message.answer("Недостаточно прав.")
+            return
+        parts = (message.text or "").split(maxsplit=1)
+        if len(parts) != 2:
+            await message.answer("Использование: /rescue_status <session_id>")
+            return
+        try:
+            session_id = validate_session_id(parts[1].strip())
+        except ValueError:
+            await message.answer("Некорректный session_id.")
+            return
+        deploy_host = str(getattr(settings, "olcrtc_rescue_deploy_host", "") or "").strip()
+        if not deploy_host:
+            await message.answer("OLCRTC_RESCUE_DEPLOY_HOST не настроен.")
+            return
+        await message.answer(f"Проверяю Rescue-сессию {session_id} на {deploy_host}...")
+        result = await fetch_rescue_status(
+            session_id=session_id,
+            deploy_host=deploy_host,
+            timeout_sec=int(getattr(settings, "olcrtc_rescue_deploy_timeout_sec", 60)),
+        )
+        prefix = "Rescue status: ok" if result.ok else f"Rescue status: failed at {result.failed_step}"
+        for chunk in split_message(f"{prefix}\n{result.output}", limit=3500):
             await message.answer(chunk, link_preview_options=NO_LINK_PREVIEW)
 
     @router.message(Command("user"))

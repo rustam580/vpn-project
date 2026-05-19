@@ -31,6 +31,7 @@ from src.vpnbot.keyboards.web_order_keyboards import (
 )
 from src.vpnbot.marzban_sync import audit_marzban_sync
 from src.vpnbot.message_utils import split_message
+from src.vpnbot.olcrtc_rescue import fetch_rescue_status, validate_session_id
 from src.vpnbot.payment_helpers import cryptobot_check_invoice, yookassa_check_payment
 from src.vpnbot.payment_issues import build_payment_issues_report
 from src.vpnbot.xray_quality import format_xray_quality_report, summarize_xray_error_log
@@ -272,6 +273,27 @@ def register_admin_callback_handlers(*, router: Router, deps: AdminCallbackDeps)
             for chunk in split_message(text, limit=3500):
                 await callback.message.answer(chunk)
             return
+        if action.startswith("rescue_status:"):
+            raw_session_id = action.split(":", 1)[1].strip()
+            try:
+                session_id = validate_session_id(raw_session_id)
+            except ValueError:
+                await callback.answer("Bad session id", show_alert=True)
+                return
+            deploy_host = str(getattr(settings, "olcrtc_rescue_deploy_host", "") or "").strip()
+            if not deploy_host:
+                await callback.answer("OLCRTC_RESCUE_DEPLOY_HOST is empty", show_alert=True)
+                return
+            await callback.answer("Checking Rescue status...")
+            result = await fetch_rescue_status(
+                session_id=session_id,
+                deploy_host=deploy_host,
+                timeout_sec=int(getattr(settings, "olcrtc_rescue_deploy_timeout_sec", 60)),
+            )
+            prefix = "Rescue status: ok" if result.ok else f"Rescue status: failed at {result.failed_step}"
+            for chunk in split_message(f"{prefix}\n{result.output}", limit=3500):
+                await callback.message.answer(chunk)
+            return
         if action == "deploy":
             await callback.answer("Запускаю deploy...")
             script = Path("/usr/local/sbin/vpn-ops-deploy")
@@ -410,6 +432,7 @@ def register_admin_callback_handlers(*, router: Router, deps: AdminCallbackDeps)
                 "/sync_audit\n"
                 "/xray_errors [minutes]\n"
                 "/rescue <telegram_id> <wb_room_url>\n"
+                "/rescue_status <session_id>\n"
                 f"{check_hint}\n\n"
                 "Примеры:\n"
                 "/grant 386029735 30 0\n"
@@ -431,6 +454,7 @@ def register_admin_callback_handlers(*, router: Router, deps: AdminCallbackDeps)
                 "/sync_audit\n"
                 "/xray_errors 15\n"
                 "/rescue 386029735 https://stream.wb.ru/room/019e...\n"
+                "/rescue_status rs-20260518202449-386029735\n"
                 "/disable 386029735\n"
                 "/user 386029735\n"
                 "/broadcast Текст рассылки"

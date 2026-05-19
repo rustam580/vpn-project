@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import argparse
+import asyncio
 import sys
 from pathlib import Path
 
@@ -18,8 +19,10 @@ from src.vpnbot.olcrtc_rescue import (  # noqa: E402
     build_deploy_steps,
     build_rescue_admin_summary,
     build_rescue_user_message,
+    build_status_step,
     create_local_session,
     default_client_id,
+    fetch_rescue_status,
     make_session_id,
     parse_rescue_command_args,
     run_steps,
@@ -35,8 +38,10 @@ __all__ = [
     "build_deploy_steps",
     "build_rescue_admin_summary",
     "build_rescue_user_message",
+    "build_status_step",
     "create_local_session",
     "default_client_id",
+    "fetch_rescue_status",
     "make_session_id",
     "parse_rescue_command_args",
     "run_steps",
@@ -64,6 +69,12 @@ def _parse_args() -> argparse.Namespace:
     create.add_argument("--install-service", action="store_true")
     create.add_argument("--no-start", action="store_true")
     create.add_argument("--dry-run", action="store_true")
+
+    status = sub.add_parser("status", help="fetch remote systemd/journal status for a Rescue session")
+    status.add_argument("session_id")
+    status.add_argument("--deploy-host", required=True, help="SSH target, e.g. rootvpn-rescue-fi")
+    status.add_argument("--timeout-sec", type=int, default=30)
+    status.add_argument("--journal-lines", type=int, default=80)
     return parser.parse_args()
 
 
@@ -93,6 +104,17 @@ def main() -> int:
                 start_service=not args.no_start,
             )
             run_steps(steps, dry_run=args.dry_run)
+    if args.cmd == "status":
+        result = asyncio.run(
+            fetch_rescue_status(
+                session_id=args.session_id,
+                deploy_host=args.deploy_host,
+                timeout_sec=args.timeout_sec,
+                journal_lines=args.journal_lines,
+            )
+        )
+        print(result.output)
+        return 0 if result.ok else 1
     return 0
 
 

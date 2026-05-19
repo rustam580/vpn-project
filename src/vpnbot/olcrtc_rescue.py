@@ -254,6 +254,45 @@ def build_deploy_steps(
     return steps
 
 
+def build_status_step(
+    *,
+    session_id: str,
+    deploy_host: str,
+    safe_ssh: bool = True,
+    journal_lines: int = 80,
+) -> CommandStep:
+    session_id = validate_session_id(session_id)
+    unit = f"olcrtc-rescue@{session_id}"
+    lines = max(10, min(300, int(journal_lines)))
+    remote_command = (
+        f"printf 'service: %s\\n' {shq(unit)}; "
+        f"printf 'active: '; systemctl is-active {shq(unit)} || true; "
+        f"systemctl status --no-pager -l {shq(unit)} || true; "
+        f"journalctl -u {shq(unit)} -n {lines} --no-pager || true"
+    )
+    ssh_prefix = _ssh_prefix() if safe_ssh else ["ssh"]
+    return CommandStep(
+        f"status {unit}",
+        [*ssh_prefix, deploy_host, remote_command],
+    )
+
+
+async def fetch_rescue_status(
+    *,
+    session_id: str,
+    deploy_host: str,
+    timeout_sec: int = 30,
+    journal_lines: int = 80,
+) -> RescueDeployResult:
+    step = build_status_step(
+        session_id=session_id,
+        deploy_host=deploy_host,
+        safe_ssh=True,
+        journal_lines=journal_lines,
+    )
+    return await run_steps_async([step], timeout_sec=timeout_sec)
+
+
 def _ssh_prefix() -> list[str]:
     return [
         "ssh",

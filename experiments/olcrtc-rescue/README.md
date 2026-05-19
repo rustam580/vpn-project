@@ -143,6 +143,21 @@ Auto-deploy uses non-interactive SSH/SCP options (`BatchMode=yes`, short connect
 bot does not hang on password prompts. Configure SSH keys from the bot host to the Rescue VPS before
 turning it on.
 
+Status checks:
+
+```text
+/rescue_status <session_id>
+```
+
+The `/rescue` admin response also includes a `Статус Rescue` inline button. Both paths run
+`systemctl status` and a bounded `journalctl` tail on the Rescue VPS through the configured SSH host.
+CLI fallback:
+
+```bash
+python scripts/manage_olcrtc_rescue_session.py status rs-20260518202449-386029735 \
+  --deploy-host rootvpn-rescue-fi
+```
+
 ## RootVPN Integration Target
 
 If the lab works for 7 days:

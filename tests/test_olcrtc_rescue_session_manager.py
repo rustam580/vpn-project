@@ -8,6 +8,7 @@ import pytest
 from scripts.manage_olcrtc_rescue_session import (
     build_rescue_admin_summary,
     build_deploy_steps,
+    build_status_step,
     create_local_session,
     default_client_id,
     make_session_id,
@@ -142,6 +143,27 @@ def test_build_deploy_steps_can_skip_start(tmp_path):
 
     flat = [" ".join(step.command) for step in steps]
     assert not any("systemctl enable --now" in command for command in flat)
+
+
+def test_build_status_step_uses_safe_session_id_and_journal_tail():
+    step = build_status_step(
+        session_id="rs-20260518202449-386029735",
+        deploy_host="rootvpn-rescue-fi",
+        journal_lines=120,
+    )
+
+    command = " ".join(step.command)
+    assert step.command[0] == "ssh"
+    assert "BatchMode=yes" in step.command
+    assert "rootvpn-rescue-fi" in step.command
+    assert "olcrtc-rescue@rs-20260518202449-386029735" in command
+    assert "journalctl" in command
+    assert "-n 120" in command
+
+
+def test_build_status_step_rejects_bad_session_id():
+    with pytest.raises(ValueError, match="session_id"):
+        build_status_step(session_id="bad;id", deploy_host="rootvpn-rescue-fi")
 
 
 @pytest.mark.asyncio
