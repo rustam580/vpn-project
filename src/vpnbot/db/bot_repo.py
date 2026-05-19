@@ -10,13 +10,14 @@ from typing import Any
 import aiosqlite
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "db" / "migrations"
-SCHEMA_VERSION_LATEST = 5
+SCHEMA_VERSION_LATEST = 6
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (1, "001_init.sql"),
     (2, "002_legacy_columns.sql"),
     (3, "003_subscription_hits.sql"),
     (4, "004_web_orders.sql"),
     (5, "005_rescue_rooms.sql"),
+    (6, "006_rescue_rooms_warm.sql"),
 )
 
 
@@ -1244,7 +1245,7 @@ class Repo:
         c = await self.conn.execute(
             """
             SELECT id, room_id, room_url, status, assigned_tg_id, session_id, note, fail_count,
-                   created_at, updated_at, last_ok_at
+                   created_at, updated_at, last_ok_at, key_hex, client_id, uri
             FROM rescue_rooms
             WHERE room_id = ?
             LIMIT 1
@@ -1261,15 +1262,16 @@ class Repo:
         c = await self.conn.execute(
             f"""
             SELECT id, room_id, room_url, status, assigned_tg_id, session_id, note, fail_count,
-                   created_at, updated_at, last_ok_at
+                   created_at, updated_at, last_ok_at, key_hex, client_id, uri
             FROM rescue_rooms
             {where}
             ORDER BY
                 CASE status
                     WHEN 'assigned' THEN 1
                     WHEN 'reserved' THEN 2
-                    WHEN 'free' THEN 3
-                    WHEN 'bad' THEN 4
+                    WHEN 'warm' THEN 3
+                    WHEN 'free' THEN 4
+                    WHEN 'bad' THEN 5
                     ELSE 5
                 END,
                 updated_at DESC,
@@ -1280,7 +1282,7 @@ class Repo:
         await c.close()
         return [dict(row) for row in rows]
 
-    async def claim_next_free_rescue_room(self, *, telegram_id: int) -> dict[str, Any] | None:
+    async def claim_next_available_rescue_room(self, *, telegram_id: int) -> dict[str, Any] | None:
         assert self.conn is not None
         now = int(time.time())
         await self.conn.execute("BEGIN IMMEDIATE")
@@ -1288,10 +1290,13 @@ class Repo:
             c = await self.conn.execute(
                 """
                 SELECT id, room_id, room_url, status, assigned_tg_id, session_id, note, fail_count,
-                       created_at, updated_at, last_ok_at
+                       created_at, updated_at, last_ok_at, key_hex, client_id, uri
                 FROM rescue_rooms
-                WHERE status = 'free'
-                ORDER BY updated_at ASC, id ASC
+                WHERE status IN ('warm', 'free')
+                ORDER BY
+                    CASE status WHEN 'warm' THEN 1 ELSE 2 END,
+                    updated_at ASC,
+                    id ASC
                 LIMIT 1
                 """
             )
@@ -1306,17 +1311,50 @@ class Repo:
                 UPDATE rescue_rooms
                 SET status = 'reserved',
                     assigned_tg_id = ?,
-                    session_id = NULL,
                     updated_at = ?
-                WHERE room_id = ? AND status = 'free'
+                WHERE room_id = ? AND status IN ('warm', 'free')
                 """,
                 (int(telegram_id), now, room_id),
             )
             await self.conn.commit()
-            return await self.get_rescue_room_by_room_id(room_id)
+            claimed = await self.get_rescue_room_by_room_id(room_id)
+            if claimed is not None:
+                claimed["claimed_from_status"] = str(row["status"])
+            return claimed
         except Exception:
             await self.conn.rollback()
             raise
+
+    async def claim_next_free_rescue_room(self, *, telegram_id: int) -> dict[str, Any] | None:
+        return await self.claim_next_available_rescue_room(telegram_id=telegram_id)
+
+    async def mark_rescue_room_warm(
+        self,
+        *,
+        room_id: str,
+        session_id: str,
+        key_hex: str,
+        client_id: str,
+        uri: str,
+    ) -> None:
+        assert self.conn is not None
+        now = int(time.time())
+        await self.conn.execute(
+            """
+            UPDATE rescue_rooms
+            SET status = 'warm',
+                assigned_tg_id = NULL,
+                session_id = ?,
+                key_hex = ?,
+                client_id = ?,
+                uri = ?,
+                updated_at = ?,
+                last_ok_at = ?
+            WHERE room_id = ?
+            """,
+            (session_id.strip(), key_hex.strip(), client_id.strip(), uri.strip(), now, now, room_id.strip()),
+        )
+        await self.conn.commit()
 
     async def mark_rescue_room_assigned(
         self,
@@ -1324,6 +1362,9 @@ class Repo:
         room_id: str,
         telegram_id: int,
         session_id: str,
+        key_hex: str | None = None,
+        client_id: str | None = None,
+        uri: str | None = None,
     ) -> None:
         assert self.conn is not None
         now = int(time.time())
@@ -1333,11 +1374,23 @@ class Repo:
             SET status = 'assigned',
                 assigned_tg_id = ?,
                 session_id = ?,
+                key_hex = COALESCE(?, key_hex),
+                client_id = COALESCE(?, client_id),
+                uri = COALESCE(?, uri),
                 updated_at = ?,
                 last_ok_at = ?
             WHERE room_id = ?
             """,
-            (int(telegram_id), session_id.strip(), now, now, room_id.strip()),
+            (
+                int(telegram_id),
+                session_id.strip(),
+                key_hex.strip() if key_hex else None,
+                client_id.strip() if client_id else None,
+                uri.strip() if uri else None,
+                now,
+                now,
+                room_id.strip(),
+            ),
         )
         await self.conn.commit()
 
@@ -1351,7 +1404,7 @@ class Repo:
         increment_fail_count: bool = False,
     ) -> None:
         assert self.conn is not None
-        allowed = {"free", "reserved", "assigned", "bad", "archived"}
+        allowed = {"free", "warm", "reserved", "assigned", "bad", "archived"}
         if status not in allowed:
             raise ValueError(f"status must be one of: {', '.join(sorted(allowed))}")
         now = int(time.time())
@@ -1361,6 +1414,9 @@ class Repo:
             SET status = ?,
                 assigned_tg_id = ?,
                 session_id = ?,
+                key_hex = CASE WHEN ? IN ('free', 'bad', 'archived') THEN NULL ELSE key_hex END,
+                client_id = CASE WHEN ? IN ('free', 'bad', 'archived') THEN NULL ELSE client_id END,
+                uri = CASE WHEN ? IN ('free', 'bad', 'archived') THEN NULL ELSE uri END,
                 fail_count = fail_count + ?,
                 updated_at = ?
             WHERE room_id = ?
@@ -1369,6 +1425,9 @@ class Repo:
                 status,
                 telegram_id,
                 session_id,
+                status,
+                status,
+                status,
                 1 if increment_fail_count else 0,
                 now,
                 room_id.strip(),

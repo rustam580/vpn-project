@@ -37,6 +37,7 @@ def test_admin_panel_has_rescue_pool_buttons() -> None:
     buttons = [button for row in keyboard.inline_keyboard for button in row]
 
     assert any(button.switch_inline_query_current_chat == "/rescue_rooms" for button in buttons)
+    assert any(button.switch_inline_query_current_chat == "/rescue_room_warm " for button in buttons)
     assert any(button.switch_inline_query_current_chat == "/rescue_create " for button in buttons)
 
 

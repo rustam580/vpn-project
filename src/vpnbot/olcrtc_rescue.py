@@ -89,6 +89,18 @@ def normalize_rescue_room_url(room: str) -> str:
     return OlcRtcRescueConfig(room_id=room_id, key_hex="0" * 64).normalized().room_url
 
 
+def build_rescue_uri_for_room(
+    *,
+    room: str,
+    key_hex: str,
+    client_id: str = "",
+    label: str = DEFAULT_LABEL,
+) -> str:
+    room_id = normalize_room_id(room, carrier="wbstream")
+    config = OlcRtcRescueConfig(room_id=room_id, key_hex=key_hex)
+    return build_uri(config, label=label, client_id=client_id)
+
+
 def parse_rescue_command_args(text: str) -> RescueCommandArgs:
     parts = (text or "").split(maxsplit=2)
     if len(parts) != 3:

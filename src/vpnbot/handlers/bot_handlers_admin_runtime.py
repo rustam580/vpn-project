@@ -14,8 +14,10 @@ from src.vpnbot.olcrtc_rescue import (
     active_rescue_sessions_for_room,
     build_deploy_steps,
     build_rescue_admin_summary,
+    build_rescue_uri_for_room,
     build_rescue_user_message,
     create_local_session,
+    default_client_id,
     fetch_rescue_list,
     fetch_rescue_status,
     format_rescue_dashboard,
@@ -237,6 +239,82 @@ def register_admin_runtime_handlers(*, router: Router, deps: AdminRuntimeDeps) -
             f"note: {row['note'] or '-'}"
         )
 
+    @router.message(Command("rescue_room_warm"))
+    async def rescue_room_warm_cmd(message: Message) -> None:
+        if not await guard_message_rate_limit(message):
+            return
+        if not message.from_user or not is_admin(int(message.from_user.id), settings):
+            await message.answer("Недостаточно прав.")
+            return
+        parts = (message.text or "").split(maxsplit=1)
+        if len(parts) != 2:
+            await message.answer("Usage: /rescue_room_warm <room_id_or_wb_room_url>")
+            return
+        room_url = normalize_rescue_room_url(parts[1].strip())
+        room_id = room_url.rsplit("/", 1)[-1]
+        room = await repo.get_rescue_room_by_room_id(room_id)
+        if room is None:
+            await message.answer("Room is not in pool. Add it first: /rescue_room_add <wb_room_url> [note]")
+            return
+        if str(room["status"]) in {"assigned", "reserved"}:
+            await message.answer(f"Room is {room['status']}; not warming it.")
+            return
+        if str(room["status"]) == "warm" and room["session_id"]:
+            await message.answer(
+                "Room is already warm.\n"
+                f"session: {room['session_id']}\n"
+                f"room: {room['room_url']}"
+            )
+            return
+        deploy_host = str(getattr(settings, "olcrtc_rescue_deploy_host", "") or "").strip()
+        if not bool(getattr(settings, "olcrtc_rescue_auto_deploy", False)) or not deploy_host:
+            await message.answer("Warm mode requires OLCRTC_RESCUE_AUTO_DEPLOY=1 and OLCRTC_RESCUE_DEPLOY_HOST.")
+            return
+
+        session = create_local_session(room=room_url, client_id="olcbox")
+        await message.answer(
+            "Warming Rescue room.\n"
+            f"room: {session.room_url}\n"
+            f"session: {session.session_id}\n"
+            f"Deploying on {deploy_host}..."
+        )
+        steps = build_deploy_steps(
+            session_id=session.session_id,
+            local_dir=session.out_dir,
+            deploy_host=deploy_host,
+            remote_root=str(getattr(settings, "olcrtc_rescue_remote_root", "/etc/rootvpn/rescue")),
+            install_service=bool(getattr(settings, "olcrtc_rescue_install_service", True)),
+            start_service=True,
+            safe_ssh=True,
+        )
+        result = await run_steps_async(
+            steps,
+            timeout_sec=int(getattr(settings, "olcrtc_rescue_deploy_timeout_sec", 60)),
+        )
+        if not result.ok:
+            await repo.mark_rescue_room_status(
+                room_id=room_id,
+                status="free",
+                increment_fail_count=True,
+            )
+            for chunk in split_message(f"Warm deploy failed at {result.failed_step}\n{result.output}", limit=3500):
+                await message.answer(chunk, link_preview_options=NO_LINK_PREVIEW)
+            return
+
+        await repo.mark_rescue_room_warm(
+            room_id=room_id,
+            session_id=session.session_id,
+            key_hex=session.key_hex,
+            client_id=session.client_id,
+            uri=session.uri,
+        )
+        await message.answer(
+            "Rescue room is warm.\n"
+            f"session: {session.session_id}\n"
+            f"room: {session.room_url}\n"
+            "Now you can leave WB as host; server relay should keep the room alive."
+        )
+
     @router.message(Command("rescue_rooms"))
     async def rescue_rooms_cmd(message: Message) -> None:
         if not await guard_message_rate_limit(message):
@@ -255,6 +333,7 @@ def register_admin_runtime_handlers(*, router: Router, deps: AdminRuntimeDeps) -
                     f"{idx}. {row['status']} | {row['room_id']}",
                     f"   tg: {row['assigned_tg_id'] or '-'}",
                     f"   session: {row['session_id'] or '-'}",
+                    f"   key: {'yes' if row.get('key_hex') else 'no'}",
                     f"   fails: {row['fail_count'] or 0}",
                     f"   room: {row['room_url']}",
                     f"   note: {row['note'] or '-'}",
@@ -291,6 +370,52 @@ def register_admin_runtime_handlers(*, router: Router, deps: AdminRuntimeDeps) -
         room = await repo.claim_next_free_rescue_room(telegram_id=target_tg_id)
         if room is None:
             await message.answer("No free Rescue rooms in pool.\nAdd one: /rescue_room_add <wb_room_url> [note]")
+            return
+
+        if str(room.get("claimed_from_status") or "") == "warm":
+            key_hex = str(room.get("key_hex") or "").strip()
+            session_id = str(room.get("session_id") or "").strip()
+            if not key_hex or not session_id:
+                await repo.mark_rescue_room_status(
+                    room_id=str(room["room_id"]),
+                    status="free",
+                    increment_fail_count=True,
+                )
+                await message.answer("Warm room has no key/session metadata; returned it to free.")
+                return
+            client_id = default_client_id(tg_id=str(target_tg_id))
+            uri = build_rescue_uri_for_room(
+                room=str(room["room_url"]),
+                key_hex=key_hex,
+                client_id=client_id,
+            )
+            await repo.mark_rescue_room_assigned(
+                room_id=str(room["room_id"]),
+                telegram_id=target_tg_id,
+                session_id=session_id,
+                key_hex=key_hex,
+                client_id=client_id,
+                uri=uri,
+            )
+            delivered = False
+            try:
+                await message.bot.send_message(
+                    target_tg_id,
+                    build_rescue_user_message(uri),
+                    link_preview_options=NO_LINK_PREVIEW,
+                )
+                delivered = True
+            except Exception:
+                delivered = False
+            await message.answer(
+                "Warm Rescue room assigned.\n"
+                f"room: {room['room_url']}\n"
+                f"session: {session_id}\n"
+                f"target: {target_tg_id}\n"
+                "user_delivery: " + ("sent" if delivered else "not_sent"),
+                link_preview_options=NO_LINK_PREVIEW,
+                reply_markup=rescue_status_keyboard(session_id),
+            )
             return
 
         try:
@@ -334,6 +459,9 @@ def register_admin_runtime_handlers(*, router: Router, deps: AdminRuntimeDeps) -
             room_id=str(room["room_id"]),
             telegram_id=target_tg_id,
             session_id=session.session_id,
+            key_hex=session.key_hex,
+            client_id=session.client_id,
+            uri=session.uri,
         )
         user_message = build_rescue_user_message(session.uri)
         delivered = False

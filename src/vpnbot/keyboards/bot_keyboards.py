@@ -57,6 +57,7 @@ def admin_panel_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="🧭 Marzban/DB аудит", callback_data="admin:sync_audit")],
             [InlineKeyboardButton(text="🆘 Rescue Dashboard", callback_data="admin:rescue_dashboard")],
             [InlineKeyboardButton(text="🏊 Rescue Room Pool", switch_inline_query_current_chat="/rescue_rooms")],
+            [InlineKeyboardButton(text="🔥 Warm Rescue Room", switch_inline_query_current_chat="/rescue_room_warm ")],
             [InlineKeyboardButton(text="⚡ Rescue из пула", switch_inline_query_current_chat="/rescue_create ")],
             [
                 InlineKeyboardButton(

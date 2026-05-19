@@ -451,6 +451,49 @@ async def test_rescue_room_status_can_release_failed_room(repo) -> None:
     assert row["fail_count"] == 1
 
 
+async def test_rescue_room_warm_room_is_claimed_before_free_room(repo) -> None:
+    await repo.add_rescue_room(
+        room_id="room-free",
+        room_url="https://stream.wb.ru/room/room-free",
+    )
+    await repo.add_rescue_room(
+        room_id="room-warm",
+        room_url="https://stream.wb.ru/room/room-warm",
+    )
+    await repo.mark_rescue_room_warm(
+        room_id="room-warm",
+        session_id="rs-warm",
+        key_hex="a" * 64,
+        client_id="olcbox",
+        uri="olcrtc://warm",
+    )
+
+    claimed = await repo.claim_next_free_rescue_room(telegram_id=386029735)
+
+    assert claimed is not None
+    assert claimed["room_id"] == "room-warm"
+    assert claimed["status"] == "reserved"
+    assert claimed["claimed_from_status"] == "warm"
+    assert claimed["session_id"] == "rs-warm"
+    assert claimed["key_hex"] == "a" * 64
+    assert claimed["client_id"] == "olcbox"
+
+    await repo.mark_rescue_room_assigned(
+        room_id="room-warm",
+        telegram_id=386029735,
+        session_id="rs-warm",
+        client_id="tg_386029735",
+        uri="olcrtc://user",
+    )
+    row = await repo.get_rescue_room_by_room_id("room-warm")
+
+    assert row is not None
+    assert row["status"] == "assigned"
+    assert row["key_hex"] == "a" * 64
+    assert row["client_id"] == "tg_386029735"
+    assert row["uri"] == "olcrtc://user"
+
+
 async def test_repo_migrates_legacy_db(local_tmp_path) -> None:
     db_path = local_tmp_path / "legacy.sqlite3"
     conn = sqlite3.connect(str(db_path))
@@ -516,7 +559,9 @@ async def test_repo_migrates_legacy_db(local_tmp_path) -> None:
         rescue_cols = await cur.fetchall()
         await cur.close()
         rescue_col_names = {str(col["name"]) for col in rescue_cols}
-        assert {"room_id", "room_url", "status", "session_id"}.issubset(rescue_col_names)
+        assert {"room_id", "room_url", "status", "session_id", "key_hex", "client_id", "uri"}.issubset(
+            rescue_col_names
+        )
     finally:
         await migrated_repo.close()
 

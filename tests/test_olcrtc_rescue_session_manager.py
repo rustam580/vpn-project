@@ -10,6 +10,7 @@ from scripts.manage_olcrtc_rescue_session import (
     build_list_step,
     build_rescue_admin_summary,
     build_deploy_steps,
+    build_rescue_uri_for_room,
     build_status_step,
     build_stop_step,
     create_local_session,
@@ -81,6 +82,18 @@ def test_create_local_session_writes_operator_and_user_artifacts(tmp_path):
     assert (session.out_dir / "uri.txt").read_text(encoding="utf-8").strip() == session.uri
     assert "RootVPN Rescue Beta" in (session.out_dir / "user-message.txt").read_text(encoding="utf-8")
     assert '"session_id": "rs-test"' in (session.out_dir / "operator-summary.json").read_text(encoding="utf-8")
+
+
+def test_build_rescue_uri_for_room_reuses_warm_room_key():
+    uri = build_rescue_uri_for_room(
+        room="https://stream.wb.ru/room/room-1",
+        key_hex=KEY,
+        client_id="tg_386029735",
+    )
+
+    assert uri.startswith("olcrtc://wbstream?vp8channel")
+    assert "@room-1#" in uri
+    assert f"#{KEY}%tg_386029735$RootVPN Rescue Beta" in uri
 
 
 def test_build_rescue_admin_summary_contains_replayable_deploy_command(tmp_path):
