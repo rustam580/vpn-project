@@ -52,17 +52,23 @@ from src.vpnbot.notifications import (
 )
 from src.vpnbot.olcrtc_rescue import (
     build_deploy_steps,
+    build_rescue_uri_for_room,
+    build_rescue_user_message,
     create_local_session,
+    default_client_id,
     fetch_rescue_list,
     format_rescue_watchdog_alert,
     parse_rescue_list_output,
     parse_room_broker_output,
+    rescue_assigned_replacement_candidates,
     rescue_pool_warm_candidates,
     rescue_room_broker_request_count,
+    rescue_restartable_session_ids,
     restart_rescue_session,
     rescue_watchdog_findings,
     run_room_broker,
     run_steps_async,
+    stop_rescue_session,
 )
 from src.vpnbot.payment_helpers import (
     apply_paid_payment,
@@ -450,9 +456,9 @@ async def olcrtc_rescue_watchdog_worker(
                 )
             else:
                 remote_sessions = parse_rescue_list_output(result.output)
+                rooms = await repo.list_rescue_rooms() if repo is not None else []
                 pool_warm_details: list[str] = []
                 if settings.olcrtc_rescue_pool_auto_warm and repo is not None:
-                    rooms = await repo.list_rescue_rooms()
                     broker_count = rescue_room_broker_request_count(
                         rooms,
                         remote_sessions,
@@ -554,9 +560,154 @@ async def olcrtc_rescue_watchdog_worker(
 
                 findings = rescue_watchdog_findings(result.output)
                 if findings:
+                    replaced_session_ids: set[str] = set()
+                    replacement_details: list[str] = []
+                    if settings.olcrtc_rescue_assigned_auto_replace and repo is not None:
+                        for old_room in rescue_assigned_replacement_candidates(
+                            rooms,
+                            findings,
+                            max_to_replace=settings.olcrtc_rescue_assigned_max_replace_per_tick,
+                        ):
+                            old_room_id = str(old_room["room_id"])
+                            old_session_id = str(old_room.get("session_id") or "")
+                            target_tg_id = int(old_room["assigned_tg_id"])
+                            claimed = await repo.claim_next_free_rescue_room(telegram_id=target_tg_id)
+                            if claimed is None:
+                                replacement_details.append(
+                                    f"auto_replace {old_session_id}: no warm/free room available"
+                                )
+                                continue
+
+                            claimed_room_id = str(claimed["room_id"])
+                            try:
+                                claimed_from_status = str(claimed.get("claimed_from_status") or "")
+                                if claimed_from_status == "warm":
+                                    key_hex = str(claimed.get("key_hex") or "").strip()
+                                    new_session_id = str(claimed.get("session_id") or "").strip()
+                                    if not key_hex or not new_session_id:
+                                        await repo.mark_rescue_room_status(
+                                            room_id=claimed_room_id,
+                                            status="free",
+                                            increment_fail_count=True,
+                                        )
+                                        replacement_details.append(
+                                            f"auto_replace {old_session_id}: warm replacement has no key/session"
+                                        )
+                                        continue
+                                    client_id = default_client_id(tg_id=str(target_tg_id))
+                                    uri = build_rescue_uri_for_room(
+                                        room=str(claimed["room_url"]),
+                                        key_hex=key_hex,
+                                        client_id=client_id,
+                                    )
+                                    await repo.mark_rescue_room_assigned(
+                                        room_id=claimed_room_id,
+                                        telegram_id=target_tg_id,
+                                        session_id=new_session_id,
+                                        key_hex=key_hex,
+                                        client_id=client_id,
+                                        uri=uri,
+                                    )
+                                else:
+                                    new_session = create_local_session(
+                                        room=str(claimed["room_url"]),
+                                        tg_id=str(target_tg_id),
+                                    )
+                                    steps = build_deploy_steps(
+                                        session_id=new_session.session_id,
+                                        local_dir=new_session.out_dir,
+                                        deploy_host=deploy_host,
+                                        remote_root=settings.olcrtc_rescue_remote_root,
+                                        install_service=settings.olcrtc_rescue_install_service,
+                                        start_service=True,
+                                        safe_ssh=True,
+                                    )
+                                    deploy_result = await run_steps_async(
+                                        steps,
+                                        timeout_sec=max(5, int(settings.olcrtc_rescue_deploy_timeout_sec)),
+                                    )
+                                    if not deploy_result.ok:
+                                        await repo.mark_rescue_room_status(
+                                            room_id=claimed_room_id,
+                                            status="free",
+                                            increment_fail_count=True,
+                                        )
+                                        replacement_details.append(
+                                            f"auto_replace {old_session_id}: deploy failed at "
+                                            f"{deploy_result.failed_step}\n{deploy_result.output}"
+                                        )
+                                        continue
+                                    new_session_id = new_session.session_id
+                                    uri = new_session.uri
+                                    await repo.mark_rescue_room_assigned(
+                                        room_id=claimed_room_id,
+                                        telegram_id=target_tg_id,
+                                        session_id=new_session.session_id,
+                                        key_hex=new_session.key_hex,
+                                        client_id=new_session.client_id,
+                                        uri=new_session.uri,
+                                    )
+
+                                await bot.send_message(
+                                    target_tg_id,
+                                    "RootVPN Rescue session was replaced automatically: "
+                                    "the old room dropped.\n\n"
+                                    + build_rescue_user_message(uri),
+                                )
+                                await repo.mark_rescue_room_status(
+                                    room_id=old_room_id,
+                                    status="bad",
+                                    session_id=old_session_id,
+                                    telegram_id=target_tg_id,
+                                    increment_fail_count=True,
+                                )
+                                if old_session_id:
+                                    await stop_rescue_session(
+                                        session_id=old_session_id,
+                                        deploy_host=deploy_host,
+                                        timeout_sec=max(5, int(settings.olcrtc_rescue_deploy_timeout_sec)),
+                                    )
+                                replaced_session_ids.add(old_session_id)
+                                replacement_details.append(
+                                    f"auto_replace {old_session_id}: ok new_session={new_session_id} "
+                                    f"room={claimed['room_url']} tg={target_tg_id}"
+                                )
+                            except Exception as exc:
+                                logging.exception("olcRTC Rescue assigned auto-replace failed for %s", old_session_id)
+                                try:
+                                    await repo.mark_rescue_room_status(
+                                        room_id=claimed_room_id,
+                                        status="free",
+                                        increment_fail_count=True,
+                                    )
+                                except Exception:
+                                    logging.exception(
+                                        "olcRTC Rescue assigned auto-replace rollback failed for %s",
+                                        claimed_room_id,
+                                    )
+                                replacement_details.append(f"auto_replace {old_session_id}: crashed: {exc}")
+
+                    if replacement_details:
+                        await notify_admin_worker_alert(
+                            bot=bot,
+                            settings=settings,
+                            key="worker.olcrtc_rescue.assigned_auto_replace",
+                            title="olcRTC Rescue assigned session replaced",
+                            details="\n\n".join(replacement_details),
+                        )
+
                     restart_details: list[str] = []
                     if settings.olcrtc_rescue_watchdog_auto_restart:
+                        restart_rooms = await repo.list_rescue_rooms() if repo is not None else rooms
+                        restartable_session_ids = rescue_restartable_session_ids(restart_rooms)
                         for session in findings[:3]:
+                            if session.session_id in replaced_session_ids:
+                                continue
+                            if repo is not None and session.session_id not in restartable_session_ids:
+                                restart_details.append(
+                                    f"auto_restart {session.session_id}: skipped; room is not warm/assigned"
+                                )
+                                continue
                             restart_result = await restart_rescue_session(
                                 session_id=session.session_id,
                                 deploy_host=deploy_host,

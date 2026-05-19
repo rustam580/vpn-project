@@ -498,6 +498,36 @@ def rescue_room_broker_request_count(
     return max(0, min(int(max_rooms), warm_shortage + free_shortage))
 
 
+def rescue_assigned_replacement_candidates(
+    rooms: list[dict[str, Any]],
+    findings: list[RemoteRescueSession],
+    *,
+    max_to_replace: int,
+) -> list[dict[str, Any]]:
+    failed_session_ids = {finding.session_id for finding in findings if finding.active != "active"}
+    limit = max(0, int(max_to_replace))
+    if limit <= 0 or not failed_session_ids:
+        return []
+    candidates = [
+        room
+        for room in rooms
+        if str(room.get("status") or "") == "assigned"
+        and str(room.get("session_id") or "") in failed_session_ids
+        and room.get("assigned_tg_id") is not None
+    ]
+    candidates.sort(key=lambda room: (int(room.get("updated_at") or 0), int(room.get("id") or 0)))
+    return candidates[:limit]
+
+
+def rescue_restartable_session_ids(rooms: list[dict[str, Any]]) -> set[str]:
+    return {
+        str(room.get("session_id") or "").strip()
+        for room in rooms
+        if str(room.get("status") or "") in {"assigned", "warm"}
+        and str(room.get("session_id") or "").strip()
+    }
+
+
 def rescue_pool_warm_candidates(
     rooms: list[dict[str, Any]],
     remote_sessions: list[RemoteRescueSession],

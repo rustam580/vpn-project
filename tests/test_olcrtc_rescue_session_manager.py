@@ -22,8 +22,10 @@ from scripts.manage_olcrtc_rescue_session import (
     parse_rescue_command_args,
     parse_rescue_list_output,
     parse_room_broker_output,
+    rescue_assigned_replacement_candidates,
     rescue_pool_warm_candidates,
     rescue_room_broker_request_count,
+    rescue_restartable_session_ids,
     rescue_watchdog_findings,
     run_steps_async,
     validate_session_id,
@@ -399,6 +401,93 @@ rs-warm|active|https://stream.wb.ru/room/warm|Mon
     assert rescue_room_broker_request_count(rooms, remote, min_warm=1, min_free=1, max_rooms=3) == 0
     assert rescue_room_broker_request_count(rooms, remote, min_warm=2, min_free=1, max_rooms=3) == 2
     assert rescue_room_broker_request_count(rooms[:1], remote, min_warm=2, min_free=2, max_rooms=1) == 1
+
+
+def test_rescue_assigned_replacement_candidates_selects_failed_assigned_rooms():
+    findings = rescue_watchdog_findings(
+        """session_id|active|room|since
+rs-dead|activating|https://stream.wb.ru/room/dead|Tue
+rs-free|failed|https://stream.wb.ru/room/free|Tue
+"""
+    )
+    rooms = [
+        {
+            "id": 1,
+            "room_id": "dead",
+            "room_url": "https://stream.wb.ru/room/dead",
+            "status": "assigned",
+            "assigned_tg_id": 386029735,
+            "session_id": "rs-dead",
+            "updated_at": 20,
+        },
+        {
+            "id": 2,
+            "room_id": "active",
+            "room_url": "https://stream.wb.ru/room/active",
+            "status": "assigned",
+            "assigned_tg_id": 386029735,
+            "session_id": "rs-active",
+            "updated_at": 10,
+        },
+        {
+            "id": 3,
+            "room_id": "free",
+            "room_url": "https://stream.wb.ru/room/free",
+            "status": "free",
+            "assigned_tg_id": None,
+            "session_id": "rs-free",
+            "updated_at": 1,
+        },
+    ]
+
+    candidates = rescue_assigned_replacement_candidates(rooms, findings, max_to_replace=3)
+
+    assert [room["room_id"] for room in candidates] == ["dead"]
+
+
+def test_rescue_assigned_replacement_candidates_respects_limit_and_oldest_first():
+    findings = rescue_watchdog_findings(
+        """session_id|active|room|since
+rs-newer|failed|https://stream.wb.ru/room/newer|Tue
+rs-older|failed|https://stream.wb.ru/room/older|Tue
+"""
+    )
+    rooms = [
+        {
+            "id": 1,
+            "room_id": "newer",
+            "room_url": "https://stream.wb.ru/room/newer",
+            "status": "assigned",
+            "assigned_tg_id": 386029735,
+            "session_id": "rs-newer",
+            "updated_at": 20,
+        },
+        {
+            "id": 2,
+            "room_id": "older",
+            "room_url": "https://stream.wb.ru/room/older",
+            "status": "assigned",
+            "assigned_tg_id": 386029735,
+            "session_id": "rs-older",
+            "updated_at": 10,
+        },
+    ]
+
+    candidates = rescue_assigned_replacement_candidates(rooms, findings, max_to_replace=1)
+
+    assert [room["room_id"] for room in candidates] == ["older"]
+
+
+def test_rescue_restartable_session_ids_only_includes_warm_and_assigned():
+    rooms = [
+        {"status": "assigned", "session_id": "rs-assigned"},
+        {"status": "warm", "session_id": "rs-warm"},
+        {"status": "bad", "session_id": "rs-bad"},
+        {"status": "free", "session_id": ""},
+        {"status": "archived", "session_id": "rs-archived"},
+    ]
+
+    assert rescue_restartable_session_ids(rooms) == {"rs-assigned", "rs-warm"}
 
 
 def test_parse_room_broker_output_accepts_json_and_plain_text():

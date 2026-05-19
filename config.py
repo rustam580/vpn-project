@@ -558,6 +558,11 @@ def _load_olcrtc_rescue_block() -> dict[str, Any]:
             1,
             int(os.getenv("OLCRTC_RESCUE_ROOM_BROKER_MAX_ROOMS_PER_TICK", "1")),
         ),
+        "olcrtc_rescue_assigned_auto_replace": env_bool("OLCRTC_RESCUE_ASSIGNED_AUTO_REPLACE", False),
+        "olcrtc_rescue_assigned_max_replace_per_tick": max(
+            1,
+            int(os.getenv("OLCRTC_RESCUE_ASSIGNED_MAX_REPLACE_PER_TICK", "1")),
+        ),
     }
 
 
@@ -652,6 +657,8 @@ class Settings:
     olcrtc_rescue_room_broker_command: str
     olcrtc_rescue_room_broker_timeout_sec: int
     olcrtc_rescue_room_broker_max_rooms_per_tick: int
+    olcrtc_rescue_assigned_auto_replace: bool
+    olcrtc_rescue_assigned_max_replace_per_tick: int
 
     @staticmethod
     def load() -> "Settings":

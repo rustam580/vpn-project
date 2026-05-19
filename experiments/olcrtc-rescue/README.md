@@ -259,6 +259,27 @@ Expected stdout:
 {"generated_at":"...","rooms":[{"room_id":"...","room_url":"https://stream.wb.ru/room/..."}]}
 ```
 
+## Assigned Session Auto-Replacement
+
+The watchdog can also replace a broken user-assigned room instead of only restarting the same
+systemd unit:
+
+```dotenv
+OLCRTC_RESCUE_ASSIGNED_AUTO_REPLACE=1
+OLCRTC_RESCUE_ASSIGNED_MAX_REPLACE_PER_TICK=1
+```
+
+When an `assigned` session appears as non-active in `/rescue_list`, the bot:
+
+1. Claims the next `warm` room first, or a `free` room if no warm room exists.
+2. Starts a new olcRTC service if the replacement was only `free`.
+3. Sends the user a fresh Rescue URI.
+4. Marks the old room as `bad` and stops the old service.
+5. Alerts admins with the replacement result.
+
+Keep `OLCRTC_RESCUE_POOL_MIN_WARM` and `OLCRTC_RESCUE_POOL_MIN_FREE` above zero before enabling this,
+otherwise there may be no room available when a live user drops.
+
 If the token expires, the broker will fail and watchdog will alert. Replace the token, then rerun
 the smoke test. A future Playwright/profile broker can replace this script without changing the
 Telegram bot contract, as long as it prints room URLs to stdout.
