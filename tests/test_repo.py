@@ -393,6 +393,64 @@ async def test_schema_version_is_latest_after_open(repo, repo_conn) -> None:
     assert int(row["version"]) == bot_repo.SCHEMA_VERSION_LATEST
 
 
+async def test_rescue_room_pool_lifecycle(repo) -> None:
+    first = await repo.add_rescue_room(
+        room_id="room-1",
+        room_url="https://stream.wb.ru/room/room-1",
+        note="wb-account-1",
+    )
+    await repo.add_rescue_room(
+        room_id="room-2",
+        room_url="https://stream.wb.ru/room/room-2",
+    )
+
+    assert first["status"] == "free"
+    assert first["note"] == "wb-account-1"
+
+    claimed = await repo.claim_next_free_rescue_room(telegram_id=386029735)
+    assert claimed is not None
+    assert claimed["room_id"] == "room-1"
+    assert claimed["status"] == "reserved"
+    assert claimed["assigned_tg_id"] == 386029735
+
+    await repo.mark_rescue_room_assigned(
+        room_id="room-1",
+        telegram_id=386029735,
+        session_id="rs-test",
+    )
+    rooms = await repo.list_rescue_rooms()
+    room_one = next(room for room in rooms if room["room_id"] == "room-1")
+    assert room_one["status"] == "assigned"
+    assert room_one["session_id"] == "rs-test"
+    assert room_one["last_ok_at"] is not None
+
+    next_claimed = await repo.claim_next_free_rescue_room(telegram_id=7)
+    assert next_claimed is not None
+    assert next_claimed["room_id"] == "room-2"
+
+
+async def test_rescue_room_status_can_release_failed_room(repo) -> None:
+    await repo.add_rescue_room(
+        room_id="room-1",
+        room_url="https://stream.wb.ru/room/room-1",
+    )
+    claimed = await repo.claim_next_free_rescue_room(telegram_id=1)
+    assert claimed is not None
+
+    await repo.mark_rescue_room_status(
+        room_id="room-1",
+        status="free",
+        increment_fail_count=True,
+    )
+    row = await repo.get_rescue_room_by_room_id("room-1")
+
+    assert row is not None
+    assert row["status"] == "free"
+    assert row["assigned_tg_id"] is None
+    assert row["session_id"] is None
+    assert row["fail_count"] == 1
+
+
 async def test_repo_migrates_legacy_db(local_tmp_path) -> None:
     db_path = local_tmp_path / "legacy.sqlite3"
     conn = sqlite3.connect(str(db_path))
@@ -453,6 +511,12 @@ async def test_repo_migrates_legacy_db(local_tmp_path) -> None:
         await cur.close()
         device_col_names = {str(col["name"]) for col in device_cols}
         assert "device_name" in device_col_names
+
+        cur = await migrated_repo.conn.execute("PRAGMA table_info(rescue_rooms)")
+        rescue_cols = await cur.fetchall()
+        await cur.close()
+        rescue_col_names = {str(col["name"]) for col in rescue_cols}
+        assert {"room_id", "room_url", "status", "session_id"}.issubset(rescue_col_names)
     finally:
         await migrated_repo.close()
 

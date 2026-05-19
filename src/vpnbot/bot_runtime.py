@@ -470,6 +470,7 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
         router=router,
         deps=AdminRuntimeDeps(
             settings=settings,
+            repo=repo,
             guard_message_rate_limit=guard_message_rate_limit,
             handle_grant_perm=handle_grant_perm,
             send_broadcast_preview=send_broadcast_preview,

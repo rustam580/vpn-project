@@ -19,6 +19,7 @@ from src.vpnbot.olcrtc_rescue import (
     fetch_rescue_list,
     fetch_rescue_status,
     format_rescue_dashboard,
+    normalize_rescue_room_url,
     parse_rescue_command_args,
     run_steps_async,
     stop_rescue_session,
@@ -42,6 +43,7 @@ class AdminRuntimeDeps:
     """Dependencies for admin-facing runtime handlers."""
 
     settings: Any
+    repo: Any
     guard_message_rate_limit: Callable[[Message], Awaitable[bool]]
     handle_grant_perm: Callable[[Message], Awaitable[bool]]
     send_broadcast_preview: Callable[..., Awaitable[None]]
@@ -55,6 +57,7 @@ class AdminRuntimeDeps:
 
 def register_admin_runtime_handlers(*, router: Router, deps: AdminRuntimeDeps) -> None:
     settings = deps.settings
+    repo = deps.repo
     guard_message_rate_limit = deps.guard_message_rate_limit
     handle_grant_perm = deps.handle_grant_perm
     send_broadcast_preview = deps.send_broadcast_preview
@@ -210,6 +213,146 @@ def register_admin_runtime_handlers(*, router: Router, deps: AdminRuntimeDeps) -
             reply_markup=rescue_status_keyboard(session.session_id),
         )
 
+
+    @router.message(Command("rescue_room_add"))
+    async def rescue_room_add_cmd(message: Message) -> None:
+        if not await guard_message_rate_limit(message):
+            return
+        if not message.from_user or not is_admin(int(message.from_user.id), settings):
+            await message.answer("РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ.")
+            return
+        parts = (message.text or "").split(maxsplit=2)
+        if len(parts) < 2:
+            await message.answer("Usage: /rescue_room_add <wb_room_url> [note]")
+            return
+        room_url = normalize_rescue_room_url(parts[1].strip())
+        room_id = room_url.rsplit("/", 1)[-1]
+        note = parts[2].strip() if len(parts) == 3 else ""
+        row = await repo.add_rescue_room(room_id=room_id, room_url=room_url, note=note)
+        await message.answer(
+            "Rescue room saved.\n"
+            f"id: {row['id']}\n"
+            f"status: {row['status']}\n"
+            f"room: {row['room_url']}\n"
+            f"note: {row['note'] or '-'}"
+        )
+
+    @router.message(Command("rescue_rooms"))
+    async def rescue_rooms_cmd(message: Message) -> None:
+        if not await guard_message_rate_limit(message):
+            return
+        if not message.from_user or not is_admin(int(message.from_user.id), settings):
+            await message.answer("РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ.")
+            return
+        rows = await repo.list_rescue_rooms()
+        if not rows:
+            await message.answer("Rescue room pool is empty.\nAdd room: /rescue_room_add <wb_room_url> [note]")
+            return
+        lines = ["🏊 Rescue Room Pool", f"rooms: {len(rows)}", ""]
+        for idx, row in enumerate(rows, start=1):
+            lines.extend(
+                [
+                    f"{idx}. {row['status']} | {row['room_id']}",
+                    f"   tg: {row['assigned_tg_id'] or '-'}",
+                    f"   session: {row['session_id'] or '-'}",
+                    f"   fails: {row['fail_count'] or 0}",
+                    f"   room: {row['room_url']}",
+                    f"   note: {row['note'] or '-'}",
+                    "",
+                ]
+            )
+        for chunk in split_message("\n".join(lines).rstrip(), limit=3500):
+            await message.answer(chunk, link_preview_options=NO_LINK_PREVIEW)
+
+    @router.message(Command("rescue_create"))
+    async def rescue_create_cmd(message: Message) -> None:
+        if not await guard_message_rate_limit(message):
+            return
+        if not message.from_user or not is_admin(int(message.from_user.id), settings):
+            await message.answer("РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ.")
+            return
+        parts = (message.text or "").split(maxsplit=1)
+        if len(parts) != 2:
+            await message.answer("Usage: /rescue_create <telegram_id>")
+            return
+        try:
+            target_tg_id = int(parts[1].strip())
+            if target_tg_id <= 0:
+                raise ValueError
+        except ValueError:
+            await message.answer("Invalid telegram_id.")
+            return
+        auto_deploy_enabled = bool(getattr(settings, "olcrtc_rescue_auto_deploy", False))
+        deploy_host = str(getattr(settings, "olcrtc_rescue_deploy_host", "") or "").strip()
+        if not auto_deploy_enabled or not deploy_host:
+            await message.answer("Rescue pool requires OLCRTC_RESCUE_AUTO_DEPLOY=1 and OLCRTC_RESCUE_DEPLOY_HOST.")
+            return
+
+        room = await repo.claim_next_free_rescue_room(telegram_id=target_tg_id)
+        if room is None:
+            await message.answer("No free Rescue rooms in pool.\nAdd one: /rescue_room_add <wb_room_url> [note]")
+            return
+
+        try:
+            session = create_local_session(room=str(room["room_url"]), tg_id=str(target_tg_id))
+        except Exception as exc:
+            await repo.mark_rescue_room_status(room_id=str(room["room_id"]), status="free")
+            await message.answer(f"Failed to create local Rescue session: {exc}")
+            return
+
+        await message.answer(
+            "Rescue room claimed from pool.\n"
+            f"room: {session.room_url}\n"
+            f"session: {session.session_id}\n"
+            f"target: {target_tg_id}\n"
+            f"Deploying on {deploy_host}..."
+        )
+        steps = build_deploy_steps(
+            session_id=session.session_id,
+            local_dir=session.out_dir,
+            deploy_host=deploy_host,
+            remote_root=str(getattr(settings, "olcrtc_rescue_remote_root", "/etc/rootvpn/rescue")),
+            install_service=bool(getattr(settings, "olcrtc_rescue_install_service", True)),
+            start_service=True,
+            safe_ssh=True,
+        )
+        result = await run_steps_async(
+            steps,
+            timeout_sec=int(getattr(settings, "olcrtc_rescue_deploy_timeout_sec", 60)),
+        )
+        if not result.ok:
+            await repo.mark_rescue_room_status(
+                room_id=str(room["room_id"]),
+                status="free",
+                increment_fail_count=True,
+            )
+            for chunk in split_message(f"Rescue deploy failed at {result.failed_step}\n{result.output}", limit=3500):
+                await message.answer(chunk, link_preview_options=NO_LINK_PREVIEW)
+            return
+
+        await repo.mark_rescue_room_assigned(
+            room_id=str(room["room_id"]),
+            telegram_id=target_tg_id,
+            session_id=session.session_id,
+        )
+        user_message = build_rescue_user_message(session.uri)
+        delivered = False
+        try:
+            await message.bot.send_message(target_tg_id, user_message, link_preview_options=NO_LINK_PREVIEW)
+            delivered = True
+        except Exception:
+            delivered = False
+
+        admin_text = build_rescue_admin_summary(session, deploy_host=deploy_host)
+        admin_text += f"\n\npool_room_id: {room['room_id']}"
+        admin_text += "\n\nauto_deploy: ok"
+        admin_text += "\n\nuser_delivery: " + ("sent" if delivered else "not_sent")
+        for chunk in split_message(admin_text, limit=3500):
+            await message.answer(chunk, link_preview_options=NO_LINK_PREVIEW)
+        await message.answer(
+            f"Статус сессии: {session.session_id}",
+            reply_markup=rescue_status_keyboard(session.session_id),
+        )
     @router.message(Command("rescue_status"))
     async def rescue_status_cmd(message: Message) -> None:
         if not await guard_message_rate_limit(message):

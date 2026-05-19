@@ -10,12 +10,13 @@ from typing import Any
 import aiosqlite
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "db" / "migrations"
-SCHEMA_VERSION_LATEST = 4
+SCHEMA_VERSION_LATEST = 5
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (1, "001_init.sql"),
     (2, "002_legacy_columns.sql"),
     (3, "003_subscription_hits.sql"),
     (4, "004_web_orders.sql"),
+    (5, "005_rescue_rooms.sql"),
 )
 
 
@@ -1207,6 +1208,171 @@ class Repo:
               AND bonus_applied = 1
             """,
             (invited_telegram_id, referrer_telegram_id),
+        )
+        await self.conn.commit()
+
+    async def add_rescue_room(
+        self,
+        *,
+        room_id: str,
+        room_url: str,
+        note: str = "",
+    ) -> dict[str, Any]:
+        assert self.conn is not None
+        now = int(time.time())
+        await self.conn.execute(
+            """
+            INSERT INTO rescue_rooms (
+                room_id, room_url, status, note, created_at, updated_at
+            )
+            VALUES (?, ?, 'free', ?, ?, ?)
+            ON CONFLICT(room_id) DO UPDATE
+            SET room_url = excluded.room_url,
+                note = excluded.note,
+                updated_at = excluded.updated_at
+            """,
+            (room_id.strip(), room_url.strip(), note.strip()[:500], now, now),
+        )
+        await self.conn.commit()
+        row = await self.get_rescue_room_by_room_id(room_id)
+        if row is None:
+            raise RuntimeError("failed to load rescue room after insert")
+        return row
+
+    async def get_rescue_room_by_room_id(self, room_id: str) -> dict[str, Any] | None:
+        assert self.conn is not None
+        c = await self.conn.execute(
+            """
+            SELECT id, room_id, room_url, status, assigned_tg_id, session_id, note, fail_count,
+                   created_at, updated_at, last_ok_at
+            FROM rescue_rooms
+            WHERE room_id = ?
+            LIMIT 1
+            """,
+            (room_id.strip(),),
+        )
+        row = await c.fetchone()
+        await c.close()
+        return dict(row) if row else None
+
+    async def list_rescue_rooms(self, *, include_archived: bool = False) -> list[dict[str, Any]]:
+        assert self.conn is not None
+        where = "" if include_archived else "WHERE status <> 'archived'"
+        c = await self.conn.execute(
+            f"""
+            SELECT id, room_id, room_url, status, assigned_tg_id, session_id, note, fail_count,
+                   created_at, updated_at, last_ok_at
+            FROM rescue_rooms
+            {where}
+            ORDER BY
+                CASE status
+                    WHEN 'assigned' THEN 1
+                    WHEN 'reserved' THEN 2
+                    WHEN 'free' THEN 3
+                    WHEN 'bad' THEN 4
+                    ELSE 5
+                END,
+                updated_at DESC,
+                id DESC
+            """
+        )
+        rows = await c.fetchall()
+        await c.close()
+        return [dict(row) for row in rows]
+
+    async def claim_next_free_rescue_room(self, *, telegram_id: int) -> dict[str, Any] | None:
+        assert self.conn is not None
+        now = int(time.time())
+        await self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            c = await self.conn.execute(
+                """
+                SELECT id, room_id, room_url, status, assigned_tg_id, session_id, note, fail_count,
+                       created_at, updated_at, last_ok_at
+                FROM rescue_rooms
+                WHERE status = 'free'
+                ORDER BY updated_at ASC, id ASC
+                LIMIT 1
+                """
+            )
+            row = await c.fetchone()
+            await c.close()
+            if row is None:
+                await self.conn.commit()
+                return None
+            room_id = str(row["room_id"])
+            await self.conn.execute(
+                """
+                UPDATE rescue_rooms
+                SET status = 'reserved',
+                    assigned_tg_id = ?,
+                    session_id = NULL,
+                    updated_at = ?
+                WHERE room_id = ? AND status = 'free'
+                """,
+                (int(telegram_id), now, room_id),
+            )
+            await self.conn.commit()
+            return await self.get_rescue_room_by_room_id(room_id)
+        except Exception:
+            await self.conn.rollback()
+            raise
+
+    async def mark_rescue_room_assigned(
+        self,
+        *,
+        room_id: str,
+        telegram_id: int,
+        session_id: str,
+    ) -> None:
+        assert self.conn is not None
+        now = int(time.time())
+        await self.conn.execute(
+            """
+            UPDATE rescue_rooms
+            SET status = 'assigned',
+                assigned_tg_id = ?,
+                session_id = ?,
+                updated_at = ?,
+                last_ok_at = ?
+            WHERE room_id = ?
+            """,
+            (int(telegram_id), session_id.strip(), now, now, room_id.strip()),
+        )
+        await self.conn.commit()
+
+    async def mark_rescue_room_status(
+        self,
+        *,
+        room_id: str,
+        status: str,
+        session_id: str | None = None,
+        telegram_id: int | None = None,
+        increment_fail_count: bool = False,
+    ) -> None:
+        assert self.conn is not None
+        allowed = {"free", "reserved", "assigned", "bad", "archived"}
+        if status not in allowed:
+            raise ValueError(f"status must be one of: {', '.join(sorted(allowed))}")
+        now = int(time.time())
+        await self.conn.execute(
+            """
+            UPDATE rescue_rooms
+            SET status = ?,
+                assigned_tg_id = ?,
+                session_id = ?,
+                fail_count = fail_count + ?,
+                updated_at = ?
+            WHERE room_id = ?
+            """,
+            (
+                status,
+                telegram_id,
+                session_id,
+                1 if increment_fail_count else 0,
+                now,
+                room_id.strip(),
+            ),
         )
         await self.conn.commit()
 
