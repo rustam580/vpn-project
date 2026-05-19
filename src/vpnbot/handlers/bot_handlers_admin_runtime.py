@@ -17,6 +17,7 @@ from src.vpnbot.olcrtc_rescue import (
     build_rescue_uri_for_room,
     build_rescue_user_message,
     create_local_session,
+    diagnose_rescue_status_output,
     default_client_id,
     fetch_rescue_list,
     fetch_rescue_status,
@@ -508,7 +509,9 @@ def register_admin_runtime_handlers(*, router: Router, deps: AdminRuntimeDeps) -
             timeout_sec=int(getattr(settings, "olcrtc_rescue_deploy_timeout_sec", 60)),
         )
         prefix = "Rescue status: ok" if result.ok else f"Rescue status: failed at {result.failed_step}"
-        for chunk in split_message(f"{prefix}\n{result.output}", limit=3500):
+        diagnosis = diagnose_rescue_status_output(result.output)
+        text = f"{prefix}\n{diagnosis}\n\n{result.output}" if diagnosis else f"{prefix}\n{result.output}"
+        for chunk in split_message(text, limit=3500):
             await message.answer(chunk, link_preview_options=NO_LINK_PREVIEW)
 
     @router.message(Command("rescue_list"))

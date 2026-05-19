@@ -32,6 +32,7 @@ from src.vpnbot.keyboards.web_order_keyboards import (
 from src.vpnbot.marzban_sync import audit_marzban_sync
 from src.vpnbot.message_utils import split_message
 from src.vpnbot.olcrtc_rescue import (
+    diagnose_rescue_status_output,
     fetch_rescue_list,
     fetch_rescue_status,
     format_rescue_dashboard,
@@ -310,7 +311,9 @@ def register_admin_callback_handlers(*, router: Router, deps: AdminCallbackDeps)
                 timeout_sec=int(getattr(settings, "olcrtc_rescue_deploy_timeout_sec", 60)),
             )
             prefix = "Rescue status: ok" if result.ok else f"Rescue status: failed at {result.failed_step}"
-            for chunk in split_message(f"{prefix}\n{result.output}", limit=3500):
+            diagnosis = diagnose_rescue_status_output(result.output)
+            text = f"{prefix}\n{diagnosis}\n\n{result.output}" if diagnosis else f"{prefix}\n{result.output}"
+            for chunk in split_message(text, limit=3500):
                 await callback.message.answer(chunk)
             return
         if action == "rescue_dashboard":

@@ -24,6 +24,7 @@ from scripts.manage_olcrtc_rescue_session import (
     validate_session_id,
 )
 from src.vpnbot.olcrtc_rescue import CommandStep, format_rescue_watchdog_alert
+from src.vpnbot.olcrtc_rescue import diagnose_rescue_status_output
 
 
 KEY = "b" * 64
@@ -288,6 +289,22 @@ rs-two|failed|https://stream.wb.ru/room/019e3ccc|Tue
     assert "status: failed" in text
     assert "/rescue_status rs-two" in text
     assert "/rescue_stop rs-two" in text
+
+
+def test_diagnose_rescue_status_output_explains_wb_room_403_recovery():
+    output = """
+May 19 olcrtc[1]: server: failed to create transport: open engine session:
+carrier auth failed: get token failed: status 403: {"code":7,"message":"guests cannot create rooms"}
+May 19 systemd[1]: Scheduled restart job, restart counter is at 59.
+May 19 olcrtc[2]: Link connected
+"""
+
+    text = diagnose_rescue_status_output(output)
+
+    assert "WB auth 403" in text
+    assert "Rejoin the same WB room as host" in text
+    assert "Link connected" in text
+    assert "restart loop" in text
 
 
 @pytest.mark.asyncio

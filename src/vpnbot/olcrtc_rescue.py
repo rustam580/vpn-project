@@ -318,6 +318,28 @@ async def fetch_rescue_status(
     return await run_steps_async([step], timeout_sec=timeout_sec)
 
 
+def diagnose_rescue_status_output(output: str) -> str:
+    text = (output or "").lower()
+    notes: list[str] = []
+    if "guests cannot create rooms" in text or '"code":7' in text:
+        notes.append(
+            "WB auth 403: relay could not get a room token. Most likely the WB room was asleep/closed "
+            "or had no active host presence when the service restarted. Rejoin the same WB room as host "
+            "and wait 10-20 seconds; if it does not recover, create/warm a new room."
+        )
+    if "link connected" in text:
+        notes.append("Link connected: the relay managed to join the carrier again; existing user URI/key can recover.")
+    if "scheduled restart job" in text or "restart counter" in text:
+        notes.append("Systemd restart loop was observed; the user's tunnel will drop while olcRTC restarts.")
+    if "read/write on closed pipe" in text:
+        notes.append("Closed pipe: olcRTC smux/control stream was reinstalled; short client reconnects are expected.")
+    if "payload exceeds max_payload_size" in text or "frame too large" in text:
+        notes.append("Payload framing issue seen; check traffic.max_payload_size and client/server version match.")
+    if not notes:
+        return ""
+    return "Diagnosis:\n" + "\n".join(f"- {note}" for note in notes)
+
+
 def build_list_step(
     *,
     deploy_host: str,
