@@ -155,7 +155,9 @@ def register_user_message_handlers(*, router: Router, deps: UserMessageDeps) -> 
             "• <code>/sync_audit</code> — Marzban/DB рассинхрон\n"
             "• <code>/xray_errors [minutes]</code> — ошибки Xray\n"
             "• <code>/rescue &lt;telegram_id&gt; &lt;wb_room_url&gt;</code> — Rescue Beta\n"
-            "• <code>/rescue_status &lt;session_id&gt;</code> — статус Rescue"
+            "• <code>/rescue_status &lt;session_id&gt;</code> — статус Rescue\n"
+            "• <code>/rescue_list</code> — список Rescue-сессий\n"
+            "• <code>/rescue_stop &lt;session_id&gt;</code> — остановить Rescue"
         )
         await message.answer(user_block + "\n\n" + admin_block, parse_mode="HTML")
 

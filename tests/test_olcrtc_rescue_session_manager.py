@@ -6,9 +6,11 @@ from datetime import UTC, datetime
 import pytest
 
 from scripts.manage_olcrtc_rescue_session import (
+    build_list_step,
     build_rescue_admin_summary,
     build_deploy_steps,
     build_status_step,
+    build_stop_step,
     create_local_session,
     default_client_id,
     make_session_id,
@@ -164,6 +166,34 @@ def test_build_status_step_uses_safe_session_id_and_journal_tail():
 def test_build_status_step_rejects_bad_session_id():
     with pytest.raises(ValueError, match="session_id"):
         build_status_step(session_id="bad;id", deploy_host="rootvpn-rescue-fi")
+
+
+def test_build_list_step_reads_systemd_units_and_room_files():
+    step = build_list_step(deploy_host="rootvpn-rescue-fi", remote_root="/etc/rootvpn/rescue")
+
+    command = " ".join(step.command)
+    assert step.command[0] == "ssh"
+    assert "BatchMode=yes" in step.command
+    assert "rootvpn-rescue-fi" in step.command
+    assert "olcrtc-rescue@*.service" in command
+    assert "room-url.txt" in command
+    assert "session_id|active|room|since" in command
+
+
+def test_build_stop_step_disables_safe_session_unit():
+    step = build_stop_step(session_id="rs-20260518202449-386029735", deploy_host="rootvpn-rescue-fi")
+
+    command = " ".join(step.command)
+    assert step.command[0] == "ssh"
+    assert "BatchMode=yes" in step.command
+    assert "rootvpn-rescue-fi" in step.command
+    assert "systemctl disable --now 'olcrtc-rescue@rs-20260518202449-386029735'" in command
+    assert "systemctl reset-failed" in command
+
+
+def test_build_stop_step_rejects_bad_session_id():
+    with pytest.raises(ValueError, match="session_id"):
+        build_stop_step(session_id="bad;id", deploy_host="rootvpn-rescue-fi")
 
 
 @pytest.mark.asyncio

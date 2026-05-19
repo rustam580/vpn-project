@@ -293,6 +293,69 @@ async def fetch_rescue_status(
     return await run_steps_async([step], timeout_sec=timeout_sec)
 
 
+def build_list_step(
+    *,
+    deploy_host: str,
+    remote_root: str = DEFAULT_REMOTE_ROOT,
+    safe_ssh: bool = True,
+) -> CommandStep:
+    root = remote_root.rstrip("/")
+    remote_command = (
+        "printf 'session_id|active|room|since\\n'; "
+        "systemctl list-units --all --plain --no-legend 'olcrtc-rescue@*.service' "
+        "| awk '{print $1}' "
+        "| while read -r unit; do "
+        "[ -z \"$unit\" ] && continue; "
+        "sid=${unit#olcrtc-rescue@}; sid=${sid%.service}; "
+        "active=$(systemctl is-active \"$unit\" 2>/dev/null || true); "
+        "since=$(systemctl show \"$unit\" -p ActiveEnterTimestamp --value 2>/dev/null || true); "
+        f"room_file={shq(root)}/\"$sid\"/room-url.txt; "
+        "room=''; [ -f \"$room_file\" ] && room=$(tr -d '\\r\\n' < \"$room_file\"); "
+        "printf '%s|%s|%s|%s\\n' \"$sid\" \"$active\" \"$room\" \"$since\"; "
+        "done"
+    )
+    ssh_prefix = _ssh_prefix() if safe_ssh else ["ssh"]
+    return CommandStep("list rescue sessions", [*ssh_prefix, deploy_host, remote_command])
+
+
+async def fetch_rescue_list(
+    *,
+    deploy_host: str,
+    remote_root: str = DEFAULT_REMOTE_ROOT,
+    timeout_sec: int = 30,
+) -> RescueDeployResult:
+    step = build_list_step(deploy_host=deploy_host, remote_root=remote_root, safe_ssh=True)
+    return await run_steps_async([step], timeout_sec=timeout_sec)
+
+
+def build_stop_step(
+    *,
+    session_id: str,
+    deploy_host: str,
+    safe_ssh: bool = True,
+) -> CommandStep:
+    session_id = validate_session_id(session_id)
+    unit = f"olcrtc-rescue@{session_id}"
+    remote_command = (
+        f"systemctl disable --now {shq(unit)}; "
+        f"systemctl reset-failed {shq(unit)} || true; "
+        f"printf 'service: %s\\n' {shq(unit)}; "
+        f"printf 'active: '; systemctl is-active {shq(unit)} || true"
+    )
+    ssh_prefix = _ssh_prefix() if safe_ssh else ["ssh"]
+    return CommandStep(f"stop {unit}", [*ssh_prefix, deploy_host, remote_command])
+
+
+async def stop_rescue_session(
+    *,
+    session_id: str,
+    deploy_host: str,
+    timeout_sec: int = 30,
+) -> RescueDeployResult:
+    step = build_stop_step(session_id=session_id, deploy_host=deploy_host, safe_ssh=True)
+    return await run_steps_async([step], timeout_sec=timeout_sec)
+
+
 def _ssh_prefix() -> list[str]:
     return [
         "ssh",
