@@ -231,6 +231,22 @@ printf '%s\n' 'PASTE_WB_ACCESS_TOKEN_HERE' >/etc/rootvpn/wbstream-access-token
 chmod 600 /etc/rootvpn/wbstream-access-token
 ```
 
+On an operator Windows machine with the WB Stream desktop app logged in, token candidates can be
+located without printing secret values:
+
+```powershell
+python tools/find_wbstream_token_candidates.py
+```
+
+If the `accessToken` candidate is index `1`, write it to a local ignored file:
+
+```powershell
+python tools/find_wbstream_token_candidates.py --index 1 --write-token out/secrets/wbstream-access-token.txt
+```
+
+Then copy that file to the bot server as `/etc/rootvpn/wbstream-access-token`. Do not paste the token
+into Telegram, shell history, GitHub, or logs.
+
 Smoke test:
 
 ```bash
