@@ -229,3 +229,15 @@ Recommended implementation path:
 - do not deploy it on the main bot/VPN host without resource limits.
 
 This keeps the main paid product stable while leaving room for a serious experiment.
+
+## Community Chat Import Notes: 2026-05-19
+
+Telegram export `/c/openlibrecommunity` was reviewed for RootVPN Rescue applicability. Keep these as operational signals, not authoritative documentation.
+
+- The community repeatedly treats `wbstream + vp8channel` with `vp8-fps=60` and `vp8-batch=64` as the practical WB profile. This matches the current RootVPN Rescue URI defaults.
+- olcRTC exposes a local `socks5h` proxy, commonly discussed around port `8808`. This matters for future client integration: a branded client can run olcRTC in the background and route through the local proxy rather than exposing raw tunnel mechanics to users.
+- WB guest room creation started failing for multiple users with `403 guests cannot create rooms`. This validates the current RootVPN design choice: pre-create authenticated WB rooms, store them in the room pool, and warm them with server-side relays before assigning users.
+- WB `datachannel` is repeatedly reported as non-working or fragile; keep `vp8channel` as primary for WB, with `seichannel`/`videochannel` only as future fallback experiments.
+- Operators/regions are inconsistent, including reported MegaFon failures and other regional white-list behavior changes. Closed beta must track operator, region, carrier, transport, room age, uptime, and user-visible result.
+- Community panel projects exist (`OlcPanel`, `olcrtc-manager-panel`, `olcWave`), but chat evidence points to rough edges around room-id generation, updates, and carrier/transport support. Treat them as references, not as RootVPN dependencies.
+- A recurring product suggestion is effectively "commercialize olcRTC by adding users, routing, quotas, and batched room management." RootVPN's better path is to keep this logic in the Telegram/admin backend first: authenticated room pool, warm relay lifecycle, per-user URI delivery, status/watchdog, then branded client packaging.
