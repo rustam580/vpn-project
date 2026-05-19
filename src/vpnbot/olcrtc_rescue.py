@@ -411,6 +411,43 @@ def format_rescue_dashboard(
     return "\n".join(lines).rstrip()
 
 
+def rescue_watchdog_findings(output: str) -> list[RemoteRescueSession]:
+    return [
+        session
+        for session in parse_rescue_list_output(output)
+        if session.active != "active"
+    ]
+
+
+def format_rescue_watchdog_alert(
+    findings: list[RemoteRescueSession],
+    *,
+    deploy_host: str = "",
+) -> str:
+    if not findings:
+        return "Rescue watchdog: OK"
+    lines = [
+        "Rescue watchdog findings",
+        f"host: {deploy_host or '-'}",
+        f"problem sessions: {len(findings)}",
+        "",
+    ]
+    for session in findings[:10]:
+        lines.extend(
+            [
+                f"- {session.session_id}",
+                f"  status: {session.active or '-'}",
+                f"  room: {session.room_url}",
+                f"  since: {session.since or '-'}",
+                f"  check: /rescue_status {session.session_id}",
+                f"  stop: /rescue_stop {session.session_id}",
+            ]
+        )
+    if len(findings) > 10:
+        lines.append(f"... and {len(findings) - 10} more")
+    return "\n".join(lines)
+
+
 def build_stop_step(
     *,
     session_id: str,

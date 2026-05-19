@@ -50,6 +50,11 @@ from src.vpnbot.notifications import (
     notify_admin_requeued_processing,
     notify_admin_worker_alert,
 )
+from src.vpnbot.olcrtc_rescue import (
+    fetch_rescue_list,
+    format_rescue_watchdog_alert,
+    rescue_watchdog_findings,
+)
 from src.vpnbot.payment_helpers import (
     apply_paid_payment,
     cryptobot_check_invoice,
@@ -388,6 +393,73 @@ async def xray_quality_monitor_worker(
                 )
             except Exception:
                 logging.exception("Xray quality monitor worker: alert notify failed")
+
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval)
+        except asyncio.TimeoutError:
+            continue
+
+
+async def olcrtc_rescue_watchdog_worker(
+    *,
+    settings: Settings,
+    bot: Bot,
+    stop_event: asyncio.Event,
+) -> None:
+    if not settings.olcrtc_rescue_watchdog_enabled:
+        logging.info("olcRTC Rescue watchdog disabled")
+        return
+
+    deploy_host = str(settings.olcrtc_rescue_deploy_host or "").strip()
+    if not deploy_host:
+        logging.info("olcRTC Rescue watchdog disabled: deploy host is empty")
+        return
+
+    interval = max(300, int(settings.olcrtc_rescue_watchdog_interval_sec))
+    logging.info(
+        "olcRTC Rescue watchdog started: host=%s remote_root=%s interval_sec=%s",
+        deploy_host,
+        settings.olcrtc_rescue_remote_root,
+        interval,
+    )
+
+    while not stop_event.is_set():
+        try:
+            result = await fetch_rescue_list(
+                deploy_host=deploy_host,
+                remote_root=settings.olcrtc_rescue_remote_root,
+                timeout_sec=max(5, int(settings.olcrtc_rescue_deploy_timeout_sec)),
+            )
+            if not result.ok:
+                await notify_admin_worker_alert(
+                    bot=bot,
+                    settings=settings,
+                    key="worker.olcrtc_rescue.list_failed",
+                    title="olcRTC Rescue watchdog failed",
+                    details=f"failed_step={result.failed_step}\n{result.output}",
+                )
+            else:
+                findings = rescue_watchdog_findings(result.output)
+                if findings:
+                    await notify_admin_worker_alert(
+                        bot=bot,
+                        settings=settings,
+                        key="worker.olcrtc_rescue.findings",
+                        title="olcRTC Rescue sessions need attention",
+                        details=format_rescue_watchdog_alert(findings, deploy_host=deploy_host),
+                    )
+        except Exception as exc:
+            logging.exception("olcRTC Rescue watchdog iteration failed")
+            try:
+                await notify_admin_worker_alert(
+                    bot=bot,
+                    settings=settings,
+                    key="worker.olcrtc_rescue.iteration_failed",
+                    title="olcRTC Rescue watchdog crashed",
+                    details=str(exc),
+                )
+            except Exception:
+                logging.exception("olcRTC Rescue watchdog: alert notify failed")
 
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=interval)

@@ -18,10 +18,11 @@ from scripts.manage_olcrtc_rescue_session import (
     make_session_id,
     parse_rescue_command_args,
     parse_rescue_list_output,
+    rescue_watchdog_findings,
     run_steps_async,
     validate_session_id,
 )
-from src.vpnbot.olcrtc_rescue import CommandStep
+from src.vpnbot.olcrtc_rescue import CommandStep, format_rescue_watchdog_alert
 
 
 KEY = "b" * 64
@@ -247,6 +248,33 @@ def test_format_rescue_dashboard_handles_empty_inventory():
 
     assert "0 total / 0 active / 0 inactive" in text
     assert "No Rescue sessions found." in text
+
+
+def test_rescue_watchdog_findings_include_non_active_sessions_only():
+    output = """session_id|active|room|since
+rs-one|active|https://stream.wb.ru/room/019e3cbb|Mon
+rs-two|failed|https://stream.wb.ru/room/019e3ccc|Tue
+rs-three|inactive|https://stream.wb.ru/room/019e3ddd|Wed
+"""
+
+    findings = rescue_watchdog_findings(output)
+
+    assert [session.session_id for session in findings] == ["rs-two", "rs-three"]
+
+
+def test_format_rescue_watchdog_alert_includes_recovery_commands():
+    output = """session_id|active|room|since
+rs-two|failed|https://stream.wb.ru/room/019e3ccc|Tue
+"""
+    findings = rescue_watchdog_findings(output)
+
+    text = format_rescue_watchdog_alert(findings, deploy_host="rootvpn-rescue-fi")
+
+    assert "Rescue watchdog findings" in text
+    assert "rootvpn-rescue-fi" in text
+    assert "status: failed" in text
+    assert "/rescue_status rs-two" in text
+    assert "/rescue_stop rs-two" in text
 
 
 @pytest.mark.asyncio

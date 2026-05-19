@@ -522,8 +522,9 @@ def _load_xray_quality_block() -> dict[str, Any]:
 
 
 def _load_olcrtc_rescue_block() -> dict[str, Any]:
+    auto_deploy = env_bool("OLCRTC_RESCUE_AUTO_DEPLOY", False)
     return {
-        "olcrtc_rescue_auto_deploy": env_bool("OLCRTC_RESCUE_AUTO_DEPLOY", False),
+        "olcrtc_rescue_auto_deploy": auto_deploy,
         "olcrtc_rescue_deploy_host": os.getenv("OLCRTC_RESCUE_DEPLOY_HOST", "").strip(),
         "olcrtc_rescue_remote_root": os.getenv(
             "OLCRTC_RESCUE_REMOTE_ROOT",
@@ -533,6 +534,11 @@ def _load_olcrtc_rescue_block() -> dict[str, Any]:
         "olcrtc_rescue_deploy_timeout_sec": max(
             5,
             int(os.getenv("OLCRTC_RESCUE_DEPLOY_TIMEOUT_SEC", "60")),
+        ),
+        "olcrtc_rescue_watchdog_enabled": env_bool("OLCRTC_RESCUE_WATCHDOG_ENABLED", auto_deploy),
+        "olcrtc_rescue_watchdog_interval_sec": max(
+            300,
+            int(os.getenv("OLCRTC_RESCUE_WATCHDOG_INTERVAL_SEC", "600")),
         ),
     }
 
@@ -617,6 +623,8 @@ class Settings:
     olcrtc_rescue_remote_root: str
     olcrtc_rescue_install_service: bool
     olcrtc_rescue_deploy_timeout_sec: int
+    olcrtc_rescue_watchdog_enabled: bool
+    olcrtc_rescue_watchdog_interval_sec: int
 
     @staticmethod
     def load() -> "Settings":

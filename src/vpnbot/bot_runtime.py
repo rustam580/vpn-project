@@ -76,6 +76,7 @@ from src.vpnbot.worker_runtime import (
     daily_ops_report_worker,
     find_plan,
     marzban_sync_audit_worker,
+    olcrtc_rescue_watchdog_worker,
     subscription_migration_worker,
     subscription_renewal_worker,
     xray_quality_monitor_worker,
@@ -700,6 +701,13 @@ async def main() -> None:
             stop_event=stop_event,
         )
     )
+    olcrtc_rescue_watchdog_task = asyncio.create_task(
+        olcrtc_rescue_watchdog_worker(
+            settings=settings,
+            bot=bot,
+            stop_event=stop_event,
+        )
+    )
 
     try:
         await bot.delete_webhook(drop_pending_updates=False)
@@ -714,6 +722,7 @@ async def main() -> None:
         sub_migration_task.cancel()
         marzban_sync_task.cancel()
         xray_quality_task.cancel()
+        olcrtc_rescue_watchdog_task.cancel()
         try:
             await worker_task
         except asyncio.CancelledError:
@@ -744,6 +753,10 @@ async def main() -> None:
             pass
         try:
             await xray_quality_task
+        except asyncio.CancelledError:
+            pass
+        try:
+            await olcrtc_rescue_watchdog_task
         except asyncio.CancelledError:
             pass
         await marzban.close()
