@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 import pytest
 
 from scripts.manage_olcrtc_rescue_session import (
+    active_rescue_sessions_for_room,
     build_list_step,
     build_rescue_admin_summary,
     build_deploy_steps,
@@ -15,6 +16,7 @@ from scripts.manage_olcrtc_rescue_session import (
     default_client_id,
     make_session_id,
     parse_rescue_command_args,
+    parse_rescue_list_output,
     run_steps_async,
     validate_session_id,
 )
@@ -194,6 +196,34 @@ def test_build_stop_step_disables_safe_session_unit():
 def test_build_stop_step_rejects_bad_session_id():
     with pytest.raises(ValueError, match="session_id"):
         build_stop_step(session_id="bad;id", deploy_host="rootvpn-rescue-fi")
+
+
+def test_parse_rescue_list_output_ignores_shell_command_and_normalizes_rooms():
+    output = """$ ssh rootvpn-rescue-fi printf ...
+session_id|active|room|since
+rs-one|active|https://stream.wb.ru/room/019e3cbb-063f-77fe-84f5-c957b5982665|Mon 2026-05-18 20:25:07 UTC
+bad;id|active|https://stream.wb.ru/room/bad|now
+rs-two|inactive|019e-other|Tue
+"""
+
+    sessions = parse_rescue_list_output(output)
+
+    assert [session.session_id for session in sessions] == ["rs-one", "rs-two"]
+    assert sessions[0].room_url == "https://stream.wb.ru/room/019e3cbb-063f-77fe-84f5-c957b5982665"
+    assert sessions[0].since == "Mon 2026-05-18 20:25:07 UTC"
+    assert sessions[1].active == "inactive"
+
+
+def test_active_rescue_sessions_for_room_returns_only_active_same_room():
+    output = """session_id|active|room|since
+rs-one|active|https://stream.wb.ru/room/019e3cbb|Mon
+rs-two|inactive|https://stream.wb.ru/room/019e3cbb|Tue
+rs-three|active|https://stream.wb.ru/room/other|Wed
+"""
+
+    sessions = active_rescue_sessions_for_room("019e3cbb", output)
+
+    assert [session.session_id for session in sessions] == ["rs-one"]
 
 
 @pytest.mark.asyncio

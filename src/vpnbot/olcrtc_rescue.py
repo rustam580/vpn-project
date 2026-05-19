@@ -55,6 +55,14 @@ class RescueCommandArgs:
     room: str
 
 
+@dataclass(frozen=True)
+class RemoteRescueSession:
+    session_id: str
+    active: str
+    room_url: str
+    since: str = ""
+
+
 def make_session_id(*, tg_id: str = "", room_id: str = "", now: datetime | None = None) -> str:
     now = now or datetime.now(tz=UTC)
     suffix_source = tg_id or room_id or secrets.token_hex(3)
@@ -74,6 +82,11 @@ def default_client_id(*, tg_id: str = "") -> str:
     if tg_id:
         return f"tg_{re.sub(r'[^0-9A-Za-z_.-]+', '_', tg_id)}"
     return "olcbox"
+
+
+def normalize_rescue_room_url(room: str) -> str:
+    room_id = normalize_room_id(room, carrier="wbstream")
+    return OlcRtcRescueConfig(room_id=room_id, key_hex="0" * 64).normalized().room_url
 
 
 def parse_rescue_command_args(text: str) -> RescueCommandArgs:
@@ -326,6 +339,43 @@ async def fetch_rescue_list(
 ) -> RescueDeployResult:
     step = build_list_step(deploy_host=deploy_host, remote_root=remote_root, safe_ssh=True)
     return await run_steps_async([step], timeout_sec=timeout_sec)
+
+
+def parse_rescue_list_output(output: str) -> list[RemoteRescueSession]:
+    sessions: list[RemoteRescueSession] = []
+    for raw_line in (output or "").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("$ ") or line == "session_id|active|room|since":
+            continue
+        parts = line.split("|", maxsplit=3)
+        if len(parts) < 3:
+            continue
+        session_id, active, room_url = (part.strip() for part in parts[:3])
+        if not session_id or not room_url:
+            continue
+        try:
+            validate_session_id(session_id)
+        except ValueError:
+            continue
+        since = parts[3].strip() if len(parts) == 4 else ""
+        sessions.append(
+            RemoteRescueSession(
+                session_id=session_id,
+                active=active,
+                room_url=normalize_rescue_room_url(room_url),
+                since=since,
+            )
+        )
+    return sessions
+
+
+def active_rescue_sessions_for_room(room: str, output: str) -> list[RemoteRescueSession]:
+    expected_room = normalize_rescue_room_url(room)
+    return [
+        session
+        for session in parse_rescue_list_output(output)
+        if session.active == "active" and session.room_url == expected_room
+    ]
 
 
 def build_stop_step(

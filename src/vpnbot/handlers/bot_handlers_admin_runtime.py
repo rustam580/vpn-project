@@ -11,6 +11,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, LinkPrevie
 from src.vpnbot.keyboards.bot_keyboards import admin_panel_keyboard
 from src.vpnbot.message_utils import split_message
 from src.vpnbot.olcrtc_rescue import (
+    active_rescue_sessions_for_room,
     build_deploy_steps,
     build_rescue_admin_summary,
     build_rescue_user_message,
@@ -145,6 +146,25 @@ def register_admin_runtime_handlers(*, router: Router, deps: AdminRuntimeDeps) -
                 deploy_text = "auto_deploy: enabled, but OLCRTC_RESCUE_DEPLOY_HOST is empty"
                 can_deliver_user_message = False
             else:
+                existing = await fetch_rescue_list(
+                    deploy_host=deploy_host,
+                    remote_root=str(getattr(settings, "olcrtc_rescue_remote_root", "/etc/rootvpn/rescue")),
+                    timeout_sec=int(getattr(settings, "olcrtc_rescue_deploy_timeout_sec", 60)),
+                )
+                if existing.ok:
+                    duplicate_sessions = active_rescue_sessions_for_room(session.room_url, existing.output)
+                    if duplicate_sessions:
+                        duplicate = duplicate_sessions[0]
+                        await message.answer(
+                            "Rescue-сессия для этой WB-комнаты уже активна.\n\n"
+                            f"session_id: {duplicate.session_id}\n"
+                            f"room: {duplicate.room_url}\n"
+                            f"since: {duplicate.since or '-'}\n\n"
+                            "Я не запускаю второй relay в той же комнате, чтобы они не мешали друг другу.\n"
+                            f"Проверьте: /rescue_status {duplicate.session_id}\n"
+                            f"Если нужно пересоздать: /rescue_stop {duplicate.session_id}, затем повторите /rescue."
+                        )
+                        return
                 await message.answer(f"Rescue-сессия создана: {session.session_id}. Запускаю deploy на {deploy_host}...")
                 steps = build_deploy_steps(
                     session_id=session.session_id,
