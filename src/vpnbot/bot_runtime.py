@@ -705,6 +705,7 @@ async def main() -> None:
     olcrtc_rescue_watchdog_task = asyncio.create_task(
         olcrtc_rescue_watchdog_worker(
             settings=settings,
+            repo=repo,
             bot=bot,
             stop_event=stop_event,
         )

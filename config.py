@@ -541,6 +541,12 @@ def _load_olcrtc_rescue_block() -> dict[str, Any]:
             int(os.getenv("OLCRTC_RESCUE_WATCHDOG_INTERVAL_SEC", "600")),
         ),
         "olcrtc_rescue_watchdog_auto_restart": env_bool("OLCRTC_RESCUE_WATCHDOG_AUTO_RESTART", False),
+        "olcrtc_rescue_pool_auto_warm": env_bool("OLCRTC_RESCUE_POOL_AUTO_WARM", False),
+        "olcrtc_rescue_pool_min_warm": max(0, int(os.getenv("OLCRTC_RESCUE_POOL_MIN_WARM", "1"))),
+        "olcrtc_rescue_pool_max_warm_per_tick": max(
+            1,
+            int(os.getenv("OLCRTC_RESCUE_POOL_MAX_WARM_PER_TICK", "1")),
+        ),
     }
 
 
@@ -627,6 +633,9 @@ class Settings:
     olcrtc_rescue_watchdog_enabled: bool
     olcrtc_rescue_watchdog_interval_sec: int
     olcrtc_rescue_watchdog_auto_restart: bool
+    olcrtc_rescue_pool_auto_warm: bool
+    olcrtc_rescue_pool_min_warm: int
+    olcrtc_rescue_pool_max_warm_per_tick: int
 
     @staticmethod
     def load() -> "Settings":

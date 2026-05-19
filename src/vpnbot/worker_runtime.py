@@ -51,10 +51,15 @@ from src.vpnbot.notifications import (
     notify_admin_worker_alert,
 )
 from src.vpnbot.olcrtc_rescue import (
+    build_deploy_steps,
+    create_local_session,
     fetch_rescue_list,
     format_rescue_watchdog_alert,
+    parse_rescue_list_output,
+    rescue_pool_warm_candidates,
     restart_rescue_session,
     rescue_watchdog_findings,
+    run_steps_async,
 )
 from src.vpnbot.payment_helpers import (
     apply_paid_payment,
@@ -404,6 +409,7 @@ async def xray_quality_monitor_worker(
 async def olcrtc_rescue_watchdog_worker(
     *,
     settings: Settings,
+    repo: Any | None = None,
     bot: Bot,
     stop_event: asyncio.Event,
 ) -> None:
@@ -440,6 +446,74 @@ async def olcrtc_rescue_watchdog_worker(
                     details=f"failed_step={result.failed_step}\n{result.output}",
                 )
             else:
+                remote_sessions = parse_rescue_list_output(result.output)
+                pool_warm_details: list[str] = []
+                if settings.olcrtc_rescue_pool_auto_warm and repo is not None:
+                    rooms = await repo.list_rescue_rooms()
+                    candidates = rescue_pool_warm_candidates(
+                        rooms,
+                        remote_sessions,
+                        min_warm=settings.olcrtc_rescue_pool_min_warm,
+                        max_to_warm=settings.olcrtc_rescue_pool_max_warm_per_tick,
+                    )
+                    for room in candidates:
+                        room_id = str(room["room_id"])
+                        try:
+                            session = create_local_session(room=str(room["room_url"]), client_id="olcbox")
+                            steps = build_deploy_steps(
+                                session_id=session.session_id,
+                                local_dir=session.out_dir,
+                                deploy_host=deploy_host,
+                                remote_root=settings.olcrtc_rescue_remote_root,
+                                install_service=settings.olcrtc_rescue_install_service,
+                                start_service=True,
+                                safe_ssh=True,
+                            )
+                            warm_result = await run_steps_async(
+                                steps,
+                                timeout_sec=max(5, int(settings.olcrtc_rescue_deploy_timeout_sec)),
+                            )
+                            if warm_result.ok:
+                                await repo.mark_rescue_room_warm(
+                                    room_id=room_id,
+                                    session_id=session.session_id,
+                                    key_hex=session.key_hex,
+                                    client_id=session.client_id,
+                                    uri=session.uri,
+                                )
+                                pool_warm_details.append(
+                                    f"auto_warm {room_id}: ok session={session.session_id}\n{warm_result.output}"
+                                )
+                            else:
+                                await repo.mark_rescue_room_status(
+                                    room_id=room_id,
+                                    status="free",
+                                    increment_fail_count=True,
+                                )
+                                pool_warm_details.append(
+                                    f"auto_warm {room_id}: failed at {warm_result.failed_step}\n{warm_result.output}"
+                                )
+                        except Exception as exc:
+                            logging.exception("olcRTC Rescue pool auto-warm failed for room=%s", room_id)
+                            try:
+                                await repo.mark_rescue_room_status(
+                                    room_id=room_id,
+                                    status="free",
+                                    increment_fail_count=True,
+                                )
+                            except Exception:
+                                logging.exception("olcRTC Rescue pool auto-warm rollback failed for room=%s", room_id)
+                            pool_warm_details.append(f"auto_warm {room_id}: crashed: {exc}")
+
+                if pool_warm_details:
+                    await notify_admin_worker_alert(
+                        bot=bot,
+                        settings=settings,
+                        key="worker.olcrtc_rescue.pool_auto_warm",
+                        title="olcRTC Rescue pool auto-warm",
+                        details="\n\n".join(pool_warm_details),
+                    )
+
                 findings = rescue_watchdog_findings(result.output)
                 if findings:
                     restart_details: list[str] = []

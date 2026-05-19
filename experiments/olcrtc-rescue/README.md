@@ -158,6 +158,32 @@ python scripts/manage_olcrtc_rescue_session.py status rs-20260518202449-38602973
   --deploy-host rootvpn-rescue-fi
 ```
 
+## Warm Room Pool Automation
+
+The current reliable automation model is:
+
+1. Operator creates WB Stream rooms with an authenticated WB account.
+2. Operator stores them in the bot pool:
+
+```text
+/rescue_room_add <wb_room_url> [note]
+```
+
+3. The watchdog keeps a minimum number of free rooms warmed on the Rescue VPS:
+
+```dotenv
+OLCRTC_RESCUE_WATCHDOG_ENABLED=1
+OLCRTC_RESCUE_WATCHDOG_AUTO_RESTART=1
+OLCRTC_RESCUE_POOL_AUTO_WARM=1
+OLCRTC_RESCUE_POOL_MIN_WARM=1
+OLCRTC_RESCUE_POOL_MAX_WARM_PER_TICK=1
+```
+
+This is deliberately not a full WB login bot yet. If a WB room can still be joined, the server-side
+relay can be restarted and recovered automatically. If the WB room is permanently closed or WB asks
+for a fresh authenticated host action, the next step is an authenticated room broker with stored
+operator account state.
+
 ## RootVPN Integration Target
 
 If the lab works for 7 days:

@@ -8,6 +8,7 @@ import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from scripts.generate_olcrtc_rescue_configs import (
     OlcRtcRescueConfig,
@@ -441,6 +442,40 @@ def active_rescue_sessions_for_room(room: str, output: str) -> list[RemoteRescue
         for session in parse_rescue_list_output(output)
         if session.active == "active" and session.room_url == expected_room
     ]
+
+
+def rescue_pool_warm_candidates(
+    rooms: list[dict[str, Any]],
+    remote_sessions: list[RemoteRescueSession],
+    *,
+    min_warm: int,
+    max_to_warm: int,
+) -> list[dict[str, Any]]:
+    active_session_ids = {session.session_id for session in remote_sessions if session.active == "active"}
+    warm_active = sum(
+        1
+        for room in rooms
+        if str(room.get("status") or "") == "warm"
+        and str(room.get("session_id") or "") in active_session_ids
+    )
+    needed = max(0, int(min_warm) - warm_active)
+    limit = max(0, min(needed, int(max_to_warm)))
+    if limit <= 0:
+        return []
+
+    candidates = [
+        room
+        for room in rooms
+        if str(room.get("status") or "") == "free" and str(room.get("room_url") or "").strip()
+    ]
+    candidates.sort(
+        key=lambda room: (
+            int(room.get("fail_count") or 0),
+            int(room.get("updated_at") or 0),
+            int(room.get("id") or 0),
+        )
+    )
+    return candidates[:limit]
 
 
 def format_rescue_dashboard(

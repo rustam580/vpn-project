@@ -20,6 +20,7 @@ from scripts.manage_olcrtc_rescue_session import (
     make_session_id,
     parse_rescue_command_args,
     parse_rescue_list_output,
+    rescue_pool_warm_candidates,
     rescue_watchdog_findings,
     run_steps_async,
     validate_session_id,
@@ -284,6 +285,77 @@ rs-three|inactive|https://stream.wb.ru/room/019e3ddd|Wed
     findings = rescue_watchdog_findings(output)
 
     assert [session.session_id for session in findings] == ["rs-two", "rs-three"]
+
+
+def test_rescue_pool_warm_candidates_selects_free_rooms_when_warm_capacity_low():
+    remote = parse_rescue_list_output(
+        """session_id|active|room|since
+rs-warm|failed|https://stream.wb.ru/room/warm|Mon
+"""
+    )
+    rooms = [
+        {
+            "id": 1,
+            "room_id": "warm",
+            "room_url": "https://stream.wb.ru/room/warm",
+            "status": "warm",
+            "session_id": "rs-warm",
+            "fail_count": 0,
+            "updated_at": 1,
+        },
+        {
+            "id": 2,
+            "room_id": "free-slow",
+            "room_url": "https://stream.wb.ru/room/free-slow",
+            "status": "free",
+            "session_id": None,
+            "fail_count": 3,
+            "updated_at": 1,
+        },
+        {
+            "id": 3,
+            "room_id": "free-best",
+            "room_url": "https://stream.wb.ru/room/free-best",
+            "status": "free",
+            "session_id": None,
+            "fail_count": 0,
+            "updated_at": 2,
+        },
+    ]
+
+    candidates = rescue_pool_warm_candidates(rooms, remote, min_warm=1, max_to_warm=2)
+
+    assert [room["room_id"] for room in candidates] == ["free-best"]
+
+
+def test_rescue_pool_warm_candidates_skips_when_active_warm_exists():
+    remote = parse_rescue_list_output(
+        """session_id|active|room|since
+rs-warm|active|https://stream.wb.ru/room/warm|Mon
+"""
+    )
+    rooms = [
+        {
+            "id": 1,
+            "room_id": "warm",
+            "room_url": "https://stream.wb.ru/room/warm",
+            "status": "warm",
+            "session_id": "rs-warm",
+            "fail_count": 0,
+            "updated_at": 1,
+        },
+        {
+            "id": 2,
+            "room_id": "free",
+            "room_url": "https://stream.wb.ru/room/free",
+            "status": "free",
+            "session_id": None,
+            "fail_count": 0,
+            "updated_at": 1,
+        },
+    ]
+
+    assert rescue_pool_warm_candidates(rooms, remote, min_warm=1, max_to_warm=1) == []
 
 
 def test_format_rescue_watchdog_alert_includes_recovery_commands():
