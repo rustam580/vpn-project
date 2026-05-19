@@ -540,6 +540,7 @@ def _load_olcrtc_rescue_block() -> dict[str, Any]:
             300,
             int(os.getenv("OLCRTC_RESCUE_WATCHDOG_INTERVAL_SEC", "600")),
         ),
+        "olcrtc_rescue_watchdog_auto_restart": env_bool("OLCRTC_RESCUE_WATCHDOG_AUTO_RESTART", False),
     }
 
 
@@ -625,6 +626,7 @@ class Settings:
     olcrtc_rescue_deploy_timeout_sec: int
     olcrtc_rescue_watchdog_enabled: bool
     olcrtc_rescue_watchdog_interval_sec: int
+    olcrtc_rescue_watchdog_auto_restart: bool
 
     @staticmethod
     def load() -> "Settings":

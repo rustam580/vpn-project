@@ -53,6 +53,7 @@ from src.vpnbot.notifications import (
 from src.vpnbot.olcrtc_rescue import (
     fetch_rescue_list,
     format_rescue_watchdog_alert,
+    restart_rescue_session,
     rescue_watchdog_findings,
 )
 from src.vpnbot.payment_helpers import (
@@ -441,12 +442,27 @@ async def olcrtc_rescue_watchdog_worker(
             else:
                 findings = rescue_watchdog_findings(result.output)
                 if findings:
+                    restart_details: list[str] = []
+                    if settings.olcrtc_rescue_watchdog_auto_restart:
+                        for session in findings[:3]:
+                            restart_result = await restart_rescue_session(
+                                session_id=session.session_id,
+                                deploy_host=deploy_host,
+                                timeout_sec=max(5, int(settings.olcrtc_rescue_deploy_timeout_sec)),
+                            )
+                            status = "ok" if restart_result.ok else f"failed at {restart_result.failed_step}"
+                            restart_details.append(
+                                f"auto_restart {session.session_id}: {status}\n{restart_result.output}"
+                            )
                     await notify_admin_worker_alert(
                         bot=bot,
                         settings=settings,
                         key="worker.olcrtc_rescue.findings",
                         title="olcRTC Rescue sessions need attention",
-                        details=format_rescue_watchdog_alert(findings, deploy_host=deploy_host),
+                        details=(
+                            format_rescue_watchdog_alert(findings, deploy_host=deploy_host)
+                            + ("\n\n" + "\n\n".join(restart_details) if restart_details else "")
+                        ),
                     )
         except Exception as exc:
             logging.exception("olcRTC Rescue watchdog iteration failed")

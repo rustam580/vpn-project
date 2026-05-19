@@ -8,6 +8,7 @@ import pytest
 from scripts.manage_olcrtc_rescue_session import (
     active_rescue_sessions_for_room,
     build_list_step,
+    build_restart_step,
     build_rescue_admin_summary,
     build_deploy_steps,
     build_rescue_uri_for_room,
@@ -184,6 +185,15 @@ def test_build_status_step_uses_safe_session_id_and_journal_tail():
 def test_build_status_step_rejects_bad_session_id():
     with pytest.raises(ValueError, match="session_id"):
         build_status_step(session_id="bad;id", deploy_host="rootvpn-rescue-fi")
+
+
+def test_build_restart_step_uses_safe_session_id():
+    step = build_restart_step(session_id="rs-test", deploy_host="rootvpn-rescue-fi")
+
+    command = " ".join(step.command)
+    assert step.command[0] == "ssh"
+    assert "systemctl restart 'olcrtc-rescue@rs-test'" in command
+    assert "systemctl is-active 'olcrtc-rescue@rs-test'" in command
 
 
 def test_build_list_step_reads_systemd_units_and_room_files():

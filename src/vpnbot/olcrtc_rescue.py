@@ -302,6 +302,27 @@ def build_status_step(
     )
 
 
+def build_restart_step(
+    *,
+    session_id: str,
+    deploy_host: str,
+    safe_ssh: bool = True,
+) -> CommandStep:
+    session_id = validate_session_id(session_id)
+    unit = f"olcrtc-rescue@{session_id}"
+    remote_command = (
+        f"systemctl restart {shq(unit)}; "
+        "sleep 3; "
+        f"printf 'service: %s\\n' {shq(unit)}; "
+        f"printf 'active: '; systemctl is-active {shq(unit)} || true"
+    )
+    ssh_prefix = _ssh_prefix() if safe_ssh else ["ssh"]
+    return CommandStep(
+        f"restart {unit}",
+        [*ssh_prefix, deploy_host, remote_command],
+    )
+
+
 async def fetch_rescue_status(
     *,
     session_id: str,
@@ -315,6 +336,16 @@ async def fetch_rescue_status(
         safe_ssh=True,
         journal_lines=journal_lines,
     )
+    return await run_steps_async([step], timeout_sec=timeout_sec)
+
+
+async def restart_rescue_session(
+    *,
+    session_id: str,
+    deploy_host: str,
+    timeout_sec: int = 30,
+) -> RescueDeployResult:
+    step = build_restart_step(session_id=session_id, deploy_host=deploy_host, safe_ssh=True)
     return await run_steps_async([step], timeout_sec=timeout_sec)
 
 
