@@ -378,6 +378,39 @@ def active_rescue_sessions_for_room(room: str, output: str) -> list[RemoteRescue
     ]
 
 
+def format_rescue_dashboard(
+    output: str,
+    *,
+    deploy_host: str = "",
+) -> str:
+    sessions = parse_rescue_list_output(output)
+    active_count = sum(1 for session in sessions if session.active == "active")
+    inactive_count = len(sessions) - active_count
+    header = [
+        "🆘 Rescue Dashboard",
+        f"host: {deploy_host or '-'}",
+        f"sessions: {len(sessions)} total / {active_count} active / {inactive_count} inactive",
+    ]
+    if not sessions:
+        return "\n".join([*header, "", "No Rescue sessions found."])
+
+    lines = [*header, ""]
+    for idx, session in enumerate(sessions, start=1):
+        icon = "🟢" if session.active == "active" else "⚪"
+        lines.extend(
+            [
+                f"{idx}. {icon} {session.session_id}",
+                f"   status: {session.active}",
+                f"   room: {session.room_url}",
+                f"   since: {session.since or '-'}",
+                f"   status cmd: /rescue_status {session.session_id}",
+                f"   stop cmd: /rescue_stop {session.session_id}",
+                "",
+            ]
+        )
+    return "\n".join(lines).rstrip()
+
+
 def build_stop_step(
     *,
     session_id: str,

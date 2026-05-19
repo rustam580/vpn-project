@@ -14,6 +14,7 @@ from scripts.manage_olcrtc_rescue_session import (
     build_stop_step,
     create_local_session,
     default_client_id,
+    format_rescue_dashboard,
     make_session_id,
     parse_rescue_command_args,
     parse_rescue_list_output,
@@ -224,6 +225,28 @@ rs-three|active|https://stream.wb.ru/room/other|Wed
     sessions = active_rescue_sessions_for_room("019e3cbb", output)
 
     assert [session.session_id for session in sessions] == ["rs-one"]
+
+
+def test_format_rescue_dashboard_summarizes_sessions():
+    output = """session_id|active|room|since
+rs-one|active|https://stream.wb.ru/room/019e3cbb|Mon
+rs-two|inactive|https://stream.wb.ru/room/019e3ccc|Tue
+"""
+
+    text = format_rescue_dashboard(output, deploy_host="rootvpn-rescue-fi")
+
+    assert "Rescue Dashboard" in text
+    assert "rootvpn-rescue-fi" in text
+    assert "2 total / 1 active / 1 inactive" in text
+    assert "/rescue_status rs-one" in text
+    assert "/rescue_stop rs-two" in text
+
+
+def test_format_rescue_dashboard_handles_empty_inventory():
+    text = format_rescue_dashboard("session_id|active|room|since\n", deploy_host="rootvpn-rescue-fi")
+
+    assert "0 total / 0 active / 0 inactive" in text
+    assert "No Rescue sessions found." in text
 
 
 @pytest.mark.asyncio

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from aiogram import F, Router
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 
 from src.vpnbot.background_tasks import spawn as _spawn_bg
 from src.vpnbot.drift_resolver import (
@@ -31,7 +31,12 @@ from src.vpnbot.keyboards.web_order_keyboards import (
 )
 from src.vpnbot.marzban_sync import audit_marzban_sync
 from src.vpnbot.message_utils import split_message
-from src.vpnbot.olcrtc_rescue import fetch_rescue_status, validate_session_id
+from src.vpnbot.olcrtc_rescue import (
+    fetch_rescue_list,
+    fetch_rescue_status,
+    format_rescue_dashboard,
+    validate_session_id,
+)
 from src.vpnbot.payment_helpers import cryptobot_check_invoice, yookassa_check_payment
 from src.vpnbot.payment_issues import build_payment_issues_report
 from src.vpnbot.xray_quality import format_xray_quality_report, summarize_xray_error_log
@@ -102,6 +107,20 @@ def register_admin_callback_handlers(*, router: Router, deps: AdminCallbackDeps)
     build_ref_top_text = deps.build_ref_top_text
     enabled_payment_providers = deps.enabled_payment_providers
     build_support_templates_text = deps.build_support_templates_text
+
+    def rescue_dashboard_keyboard() -> InlineKeyboardMarkup:
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Обновить Rescue", callback_data="admin:rescue_dashboard")],
+                [
+                    InlineKeyboardButton(
+                        text="➕ Новая Rescue-сессия",
+                        switch_inline_query_current_chat="/rescue ",
+                    )
+                ],
+                [InlineKeyboardButton(text="⬅️ Админка", callback_data="admin:home")],
+            ]
+        )
 
     @router.callback_query(F.data.startswith("admin:"))
     async def admin_callback(callback: CallbackQuery) -> None:
@@ -294,6 +313,27 @@ def register_admin_callback_handlers(*, router: Router, deps: AdminCallbackDeps)
             for chunk in split_message(f"{prefix}\n{result.output}", limit=3500):
                 await callback.message.answer(chunk)
             return
+        if action == "rescue_dashboard":
+            deploy_host = str(getattr(settings, "olcrtc_rescue_deploy_host", "") or "").strip()
+            if not deploy_host:
+                await callback.answer("OLCRTC_RESCUE_DEPLOY_HOST is empty", show_alert=True)
+                return
+            await callback.answer("Checking Rescue sessions...")
+            result = await fetch_rescue_list(
+                deploy_host=deploy_host,
+                remote_root=str(getattr(settings, "olcrtc_rescue_remote_root", "/etc/rootvpn/rescue")),
+                timeout_sec=int(getattr(settings, "olcrtc_rescue_deploy_timeout_sec", 60)),
+            )
+            text = (
+                format_rescue_dashboard(result.output, deploy_host=deploy_host)
+                if result.ok
+                else f"Rescue dashboard: failed at {result.failed_step}\n{result.output}"
+            )
+            chunks = split_message(text, limit=3500)
+            for chunk in chunks[:-1]:
+                await callback.message.answer(chunk)
+            await callback.message.answer(chunks[-1], reply_markup=rescue_dashboard_keyboard())
+            return
         if action == "deploy":
             await callback.answer("Запускаю deploy...")
             script = Path("/usr/local/sbin/vpn-ops-deploy")
@@ -432,6 +472,7 @@ def register_admin_callback_handlers(*, router: Router, deps: AdminCallbackDeps)
                 "/sync_audit\n"
                 "/xray_errors [minutes]\n"
                 "/rescue <telegram_id> <wb_room_url>\n"
+                "/rescue_dashboard\n"
                 "/rescue_status <session_id>\n"
                 "/rescue_list\n"
                 "/rescue_stop <session_id>\n"
@@ -456,6 +497,7 @@ def register_admin_callback_handlers(*, router: Router, deps: AdminCallbackDeps)
                 "/sync_audit\n"
                 "/xray_errors 15\n"
                 "/rescue 386029735 https://stream.wb.ru/room/019e...\n"
+                "/rescue_dashboard\n"
                 "/rescue_status rs-20260518202449-386029735\n"
                 "/rescue_list\n"
                 "/rescue_stop rs-20260518202449-386029735\n"

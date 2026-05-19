@@ -18,6 +18,7 @@ from src.vpnbot.olcrtc_rescue import (
     create_local_session,
     fetch_rescue_list,
     fetch_rescue_status,
+    format_rescue_dashboard,
     parse_rescue_command_args,
     run_steps_async,
     stop_rescue_session,
@@ -258,6 +259,31 @@ def register_admin_runtime_handlers(*, router: Router, deps: AdminRuntimeDeps) -
         )
         prefix = "Rescue list: ok" if result.ok else f"Rescue list: failed at {result.failed_step}"
         for chunk in split_message(f"{prefix}\n{result.output}", limit=3500):
+            await message.answer(chunk, link_preview_options=NO_LINK_PREVIEW)
+
+    @router.message(Command("rescue_dashboard"))
+    async def rescue_dashboard_cmd(message: Message) -> None:
+        if not await guard_message_rate_limit(message):
+            return
+        if not message.from_user or not is_admin(int(message.from_user.id), settings):
+            await message.answer("РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ.")
+            return
+        deploy_host = str(getattr(settings, "olcrtc_rescue_deploy_host", "") or "").strip()
+        if not deploy_host:
+            await message.answer("OLCRTC_RESCUE_DEPLOY_HOST РЅРµ РЅР°СЃС‚СЂРѕРµРЅ.")
+            return
+        await message.answer(f"Checking Rescue dashboard on {deploy_host}...")
+        result = await fetch_rescue_list(
+            deploy_host=deploy_host,
+            remote_root=str(getattr(settings, "olcrtc_rescue_remote_root", "/etc/rootvpn/rescue")),
+            timeout_sec=int(getattr(settings, "olcrtc_rescue_deploy_timeout_sec", 60)),
+        )
+        text = (
+            format_rescue_dashboard(result.output, deploy_host=deploy_host)
+            if result.ok
+            else f"Rescue dashboard: failed at {result.failed_step}\n{result.output}"
+        )
+        for chunk in split_message(text, limit=3500):
             await message.answer(chunk, link_preview_options=NO_LINK_PREVIEW)
 
     @router.message(Command("rescue_stop"))
