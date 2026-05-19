@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import shlex
 import secrets
 import subprocess
 from dataclasses import dataclass
@@ -62,6 +63,15 @@ class RemoteRescueSession:
     active: str
     room_url: str
     since: str = ""
+
+
+@dataclass(frozen=True)
+class RescuePoolCapacity:
+    warm_active: int
+    warm_stale: int
+    free: int
+    assigned: int
+    total: int
 
 
 def make_session_id(*, tg_id: str = "", room_id: str = "", now: datetime | None = None) -> str:
@@ -444,6 +454,50 @@ def active_rescue_sessions_for_room(room: str, output: str) -> list[RemoteRescue
     ]
 
 
+def rescue_pool_capacity(
+    rooms: list[dict[str, Any]],
+    remote_sessions: list[RemoteRescueSession],
+) -> RescuePoolCapacity:
+    active_session_ids = {session.session_id for session in remote_sessions if session.active == "active"}
+    warm_active = 0
+    warm_stale = 0
+    free = 0
+    assigned = 0
+    for room in rooms:
+        status = str(room.get("status") or "")
+        if status == "warm":
+            if str(room.get("session_id") or "") in active_session_ids:
+                warm_active += 1
+            else:
+                warm_stale += 1
+        elif status == "free":
+            free += 1
+        elif status == "assigned":
+            assigned += 1
+    return RescuePoolCapacity(
+        warm_active=warm_active,
+        warm_stale=warm_stale,
+        free=free,
+        assigned=assigned,
+        total=len(rooms),
+    )
+
+
+def rescue_room_broker_request_count(
+    rooms: list[dict[str, Any]],
+    remote_sessions: list[RemoteRescueSession],
+    *,
+    min_warm: int,
+    min_free: int,
+    max_rooms: int,
+) -> int:
+    capacity = rescue_pool_capacity(rooms, remote_sessions)
+    warm_shortage = max(0, int(min_warm) - capacity.warm_active)
+    free_after_warm = max(0, capacity.free - warm_shortage)
+    free_shortage = max(0, int(min_free) - free_after_warm)
+    return max(0, min(int(max_rooms), warm_shortage + free_shortage))
+
+
 def rescue_pool_warm_candidates(
     rooms: list[dict[str, Any]],
     remote_sessions: list[RemoteRescueSession],
@@ -451,14 +505,7 @@ def rescue_pool_warm_candidates(
     min_warm: int,
     max_to_warm: int,
 ) -> list[dict[str, Any]]:
-    active_session_ids = {session.session_id for session in remote_sessions if session.active == "active"}
-    warm_active = sum(
-        1
-        for room in rooms
-        if str(room.get("status") or "") == "warm"
-        and str(room.get("session_id") or "") in active_session_ids
-    )
-    needed = max(0, int(min_warm) - warm_active)
+    needed = max(0, int(min_warm) - rescue_pool_capacity(rooms, remote_sessions).warm_active)
     limit = max(0, min(needed, int(max_to_warm)))
     if limit <= 0:
         return []
@@ -476,6 +523,73 @@ def rescue_pool_warm_candidates(
         )
     )
     return candidates[:limit]
+
+
+def build_room_broker_step(
+    *,
+    command_template: str,
+    count: int = 1,
+) -> CommandStep:
+    command = command_template.strip()
+    if not command:
+        raise ValueError("room broker command is empty")
+    count = max(1, int(count))
+    if "{count}" in command:
+        command = command.replace("{count}", str(count))
+    else:
+        command = f"{command} --count {count}"
+    return CommandStep("create WB room via broker", shlex.split(command))
+
+
+async def run_room_broker(
+    *,
+    command_template: str,
+    count: int = 1,
+    timeout_sec: int = 45,
+) -> RescueDeployResult:
+    step = build_room_broker_step(command_template=command_template, count=count)
+    return await run_steps_async([step], timeout_sec=timeout_sec)
+
+
+def parse_room_broker_output(output: str) -> list[str]:
+    urls: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: Any) -> None:
+        if not isinstance(value, str):
+            return
+        for match in re.findall(r"https://stream\.wb\.ru/room/[A-Za-z0-9_.-]+", value):
+            normalized = normalize_rescue_room_url(match)
+            if normalized not in seen:
+                seen.add(normalized)
+                urls.append(normalized)
+
+    text = output or ""
+    try:
+        body = json.loads(text)
+    except json.JSONDecodeError:
+        body = None
+
+    if isinstance(body, dict):
+        add(body.get("room_url"))
+        add(body.get("url"))
+        for item in body.get("rooms") or []:
+            if isinstance(item, dict):
+                add(item.get("room_url"))
+                add(item.get("url"))
+            else:
+                add(item)
+    elif isinstance(body, list):
+        for item in body:
+            if isinstance(item, dict):
+                add(item.get("room_url"))
+                add(item.get("url"))
+            else:
+                add(item)
+
+    if not urls:
+        add(text)
+    return urls
 
 
 def format_rescue_dashboard(

@@ -184,6 +184,32 @@ relay can be restarted and recovered automatically. If the WB room is permanentl
 for a fresh authenticated host action, the next step is an authenticated room broker with stored
 operator account state.
 
+Optional room broker hook:
+
+```dotenv
+OLCRTC_RESCUE_ROOM_BROKER_ENABLED=1
+OLCRTC_RESCUE_ROOM_BROKER_COMMAND=/opt/rootvpn/create-wb-room --count {count}
+OLCRTC_RESCUE_ROOM_BROKER_TIMEOUT_SEC=45
+OLCRTC_RESCUE_ROOM_BROKER_MAX_ROOMS_PER_TICK=1
+OLCRTC_RESCUE_POOL_MIN_FREE=1
+```
+
+The broker command must print one or more room URLs to stdout. Both plain text and simple JSON are
+accepted:
+
+```json
+{"rooms": ["https://stream.wb.ru/room/019e..."]}
+```
+
+or:
+
+```text
+https://stream.wb.ru/room/019e...
+```
+
+Keep WB cookies/profile/token storage inside that broker process, not in the Telegram bot. The bot
+only consumes room URLs and manages deployment.
+
 ## RootVPN Integration Target
 
 If the lab works for 7 days:

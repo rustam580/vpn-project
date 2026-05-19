@@ -547,6 +547,17 @@ def _load_olcrtc_rescue_block() -> dict[str, Any]:
             1,
             int(os.getenv("OLCRTC_RESCUE_POOL_MAX_WARM_PER_TICK", "1")),
         ),
+        "olcrtc_rescue_pool_min_free": max(0, int(os.getenv("OLCRTC_RESCUE_POOL_MIN_FREE", "1"))),
+        "olcrtc_rescue_room_broker_enabled": env_bool("OLCRTC_RESCUE_ROOM_BROKER_ENABLED", False),
+        "olcrtc_rescue_room_broker_command": os.getenv("OLCRTC_RESCUE_ROOM_BROKER_COMMAND", "").strip(),
+        "olcrtc_rescue_room_broker_timeout_sec": max(
+            5,
+            int(os.getenv("OLCRTC_RESCUE_ROOM_BROKER_TIMEOUT_SEC", "45")),
+        ),
+        "olcrtc_rescue_room_broker_max_rooms_per_tick": max(
+            1,
+            int(os.getenv("OLCRTC_RESCUE_ROOM_BROKER_MAX_ROOMS_PER_TICK", "1")),
+        ),
     }
 
 
@@ -636,6 +647,11 @@ class Settings:
     olcrtc_rescue_pool_auto_warm: bool
     olcrtc_rescue_pool_min_warm: int
     olcrtc_rescue_pool_max_warm_per_tick: int
+    olcrtc_rescue_pool_min_free: int
+    olcrtc_rescue_room_broker_enabled: bool
+    olcrtc_rescue_room_broker_command: str
+    olcrtc_rescue_room_broker_timeout_sec: int
+    olcrtc_rescue_room_broker_max_rooms_per_tick: int
 
     @staticmethod
     def load() -> "Settings":

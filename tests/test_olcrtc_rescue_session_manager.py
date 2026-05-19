@@ -8,6 +8,7 @@ import pytest
 from scripts.manage_olcrtc_rescue_session import (
     active_rescue_sessions_for_room,
     build_list_step,
+    build_room_broker_step,
     build_restart_step,
     build_rescue_admin_summary,
     build_deploy_steps,
@@ -20,7 +21,9 @@ from scripts.manage_olcrtc_rescue_session import (
     make_session_id,
     parse_rescue_command_args,
     parse_rescue_list_output,
+    parse_room_broker_output,
     rescue_pool_warm_candidates,
+    rescue_room_broker_request_count,
     rescue_watchdog_findings,
     run_steps_async,
     validate_session_id,
@@ -197,6 +200,18 @@ def test_build_restart_step_uses_safe_session_id():
     assert "systemctl is-active 'olcrtc-rescue@rs-test'" in command
 
 
+def test_build_room_broker_step_appends_count_when_placeholder_is_absent():
+    step = build_room_broker_step(command_template="/opt/rootvpn/create-wb-room", count=2)
+
+    assert step.command == ["/opt/rootvpn/create-wb-room", "--count", "2"]
+
+
+def test_build_room_broker_step_uses_count_placeholder():
+    step = build_room_broker_step(command_template="/opt/rootvpn/create-wb-room --rooms {count}", count=3)
+
+    assert step.command == ["/opt/rootvpn/create-wb-room", "--rooms", "3"]
+
+
 def test_build_list_step_reads_systemd_units_and_room_files():
     step = build_list_step(deploy_host="rootvpn-rescue-fi", remote_root="/etc/rootvpn/rescue")
 
@@ -356,6 +371,50 @@ rs-warm|active|https://stream.wb.ru/room/warm|Mon
     ]
 
     assert rescue_pool_warm_candidates(rooms, remote, min_warm=1, max_to_warm=1) == []
+
+
+def test_rescue_room_broker_request_count_accounts_for_warm_and_free_targets():
+    remote = parse_rescue_list_output(
+        """session_id|active|room|since
+rs-warm|active|https://stream.wb.ru/room/warm|Mon
+"""
+    )
+    rooms = [
+        {
+            "id": 1,
+            "room_id": "warm",
+            "room_url": "https://stream.wb.ru/room/warm",
+            "status": "warm",
+            "session_id": "rs-warm",
+        },
+        {
+            "id": 2,
+            "room_id": "free",
+            "room_url": "https://stream.wb.ru/room/free",
+            "status": "free",
+            "session_id": None,
+        },
+    ]
+
+    assert rescue_room_broker_request_count(rooms, remote, min_warm=1, min_free=1, max_rooms=3) == 0
+    assert rescue_room_broker_request_count(rooms, remote, min_warm=2, min_free=1, max_rooms=3) == 2
+    assert rescue_room_broker_request_count(rooms[:1], remote, min_warm=2, min_free=2, max_rooms=1) == 1
+
+
+def test_parse_room_broker_output_accepts_json_and_plain_text():
+    json_output = """$ /opt/broker/create-room --count 2
+{"rooms":[{"room_url":"https://stream.wb.ru/room/room-a"},"https://stream.wb.ru/room/room-b"]}
+"""
+    text_output = """
+created https://stream.wb.ru/room/room-c
+again https://stream.wb.ru/room/room-c
+"""
+
+    assert parse_room_broker_output(json_output) == [
+        "https://stream.wb.ru/room/room-a",
+        "https://stream.wb.ru/room/room-b",
+    ]
+    assert parse_room_broker_output(text_output) == ["https://stream.wb.ru/room/room-c"]
 
 
 def test_format_rescue_watchdog_alert_includes_recovery_commands():

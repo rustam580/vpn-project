@@ -56,9 +56,12 @@ from src.vpnbot.olcrtc_rescue import (
     fetch_rescue_list,
     format_rescue_watchdog_alert,
     parse_rescue_list_output,
+    parse_room_broker_output,
     rescue_pool_warm_candidates,
+    rescue_room_broker_request_count,
     restart_rescue_session,
     rescue_watchdog_findings,
+    run_room_broker,
     run_steps_async,
 )
 from src.vpnbot.payment_helpers import (
@@ -450,6 +453,41 @@ async def olcrtc_rescue_watchdog_worker(
                 pool_warm_details: list[str] = []
                 if settings.olcrtc_rescue_pool_auto_warm and repo is not None:
                     rooms = await repo.list_rescue_rooms()
+                    broker_count = rescue_room_broker_request_count(
+                        rooms,
+                        remote_sessions,
+                        min_warm=settings.olcrtc_rescue_pool_min_warm,
+                        min_free=settings.olcrtc_rescue_pool_min_free,
+                        max_rooms=settings.olcrtc_rescue_room_broker_max_rooms_per_tick,
+                    )
+                    if (
+                        broker_count > 0
+                        and settings.olcrtc_rescue_room_broker_enabled
+                        and settings.olcrtc_rescue_room_broker_command
+                    ):
+                        broker_result = await run_room_broker(
+                            command_template=settings.olcrtc_rescue_room_broker_command,
+                            count=broker_count,
+                            timeout_sec=settings.olcrtc_rescue_room_broker_timeout_sec,
+                        )
+                        if broker_result.ok:
+                            urls = parse_room_broker_output(broker_result.output)
+                            for room_url in urls:
+                                room_id = room_url.rsplit("/", 1)[-1]
+                                await repo.add_rescue_room(
+                                    room_id=room_id,
+                                    room_url=room_url,
+                                    note="auto-created by room broker",
+                                )
+                            pool_warm_details.append(
+                                f"room_broker: ok requested={broker_count} added={len(urls)}\n{broker_result.output}"
+                            )
+                            rooms = await repo.list_rescue_rooms()
+                        else:
+                            pool_warm_details.append(
+                                f"room_broker: failed at {broker_result.failed_step}\n{broker_result.output}"
+                            )
+
                     candidates = rescue_pool_warm_candidates(
                         rooms,
                         remote_sessions,
