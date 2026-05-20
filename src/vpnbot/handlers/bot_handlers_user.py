@@ -158,6 +158,7 @@ def register_user_message_handlers(*, router: Router, deps: UserMessageDeps) -> 
             "• <code>/rescue_room_add &lt;wb_room_url&gt; [note]</code> — добавить WB-комнату\n"
             "• <code>/rescue_room_warm &lt;room_id_or_wb_room_url&gt;</code> — прогреть комнату\n"
             "• <code>/rescue_rooms</code> — пул WB-комнат\n"
+            "• <code>/rescue_reconcile [apply]</code> — сверить пул с Rescue VPS\n"
             "• <code>/rescue_create &lt;telegram_id&gt;</code> — выдать Rescue из пула\n"
             "• <code>/rescue_dashboard</code> — панель Rescue\n"
             "• <code>/rescue_status &lt;session_id&gt;</code> — статус Rescue\n"

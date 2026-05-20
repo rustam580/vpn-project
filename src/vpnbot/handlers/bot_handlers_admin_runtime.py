@@ -346,6 +346,86 @@ def register_admin_runtime_handlers(*, router: Router, deps: AdminRuntimeDeps) -
         for chunk in split_message("\n".join(lines).rstrip(), limit=3500):
             await message.answer(chunk, link_preview_options=NO_LINK_PREVIEW)
 
+    @router.message(Command("rescue_reconcile"))
+    async def rescue_reconcile_cmd(message: Message) -> None:
+        if not await guard_message_rate_limit(message):
+            return
+        if not message.from_user or not is_admin(int(message.from_user.id), settings):
+            await message.answer("Недостаточно прав.")
+            return
+        auto_deploy_enabled = bool(getattr(settings, "olcrtc_rescue_auto_deploy", False))
+        deploy_host = str(getattr(settings, "olcrtc_rescue_deploy_host", "") or "").strip()
+        if not auto_deploy_enabled or not deploy_host:
+            await message.answer("Rescue reconcile requires OLCRTC_RESCUE_AUTO_DEPLOY=1 and OLCRTC_RESCUE_DEPLOY_HOST.")
+            return
+
+        apply_changes = (message.text or "").split(maxsplit=1)[1:] == ["apply"]
+        result = await fetch_rescue_list(
+            deploy_host=deploy_host,
+            remote_root=str(getattr(settings, "olcrtc_rescue_remote_root", "/etc/rootvpn/rescue")),
+            timeout_sec=int(getattr(settings, "olcrtc_rescue_deploy_timeout_sec", 60)),
+        )
+        if not result.ok:
+            await message.answer(f"Could not list Rescue sessions on {deploy_host}.\n{result.output}")
+            return
+
+        remote_sessions = parse_rescue_list_output(result.output)
+        active_ids = active_rescue_session_ids(remote_sessions)
+        remote_by_id = {session.session_id: session for session in remote_sessions}
+        rows = await repo.list_rescue_rooms()
+        stale_rows = [
+            row
+            for row in rows
+            if str(row.get("status") or "") in {"warm", "assigned"}
+            and str(row.get("session_id") or "").strip()
+            and str(row.get("session_id") or "").strip() not in active_ids
+        ]
+
+        changed = 0
+        if apply_changes:
+            for row in stale_rows:
+                session_id = str(row.get("session_id") or "").strip()
+                telegram_id = row.get("assigned_tg_id")
+                await repo.mark_rescue_room_status(
+                    room_id=str(row["room_id"]),
+                    status="bad",
+                    session_id=session_id,
+                    telegram_id=int(telegram_id) if telegram_id else None,
+                    increment_fail_count=True,
+                )
+                changed += 1
+
+        lines = [
+            "Rescue reconcile: " + ("applied" if apply_changes else "dry-run"),
+            f"host: {deploy_host}",
+            f"remote sessions: {len(remote_sessions)} total / {len(active_ids)} active",
+            f"stale warm/assigned rows: {len(stale_rows)}",
+            "",
+        ]
+        if stale_rows:
+            for idx, row in enumerate(stale_rows, start=1):
+                session_id = str(row.get("session_id") or "").strip()
+                remote_status = remote_by_id.get(session_id).active if session_id in remote_by_id else "missing"
+                lines.extend(
+                    [
+                        f"{idx}. {row['status']} -> bad | {row['room_id']}",
+                        f"   tg: {row['assigned_tg_id'] or '-'}",
+                        f"   session: {session_id}",
+                        f"   remote: {remote_status}",
+                        f"   room: {row['room_url']}",
+                        "",
+                    ]
+                )
+            if not apply_changes:
+                lines.append("Apply cleanup: /rescue_reconcile apply")
+        elif not apply_changes:
+            lines.append("Nothing to clean.")
+        if apply_changes:
+            lines.append(f"changed: {changed}")
+
+        for chunk in split_message("\n".join(lines).rstrip(), limit=3500):
+            await message.answer(chunk, link_preview_options=NO_LINK_PREVIEW)
+
     @router.message(Command("rescue_create"))
     async def rescue_create_cmd(message: Message) -> None:
         if not await guard_message_rate_limit(message):
