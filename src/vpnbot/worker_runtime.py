@@ -62,9 +62,11 @@ from src.vpnbot.olcrtc_rescue import (
     parse_rescue_list_output,
     parse_room_broker_output,
     rescue_assigned_replacement_candidates,
+    rescue_findings_with_stale_pool_rows,
     rescue_pool_warm_candidates,
     rescue_room_broker_request_count,
     rescue_restartable_session_ids,
+    rescue_stale_pool_rows,
     restart_rescue_session,
     rescue_watchdog_findings,
     run_room_broker,
@@ -459,7 +461,7 @@ async def olcrtc_rescue_watchdog_worker(
             else:
                 remote_sessions = parse_rescue_list_output(result.output)
                 rooms = await repo.list_rescue_rooms() if repo is not None else []
-                pool_warm_details: list[str] = []
+                pool_warm_problem_details: list[str] = []
                 if settings.olcrtc_rescue_pool_auto_warm and repo is not None:
                     broker_count = rescue_room_broker_request_count(
                         rooms,
@@ -487,12 +489,12 @@ async def olcrtc_rescue_watchdog_worker(
                                     room_url=room_url,
                                     note="auto-created by room broker",
                                 )
-                            pool_warm_details.append(
+                            logging.info(
                                 f"room_broker: ok requested={broker_count} added={len(urls)}\n{broker_result.output}"
                             )
                             rooms = await repo.list_rescue_rooms()
                         else:
-                            pool_warm_details.append(
+                            pool_warm_problem_details.append(
                                 f"room_broker: failed at {broker_result.failed_step}\n{broker_result.output}"
                             )
 
@@ -538,7 +540,7 @@ async def olcrtc_rescue_watchdog_worker(
                                         deploy_host=deploy_host,
                                         timeout_sec=max(5, int(settings.olcrtc_rescue_deploy_timeout_sec)),
                                     )
-                                    pool_warm_details.append(
+                                    pool_warm_problem_details.append(
                                         f"auto_warm {room_id}: relay did not become active; marked bad "
                                         f"session={session.session_id}\n{active_check_output}"
                                     )
@@ -550,7 +552,7 @@ async def olcrtc_rescue_watchdog_worker(
                                     client_id=session.client_id,
                                     uri=session.uri,
                                 )
-                                pool_warm_details.append(
+                                logging.info(
                                     f"auto_warm {room_id}: ok session={session.session_id}\n{warm_result.output}"
                                 )
                             else:
@@ -559,7 +561,7 @@ async def olcrtc_rescue_watchdog_worker(
                                     status="free",
                                     increment_fail_count=True,
                                 )
-                                pool_warm_details.append(
+                                pool_warm_problem_details.append(
                                     f"auto_warm {room_id}: failed at {warm_result.failed_step}\n{warm_result.output}"
                                 )
                         except Exception as exc:
@@ -572,21 +574,57 @@ async def olcrtc_rescue_watchdog_worker(
                                 )
                             except Exception:
                                 logging.exception("olcRTC Rescue pool auto-warm rollback failed for room=%s", room_id)
-                            pool_warm_details.append(f"auto_warm {room_id}: crashed: {exc}")
+                            pool_warm_problem_details.append(f"auto_warm {room_id}: crashed: {exc}")
 
-                if pool_warm_details:
+                if pool_warm_problem_details:
                     await notify_admin_worker_alert(
                         bot=bot,
                         settings=settings,
                         key="worker.olcrtc_rescue.pool_auto_warm",
                         title="olcRTC Rescue pool auto-warm",
-                        details="\n\n".join(pool_warm_details),
+                        details="\n\n".join(pool_warm_problem_details),
                     )
 
+                stale_rows: list[dict[str, Any]] = []
+                stale_warm_session_ids: set[str] = set()
+                if repo is not None:
+                    stale_rows = rescue_stale_pool_rows(
+                        rooms,
+                        remote_sessions,
+                        min_non_active_age_sec=settings.olcrtc_rescue_assigned_replace_min_age_sec,
+                    )
+                    for stale_room in stale_rows:
+                        if str(stale_room.get("status") or "") != "warm":
+                            continue
+                        stale_session_id = str(stale_room.get("session_id") or "").strip()
+                        if stale_session_id:
+                            stale_warm_session_ids.add(stale_session_id)
+                        await repo.mark_rescue_room_status(
+                            room_id=str(stale_room["room_id"]),
+                            status="bad",
+                            session_id=stale_session_id,
+                            increment_fail_count=True,
+                        )
+                    if stale_warm_session_ids:
+                        logging.info(
+                            "olcRTC Rescue watchdog marked stale warm rooms bad: %s",
+                            ", ".join(sorted(stale_warm_session_ids)),
+                        )
+                        rooms = await repo.list_rescue_rooms()
+
                 findings = rescue_watchdog_findings(result.output)
+                assigned_stale_rows = [
+                    row for row in stale_rows if str(row.get("status") or "") == "assigned"
+                ]
+                findings = rescue_findings_with_stale_pool_rows(
+                    findings,
+                    assigned_stale_rows,
+                    remote_sessions,
+                )
                 if findings:
                     replaced_session_ids: set[str] = set()
-                    replacement_details: list[str] = []
+                    replacement_problem_details: list[str] = []
+                    recovery_details: list[str] = []
                     if settings.olcrtc_rescue_assigned_auto_replace and repo is not None:
                         for old_room in rescue_assigned_replacement_candidates(
                             rooms,
@@ -602,7 +640,7 @@ async def olcrtc_rescue_watchdog_worker(
                                 active_warm_session_ids=active_rescue_session_ids(remote_sessions),
                             )
                             if claimed is None:
-                                replacement_details.append(
+                                replacement_problem_details.append(
                                     f"auto_replace {old_session_id}: no warm/free room available"
                                 )
                                 continue
@@ -619,7 +657,7 @@ async def olcrtc_rescue_watchdog_worker(
                                             status="free",
                                             increment_fail_count=True,
                                         )
-                                        replacement_details.append(
+                                        replacement_problem_details.append(
                                             f"auto_replace {old_session_id}: warm replacement has no key/session"
                                         )
                                         continue
@@ -661,7 +699,7 @@ async def olcrtc_rescue_watchdog_worker(
                                             status="free",
                                             increment_fail_count=True,
                                         )
-                                        replacement_details.append(
+                                        replacement_problem_details.append(
                                             f"auto_replace {old_session_id}: deploy failed at "
                                             f"{deploy_result.failed_step}\n{deploy_result.output}"
                                         )
@@ -697,7 +735,7 @@ async def olcrtc_rescue_watchdog_worker(
                                         timeout_sec=max(5, int(settings.olcrtc_rescue_deploy_timeout_sec)),
                                     )
                                 replaced_session_ids.add(old_session_id)
-                                replacement_details.append(
+                                recovery_details.append(
                                     f"auto_replace {old_session_id}: ok new_session={new_session_id} "
                                     f"room={claimed['room_url']} tg={target_tg_id}"
                                 )
@@ -714,18 +752,10 @@ async def olcrtc_rescue_watchdog_worker(
                                         "olcRTC Rescue assigned auto-replace rollback failed for %s",
                                         claimed_room_id,
                                     )
-                                replacement_details.append(f"auto_replace {old_session_id}: crashed: {exc}")
-
-                    if replacement_details:
-                        await notify_admin_worker_alert(
-                            bot=bot,
-                            settings=settings,
-                            key="worker.olcrtc_rescue.assigned_auto_replace",
-                            title="olcRTC Rescue assigned session replaced",
-                            details="\n\n".join(replacement_details),
-                        )
+                                replacement_problem_details.append(f"auto_replace {old_session_id}: crashed: {exc}")
 
                     restart_details: list[str] = []
+                    cleanup_problem_details: list[str] = []
                     if settings.olcrtc_rescue_watchdog_auto_restart:
                         restart_rooms = await repo.list_rescue_rooms() if repo is not None else rooms
                         restartable_session_ids = rescue_restartable_session_ids(restart_rooms)
@@ -733,9 +763,20 @@ async def olcrtc_rescue_watchdog_worker(
                             if session.session_id in replaced_session_ids:
                                 continue
                             if repo is not None and session.session_id not in restartable_session_ids:
-                                restart_details.append(
-                                    f"auto_restart {session.session_id}: skipped; room is not warm/assigned"
+                                cleanup_result = await stop_rescue_session(
+                                    session_id=session.session_id,
+                                    deploy_host=deploy_host,
+                                    timeout_sec=max(5, int(settings.olcrtc_rescue_deploy_timeout_sec)),
                                 )
+                                if cleanup_result.ok:
+                                    recovery_details.append(
+                                        f"auto_cleanup {session.session_id}: stopped orphan non-active unit"
+                                    )
+                                else:
+                                    cleanup_problem_details.append(
+                                        f"auto_cleanup {session.session_id}: failed at "
+                                        f"{cleanup_result.failed_step}\n{cleanup_result.output}"
+                                    )
                                 continue
                             restart_result = await restart_rescue_session(
                                 session_id=session.session_id,
@@ -746,16 +787,60 @@ async def olcrtc_rescue_watchdog_worker(
                             restart_details.append(
                                 f"auto_restart {session.session_id}: {status}\n{restart_result.output}"
                             )
-                    await notify_admin_worker_alert(
-                        bot=bot,
-                        settings=settings,
-                        key="worker.olcrtc_rescue.findings",
-                        title="olcRTC Rescue sessions need attention",
-                        details=(
-                            format_rescue_watchdog_alert(findings, deploy_host=deploy_host)
-                            + ("\n\n" + "\n\n".join(restart_details) if restart_details else "")
-                        ),
-                    )
+                    followup_findings = findings
+                    if replaced_session_ids or restart_details or recovery_details or cleanup_problem_details:
+                        followup = await fetch_rescue_list(
+                            deploy_host=deploy_host,
+                            remote_root=settings.olcrtc_rescue_remote_root,
+                            timeout_sec=max(5, int(settings.olcrtc_rescue_deploy_timeout_sec)),
+                        )
+                        if followup.ok:
+                            followup_remote_sessions = parse_rescue_list_output(followup.output)
+                            followup_rooms = await repo.list_rescue_rooms() if repo is not None else []
+                            followup_stale_rows = (
+                                rescue_stale_pool_rows(
+                                    followup_rooms,
+                                    followup_remote_sessions,
+                                    min_non_active_age_sec=settings.olcrtc_rescue_assigned_replace_min_age_sec,
+                                )
+                                if repo is not None
+                                else []
+                            )
+                            followup_findings = rescue_findings_with_stale_pool_rows(
+                                rescue_watchdog_findings(followup.output),
+                                [
+                                    row
+                                    for row in followup_stale_rows
+                                    if str(row.get("status") or "") == "assigned"
+                                ],
+                                followup_remote_sessions,
+                            )
+                        else:
+                            cleanup_problem_details.append(
+                                f"post-recovery list failed at {followup.failed_step}\n{followup.output}"
+                            )
+
+                    if followup_findings or cleanup_problem_details or replacement_problem_details:
+                        details = format_rescue_watchdog_alert(followup_findings, deploy_host=deploy_host)
+                        extra_details = [
+                            *cleanup_problem_details,
+                            *replacement_problem_details,
+                            *restart_details,
+                        ]
+                        if extra_details:
+                            details += "\n\n" + "\n\n".join(extra_details)
+                        await notify_admin_worker_alert(
+                            bot=bot,
+                            settings=settings,
+                            key="worker.olcrtc_rescue.findings",
+                            title="olcRTC Rescue sessions need attention",
+                            details=details,
+                        )
+                    elif recovery_details:
+                        logging.info(
+                            "olcRTC Rescue watchdog recovered sessions without admin alert: %s",
+                            " | ".join(recovery_details),
+                        )
         except Exception as exc:
             logging.exception("olcRTC Rescue watchdog iteration failed")
             try:

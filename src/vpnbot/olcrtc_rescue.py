@@ -737,6 +737,60 @@ def rescue_watchdog_findings(output: str) -> list[RemoteRescueSession]:
     ]
 
 
+def rescue_stale_pool_rows(
+    rooms: list[dict[str, Any]],
+    remote_sessions: list[RemoteRescueSession],
+    *,
+    min_non_active_age_sec: int = 0,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    remote_by_id = {session.session_id: session for session in remote_sessions}
+    stale: list[dict[str, Any]] = []
+    min_age = max(0, int(min_non_active_age_sec))
+    for room in rooms:
+        status = str(room.get("status") or "")
+        if status not in {"assigned", "warm"}:
+            continue
+        session_id = str(room.get("session_id") or "").strip()
+        if not session_id:
+            continue
+        remote = remote_by_id.get(session_id)
+        if remote is None:
+            stale.append(room)
+            continue
+        if remote.active == "active":
+            continue
+        if min_age > 0:
+            age = rescue_session_age_seconds(remote, now=now)
+            if age is None or age < min_age:
+                continue
+        stale.append(room)
+    return stale
+
+
+def rescue_findings_with_stale_pool_rows(
+    findings: list[RemoteRescueSession],
+    stale_rows: list[dict[str, Any]],
+    remote_sessions: list[RemoteRescueSession],
+) -> list[RemoteRescueSession]:
+    by_id = {session.session_id: session for session in findings}
+    remote_by_id = {session.session_id: session for session in remote_sessions}
+    for row in stale_rows:
+        session_id = str(row.get("session_id") or "").strip()
+        if not session_id or session_id in by_id:
+            continue
+        remote = remote_by_id.get(session_id)
+        if remote is None:
+            remote = RemoteRescueSession(
+                session_id=session_id,
+                active="missing",
+                room_url=str(row.get("room_url") or ""),
+                since="",
+            )
+        by_id[session_id] = remote
+    return list(by_id.values())
+
+
 def format_rescue_watchdog_alert(
     findings: list[RemoteRescueSession],
     *,

@@ -24,9 +24,11 @@ from scripts.manage_olcrtc_rescue_session import (
     parse_rescue_since_timestamp,
     parse_room_broker_output,
     rescue_assigned_replacement_candidates,
+    rescue_findings_with_stale_pool_rows,
     rescue_pool_warm_candidates,
     rescue_room_broker_request_count,
     rescue_restartable_session_ids,
+    rescue_stale_pool_rows,
     rescue_watchdog_findings,
     run_steps_async,
     validate_session_id,
@@ -310,6 +312,58 @@ rs-three|inactive|https://stream.wb.ru/room/019e3ddd|Wed
     findings = rescue_watchdog_findings(output)
 
     assert [session.session_id for session in findings] == ["rs-two", "rs-three"]
+
+
+def test_rescue_stale_pool_rows_marks_missing_and_old_non_active_rows():
+    remote = parse_rescue_list_output(
+        """session_id|active|room|since
+rs-active|active|https://stream.wb.ru/room/active|Wed 2026-05-20 06:00:00 UTC
+rs-new|activating|https://stream.wb.ru/room/new|Wed 2026-05-20 06:19:30 UTC
+rs-old|failed|https://stream.wb.ru/room/old|Wed 2026-05-20 06:00:00 UTC
+"""
+    )
+    rooms = [
+        {"status": "warm", "session_id": "rs-active", "room_id": "active"},
+        {"status": "warm", "session_id": "rs-new", "room_id": "new"},
+        {"status": "assigned", "session_id": "rs-old", "room_id": "old"},
+        {"status": "assigned", "session_id": "rs-missing", "room_id": "missing"},
+        {"status": "free", "session_id": "rs-free", "room_id": "free"},
+    ]
+
+    stale = rescue_stale_pool_rows(
+        rooms,
+        remote,
+        min_non_active_age_sec=600,
+        now=datetime(2026, 5, 20, 6, 20, 0, tzinfo=UTC),
+    )
+
+    assert [row["room_id"] for row in stale] == ["old", "missing"]
+
+
+def test_rescue_findings_with_stale_pool_rows_adds_missing_assigned_sessions():
+    remote = parse_rescue_list_output(
+        """session_id|active|room|since
+rs-failed|failed|https://stream.wb.ru/room/failed|Wed
+"""
+    )
+    findings = rescue_watchdog_findings(
+        """session_id|active|room|since
+rs-failed|failed|https://stream.wb.ru/room/failed|Wed
+"""
+    )
+    stale_rows = [
+        {
+            "status": "assigned",
+            "session_id": "rs-missing",
+            "room_url": "https://stream.wb.ru/room/missing",
+        }
+    ]
+
+    combined = rescue_findings_with_stale_pool_rows(findings, stale_rows, remote)
+
+    assert [session.session_id for session in combined] == ["rs-failed", "rs-missing"]
+    assert combined[1].active == "missing"
+    assert combined[1].room_url == "https://stream.wb.ru/room/missing"
 
 
 def test_rescue_pool_warm_candidates_waits_when_warm_room_is_stale():
