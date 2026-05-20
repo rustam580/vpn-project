@@ -119,7 +119,7 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
         broker_command = str(getattr(settings, "olcrtc_rescue_room_broker_command", "") or "").strip()
         if not broker_enabled or not broker_command:
             await message.answer(
-                "Rescue Beta пока не готов к автоматической выдаче. Напишите в поддержку, мы включим вручную."
+                "Rescue Beta пока не выдается автоматически. Напишите в поддержку, мы включим аварийный канал вручную."
             )
             return None
 
@@ -129,12 +129,12 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
             timeout_sec=int(getattr(settings, "olcrtc_rescue_room_broker_timeout_sec", 45)),
         )
         if not broker_result.ok:
-            await message.answer("Не удалось создать Rescue-комнату автоматически. Напишите в поддержку.")
+            await message.answer("Не удалось создать Rescue-комнату. Напишите в поддержку, мы выдадим ссылку вручную.")
             return None
 
         created_urls = parse_room_broker_output(broker_result.output)
         if not created_urls:
-            await message.answer("WB Stream не вернул ссылку комнаты. Напишите в поддержку.")
+            await message.answer("WB Stream не вернул ссылку комнаты. Напишите в поддержку, мы проверим канал.")
             return None
 
         for room_url in created_urls:
@@ -160,7 +160,7 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
 
         if not await _has_active_access(tg_id):
             await message.answer(
-                "🆘 Rescue Beta доступен для пользователей с активной подпиской.\n"
+                "🆘 Rescue Beta доступен пользователям с активной подпиской.\n"
                 "Сначала нажмите «🔑 Получить подписку» или «💳 Купить доступ»."
             )
             return
@@ -168,12 +168,12 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
         auto_deploy_enabled = bool(getattr(settings, "olcrtc_rescue_auto_deploy", False))
         deploy_host = str(getattr(settings, "olcrtc_rescue_deploy_host", "") or "").strip()
         if not auto_deploy_enabled or not deploy_host:
-            await message.answer("Rescue Beta сейчас на настройке. Напишите в поддержку, если нужен аварийный доступ.")
+            await message.answer("Rescue Beta сейчас на настройке. Если нужен аварийный доступ, напишите в поддержку.")
             return
 
         await message.answer(
             "🆘 Готовлю Rescue Beta.\n"
-            "Это может занять до минуты: создаю канал и проверяю, что сервер подключился."
+            "Создаю аварийный канал и проверяю подключение. Обычно это занимает 20-60 секунд."
         )
 
         remote_root = str(getattr(settings, "olcrtc_rescue_remote_root", "/etc/rootvpn/rescue"))
@@ -205,7 +205,7 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
                     status="free",
                     increment_fail_count=True,
                 )
-                await message.answer("Rescue-комната оказалась повреждена. Попробуйте еще раз через минуту.")
+                await message.answer("Эта Rescue-комната уже недоступна. Попробуйте запросить Rescue Beta еще раз через минуту.")
                 return
 
             client_id = default_client_id(tg_id=str(tg_id))
@@ -231,7 +231,7 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
             session = create_local_session(room=str(room["room_url"]), tg_id=str(tg_id))
         except Exception:
             await repo.mark_rescue_room_status(room_id=str(room["room_id"]), status="free")
-            await message.answer("Не удалось подготовить Rescue-сессию. Попробуйте позже или напишите в поддержку.")
+            await message.answer("Не удалось подготовить Rescue Beta. Попробуйте позже или напишите в поддержку.")
             return
 
         steps = build_deploy_steps(
@@ -273,7 +273,7 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
                 timeout_sec=deploy_timeout,
             )
             details = (
-                "Rescue-сервер не успел подключиться к комнате. Попробуйте еще раз через минуту.\n\n"
+                "Rescue-сервер не успел подключиться к комнате. Попробуйте запросить Rescue Beta еще раз через минуту.\n\n"
                 "Технический статус:\n"
                 f"{active_check_output}"
             )
@@ -308,7 +308,7 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
             create_if_missing=False,
         )
         if not user:
-            await message.answer("❗ Профиль не найден. Нажмите «🔑 Получить подписку».")
+            await message.answer("❗ Активный профиль не найден. Нажмите «🔑 Получить подписку».")
             return
         await send_status(message, user)
         await send_device_links(
@@ -334,7 +334,7 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
 
         devices = await repo.list_devices(tg_id)
         if not devices:
-            lines.append("Профиль не найден. Нажмите «🔑 Получить подписку».")
+            lines.append("Активный профиль не найден. Нажмите «🔑 Получить подписку».")
             await message.answer("\n".join(lines))
             return
 
@@ -345,7 +345,7 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
             username = str(row.get("marzban_username") or "").strip()
             mz_user = await marzban.get_user(username) if username else None
             if not mz_user:
-                lines.append(f"- {device_id}. {label}: не найдено в Marzban")
+                lines.append(f"- {device_id}. {label}: профиль не найден на сервере")
                 continue
             status = str(mz_user.get("status", "unknown"))
             used = format_used(int(mz_user.get("used_traffic", 0) or 0))
@@ -354,7 +354,7 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
                 mz_user.get("online_at") or mz_user.get("last_online") or mz_user.get("last_online_at")
             )
             lines.append(
-                f"- {device_id}. {label}: {status}, онлайн: {online}, трафик: {used}, до: {expire}"
+                f"- {device_id}. {label}: {status}, онлайн: {online}, трафик: {used}, доступ до: {expire}"
             )
 
         latest_payment = await repo.get_latest_payment(tg_id)
@@ -375,7 +375,7 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
         else:
             lines.append("Платежи: не найдено")
 
-        lines.append("Если есть проблемы, отправьте «⚠️ Проблема с подключением».")
+        lines.append("Если подключение не работает, нажмите «⚠️ Проблема с подключением».")
         await message.answer("\n".join(lines))
 
     @router.message(Command("buy"))
@@ -420,7 +420,7 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
         tg_id = int(message.from_user.id)
         row = await repo.get_user(tg_id)
         if not row:
-            await message.answer("❗ Сначала получите ссылку подписки.")
+            await message.answer("❗ Сначала получите подписку.")
             return
         devices = await repo.list_devices(tg_id)
         if settings.device_limit > 0 and len(devices) >= settings.device_limit:
@@ -428,15 +428,13 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
             return
         if not await repo.has_paid_plan_payment(tg_id):
             await message.answer(
-                "📱 Доп. устройство доступно только после оплаты основного тарифа.\n"
+                "📱 Дополнительное устройство доступно после оплаты основного тарифа.\n"
                 "Сначала нажмите «Купить доступ»."
             )
             return
         await message.answer(
-            f"📱 Доп. устройство: {settings.device_add_rub:.2f} RUB.\n"
-            "Оплата добавляет только новый слот устройства.\n"
-            f"Новое устройство получает +{max(0, int(settings.pay_days))} дней доступа.\n"
-            "После оплаты устройство появится автоматически.\n"
+            f"📱 Дополнительное устройство: {settings.device_add_rub:.2f} RUB.\n"
+            f"После оплаты появится новый слот на {max(0, int(settings.pay_days))} дн.\n"
             "Название можно задать через «Переименовать устройство».",
             reply_markup=device_methods_keyboard(settings),
         )
@@ -456,7 +454,7 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
         kb = devices_replace_keyboard(devices)
         await message.answer(
             "Выберите устройство для перевыпуска ссылки.\n"
-            "Старая ссылка выбранного устройства будет отключена.",
+            "Старая ссылка выбранного устройства перестанет работать.",
             reply_markup=kb,
         )
 
@@ -573,7 +571,7 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
         )
         if created:
             await message.answer(
-                f"🎁 Тестовый доступ выдан: {settings.trial_days} день, {plan_gb_text(settings.trial_gb)}."
+                f"🎁 Тестовый доступ выдан: {settings.trial_days} дн., {plan_gb_text(settings.trial_gb)}."
             )
             await track_event("trial_issued", telegram_id=tg_id)
         await send_status(message, user or {})
@@ -603,7 +601,7 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
             return
         await message.answer(
             "<b>Дополнительные действия</b>\n"
-            "Выберите нужный пункт:",
+            "Выберите, что нужно сделать:",
             reply_markup=more_actions_keyboard(),
             parse_mode="HTML",
         )
@@ -648,7 +646,7 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
             f"- Приглашено: {stats['total']}\n"
             f"- Бонус выдан: {stats['rewarded']}\n"
             f"- Ожидают первую оплату: {stats['pending']}\n\n"
-            "Ваша ссылка:\n"
+            "Ваша реферальная ссылка:\n"
             f"{link}"
         )
 
@@ -703,11 +701,11 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
         tg_id = int(message.from_user.id)
         pending_issue.add(tg_id)
         await message.answer(
-            "Опишите проблему одним сообщением по шаблону:\n"
-            "1) Время (дата и время по МСК)\n"
-            "2) Устройство и приложение (iOS/Android/Windows + клиент)\n"
-            "3) Что именно не работает\n"
-            "4) Ошибка/скрин (если есть)\n"
-            "5) Пробовали переимпорт/перезапуск\n\n"
-            "Напишите «отмена» чтобы выйти."
+            "Опишите проблему одним сообщением:\n"
+            "1. Когда началось.\n"
+            "2. Устройство и приложение.\n"
+            "3. Что именно не работает.\n"
+            "4. Ошибка или скрин, если есть.\n"
+            "5. Пробовали ли переимпорт или перезапуск.\n\n"
+            "Напишите «отмена», чтобы выйти."
         )

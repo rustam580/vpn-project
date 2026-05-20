@@ -105,7 +105,7 @@ def register_payment_callbacks(*, router: Router, deps: UserCallbackDeps) -> Non
             await callback.message.answer(
                 f"🧩 {plan_title(plan)} для всех устройств ({len(devices)} шт).\n"
                 f"Сумма: {amount:.2f} RUB\n"
-                f"Срок: +{plan.days} дней, трафик: {plan_gb_text(plan.gb)}.\n"
+                f"Срок: +{plan.days} дн., трафик: {plan_gb_text(plan.gb)}.\n"
                 "Выберите способ оплаты:",
                 reply_markup=payment_methods_keyboard(
                     settings,
@@ -129,7 +129,7 @@ def register_payment_callbacks(*, router: Router, deps: UserCallbackDeps) -> Non
             await callback.message.answer(
                 f"🔑 {plan_title(plan)} для устройства {slot}.\n"
                 f"Сумма: {plan.rub:.2f} RUB\n"
-                f"Срок: +{plan.days} дней, трафик: {plan_gb_text(plan.gb)}.\n"
+                f"Срок: +{plan.days} дн., трафик: {plan_gb_text(plan.gb)}.\n"
                 "Выберите способ оплаты:",
                 reply_markup=payment_methods_keyboard(
                     settings,
@@ -254,7 +254,7 @@ def register_payment_callbacks(*, router: Router, deps: UserCallbackDeps) -> Non
                 f"✅ Платеж создан ({provider}).\n"
                 f"Тип: {pay_title}\n"
                 f"Сумма: {amount_rub:.2f} RUB\n"
-                f"Период: +{plan.days} дней, трафик: {plan_gb_text(plan.gb)}\n"
+                f"Период: +{plan.days} дн., трафик: {plan_gb_text(plan.gb)}\n"
                 f"ID: {external_id}",
                 reply_markup=pay_action_keyboard(provider, external_id, pay_url),
             )
@@ -342,8 +342,7 @@ def register_payment_callbacks(*, router: Router, deps: UserCallbackDeps) -> Non
                 f"✅ Платеж за устройство создан ({provider}).\n"
                 f"ID: {external_id}\n"
                 f"Слот: {slot}\n"
-                f"Новое устройство получит +{device_days} дней доступа.\n"
-                "Важно: одна ссылка = одно устройство.",
+                f"Новое устройство получит +{device_days} дн. доступа.",
                 reply_markup=pay_action_keyboard(provider, external_id, pay_url),
             )
             await callback.answer()

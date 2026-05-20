@@ -101,16 +101,14 @@ def register_quick_callbacks(*, router: Router, deps: UserCallbackDeps) -> None:
             if not await repo.has_paid_plan_payment(tg_id):
                 await callback.answer()
                 await callback.message.answer(
-                    "📱 Доп. устройство доступно только после оплаты основного тарифа.\n"
+                    "📱 Дополнительное устройство доступно после оплаты основного тарифа.\n"
                     "Сначала нажмите «Купить доступ».",
                 )
                 return
             await callback.answer()
             await callback.message.answer(
-                f"📱 Доп. устройство: {settings.device_add_rub:.2f} RUB.\n"
-                "Оплата добавляет только новый слот устройства.\n"
-                f"Новое устройство получает +{max(0, int(settings.pay_days))} дней доступа.\n"
-                "После оплаты устройство появится автоматически.\n"
+                f"📱 Дополнительное устройство: {settings.device_add_rub:.2f} RUB.\n"
+                f"После оплаты появится новый слот на {max(0, int(settings.pay_days))} дн.\n"
                 "Название можно задать через «Переименовать устройство».",
                 reply_markup=device_methods_keyboard(settings),
             )
@@ -125,7 +123,7 @@ def register_quick_callbacks(*, router: Router, deps: UserCallbackDeps) -> None:
             kb = devices_replace_keyboard(devices)
             await callback.message.answer(
                 "Выберите устройство для перевыпуска ссылки.\n"
-                "Старая ссылка выбранного устройства будет отключена.",
+                "Старая ссылка выбранного устройства перестанет работать.",
                 reply_markup=kb,
             )
             return
@@ -154,7 +152,7 @@ def register_quick_callbacks(*, router: Router, deps: UserCallbackDeps) -> None:
                 f"- Приглашено: {stats['total']}\n"
                 f"- Бонус выдан: {stats['rewarded']}\n"
                 f"- Ожидают первую оплату: {stats['pending']}\n\n"
-                "Ваша ссылка:\n"
+                "Ваша реферальная ссылка:\n"
                 f"{link}"
             )
             return
@@ -229,13 +227,13 @@ def register_quick_callbacks(*, router: Router, deps: UserCallbackDeps) -> None:
             pending_issue.add(tg_id)
             await callback.answer()
             await callback.message.answer(
-                "Опишите проблему одним сообщением по шаблону:\n"
-                "1) Время (дата и время по МСК)\n"
-                "2) Устройство и приложение (iOS/Android/Windows + клиент)\n"
-                "3) Что именно не работает\n"
-                "4) Ошибка/скрин (если есть)\n"
-                "5) Пробовали переимпорт/перезапуск\n\n"
-                "Напишите «отмена» чтобы выйти."
+                "Опишите проблему одним сообщением:\n"
+                "1. Когда началось.\n"
+                "2. Устройство и приложение.\n"
+                "3. Что именно не работает.\n"
+                "4. Ошибка или скрин, если есть.\n"
+                "5. Пробовали ли переимпорт или перезапуск.\n\n"
+                "Напишите «отмена», чтобы выйти."
             )
             return
 

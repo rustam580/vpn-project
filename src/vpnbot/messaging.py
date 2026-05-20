@@ -38,9 +38,9 @@ async def send_status_to_bot(
 async def send_links(message: Message, user: Mapping[str, Any] | MarzbanUser) -> None:
     links = extract_links(user)
     if not links:
-        await message.answer("⚠️ Конфиг не найден в ответе Marzban. Попробуйте позже.")
+        await message.answer("⚠️ Не нашел активную ссылку подключения. Попробуйте еще раз чуть позже.")
         return
-    await message.answer("🔑 Ваша ссылка подключения (1 устройство):")
+    await message.answer("🔑 Ваша ссылка для подключения:")
     link = links[0]
     safe_link = html.escape(link)
     text = f"<code>{safe_link}</code>"
@@ -115,8 +115,8 @@ async def send_device_links(
         return
 
     await message.answer(
-        f"🔑 Ниже ваши активные ссылки для подключения ({len(items)}).\n"
-        "Нажмите на ссылку, чтобы скопировать."
+        f"🔑 Ваши активные ссылки для подключения ({len(items)}).\n"
+        "Нажмите на нужную ссылку, чтобы скопировать ее."
     )
     await send_configs_in_chat(message, items)
 
@@ -191,8 +191,8 @@ async def send_device_links_to_bot(
         return
     await bot.send_message(
         telegram_id,
-        f"🔑 Ниже ваши активные ссылки для подключения ({len(items)}).\n"
-        "Нажмите на ссылку, чтобы скопировать.",
+        f"🔑 Ваши активные ссылки для подключения ({len(items)}).\n"
+        "Нажмите на нужную ссылку, чтобы скопировать ее.",
     )
     await send_configs_in_chat_to_bot(bot=bot, telegram_id=telegram_id, items=items)
 

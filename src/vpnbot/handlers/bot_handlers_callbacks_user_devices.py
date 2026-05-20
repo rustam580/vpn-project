@@ -87,7 +87,7 @@ def register_device_callbacks(*, router: Router, deps: UserCallbackDeps) -> None
         label = device_label(device_id, row.get("device_name"))
         await callback.message.answer(
             f"Подтвердите перевыпуск ссылки для устройства {device_id} ({label}).\n"
-            "Старая ссылка этого устройства будет отключена.",
+            "Старая ссылка этого устройства перестанет работать.",
             reply_markup=device_replace_confirm_keyboard(device_id),
         )
         await callback.answer()
@@ -129,9 +129,8 @@ def register_device_callbacks(*, router: Router, deps: UserCallbackDeps) -> None
         await callback.answer("Готово")
         await callback.message.answer(
             f"🔁 Ссылка устройства {device_id} перевыпущена.\n"
-            "Старая ссылка этого устройства отключена.\n"
-            "Импортируйте новую ссылку из списка ниже.\n"
-            "Важно: одна ссылка = одно устройство."
+            "Старая ссылка больше не работает.\n"
+            "Импортируйте новую ссылку из списка ниже."
         )
         if device_id == 1:
             await send_status(callback.message, new_user)

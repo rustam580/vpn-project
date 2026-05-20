@@ -158,10 +158,10 @@ def status_text(user: Mapping[str, Any] | MarzbanUser) -> str:
     }.get(status, status)
     cfg_count = 1 if links else 0
     return (
-        f"👤 <b>Пользователь:</b> {marz_user.username or 'unknown'}\n"
+        f"👤 <b>Профиль:</b> {marz_user.username or 'unknown'}\n"
         f"{status_icon} <b>Статус:</b> {status_label}\n"
         f"📊 <b>Трафик:</b> {format_used(marz_user.used_traffic)} из {format_limit(marz_user.data_limit)}\n"
         f"🗓 <b>Действует до:</b> {format_expire(expire_ts)}\n"
         f"⏳ <b>Осталось:</b> {format_time_left(expire_ts)}\n"
-        f"🔗 <b>Конфигов:</b> {cfg_count}"
+        f"🔗 <b>Ссылок:</b> {cfg_count}"
     )
