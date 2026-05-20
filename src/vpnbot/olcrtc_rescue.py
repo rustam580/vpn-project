@@ -322,8 +322,9 @@ def build_restart_step(
     session_id = validate_session_id(session_id)
     unit = f"olcrtc-rescue@{session_id}"
     remote_command = (
+        f"systemctl reset-failed {shq(unit)} || true; "
         f"systemctl restart {shq(unit)}; "
-        "sleep 3; "
+        "sleep 8; "
         f"printf 'service: %s\\n' {shq(unit)}; "
         f"printf 'active: '; systemctl is-active {shq(unit)} || true"
     )

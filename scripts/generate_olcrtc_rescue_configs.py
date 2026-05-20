@@ -24,7 +24,7 @@ DEFAULT_VP8_BATCH = 64
 DEFAULT_LIVENESS_INTERVAL = "10s"
 DEFAULT_LIVENESS_TIMEOUT = "5s"
 DEFAULT_LIVENESS_FAILURES = 3
-DEFAULT_MAX_SESSION_DURATION = "2h"
+DEFAULT_MAX_SESSION_DURATION = "168h"
 DEFAULT_TRAFFIC_MAX_PAYLOAD_SIZE = 0
 DEFAULT_TRAFFIC_MIN_DELAY = "5ms"
 DEFAULT_TRAFFIC_MAX_DELAY = "30ms"
@@ -310,6 +310,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--socks-port", type=int, default=DEFAULT_SOCKS_PORT)
     parser.add_argument("--vp8-fps", type=int, default=DEFAULT_VP8_FPS)
     parser.add_argument("--vp8-batch", type=int, default=DEFAULT_VP8_BATCH)
+    parser.add_argument("--max-session-duration", default=DEFAULT_MAX_SESSION_DURATION)
     parser.add_argument("--client-id", default="", help="optional olcRTC URI client id, e.g. olcbox or tg_123")
     parser.add_argument("--label", default="RootVPN Rescue Beta")
     parser.add_argument("--debug", action="store_true")
@@ -347,6 +348,7 @@ async def _amain() -> int:
         socks_port=args.socks_port,
         vp8_fps=args.vp8_fps,
         vp8_batch=args.vp8_batch,
+        max_session_duration=args.max_session_duration,
         debug=args.debug,
     )
     _write_outputs(config, Path(args.out_dir), label=args.label, client_id=args.client_id, created_room=created_room)

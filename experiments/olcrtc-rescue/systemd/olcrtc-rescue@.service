@@ -2,6 +2,8 @@
 Description=RootVPN olcRTC Rescue session %i
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=15min
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -9,7 +11,7 @@ User=root
 WorkingDirectory=/etc/rootvpn/rescue/%i
 ExecStart=/usr/local/bin/olcrtc /etc/rootvpn/rescue/%i/server.yaml
 Restart=always
-RestartSec=5
+RestartSec=60
 KillSignal=SIGINT
 TimeoutStopSec=20
 NoNewPrivileges=true

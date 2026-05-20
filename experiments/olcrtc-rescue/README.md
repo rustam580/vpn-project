@@ -17,7 +17,7 @@ Why this path:
 - The business goal is "internet still works when only whitelisted services work".
 - WB Stream is closer to that real condition than a self-hosted WebRTC gateway.
 - `vp8channel` is already a byte tunnel over valid-looking VP8 samples with KCP reliability.
-- `olcrtc` already has client/server modes, SOCKS5, encryption, smux, liveness, lifecycle rotation, and Docker/Podman wrappers.
+- `olcrtc` already has client/server modes, SOCKS5, encryption, smux, liveness, lifecycle controls, and Docker/Podman wrappers.
 
 ## Boundary
 
@@ -82,7 +82,7 @@ Defaults:
 - DNS: `1.1.1.1:53`
 - local SOCKS: `127.0.0.1:8808`
 - liveness: `10s` interval, `5s` timeout, `3` failures
-- lifecycle rotation: `2h`
+- lifecycle max session duration: `168h`
 - traffic cap: transport default (`max_payload_size: 0`) with `5ms..30ms` pacing
 
 ## Run Shape
@@ -119,6 +119,10 @@ journalctl -u olcrtc-rescue@<session-id> -f
 ```
 
 For the first beta, use one active device per session/room. Increase sharing only after reconnect and throughput metrics prove it is safe.
+
+The service template intentionally uses slow restart backoff (`RestartSec=60`) and systemd
+start-limits. WB Stream can return `403 guests cannot create rooms` or `429` when rooms are
+rejoined too aggressively. Do not lower restart backoff unless you are debugging interactively.
 
 ## Bot Auto-Deploy
 

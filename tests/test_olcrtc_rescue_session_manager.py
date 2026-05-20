@@ -199,6 +199,7 @@ def test_build_restart_step_uses_safe_session_id():
 
     command = " ".join(step.command)
     assert step.command[0] == "ssh"
+    assert "systemctl reset-failed 'olcrtc-rescue@rs-test'" in command
     assert "systemctl restart 'olcrtc-rescue@rs-test'" in command
     assert "systemctl is-active 'olcrtc-rescue@rs-test'" in command
 
