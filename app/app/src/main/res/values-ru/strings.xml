@@ -1,0 +1,18 @@
+﻿<resources>
+    <string name="app_name">RootVPN</string>
+    <string name="state_rescue_active">RESCUE АКТИВЕН</string>
+    <string name="state_bypass_ready">ПРОФИЛЬ ГОТОВ</string>
+    <string name="state_secure">ПОДКЛЮЧЕНО</string>
+    <string name="state_connecting">ПОДКЛЮЧЕНИЕ</string>
+    <string name="state_falling_back">ПЕРЕКЛЮЧЕНИЕ</string>
+    <string name="state_disconnected">ПОДКЛЮЧИТЬ</string>
+    <string name="select_routing_backend">ВЫБОР РЕЖИМА</string>
+    <string name="performance_mode">Быстрый режим</string>
+    <string name="performance_mode_desc">VLESS/Reality через sing-box</string>
+    <string name="rescue_mode">Rescue режим</string>
+    <string name="rescue_mode_desc">olcRTC транспорт через WebRTC</string>
+    <string name="perm_bypass_text">Интеграция VPN-ядра в работе</string>
+    <string name="handshake_text">Подготовка локального VPN-сервиса...</string>
+    <string name="warning_fallback_text">Переключение режима</string>
+    <string name="disconnected_socks_text">Ядро отключено</string>
+</resources>

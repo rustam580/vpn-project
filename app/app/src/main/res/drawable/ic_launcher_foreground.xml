@@ -1,0 +1,17 @@
+﻿<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Clean, high-contrast custom rescue/security shield with embedded signal waves -->
+    <path
+        android:fillColor="#00D2FF"
+        android:pathData="M54,18 L24,28 L24,54 C24,73 37,89 54,94 C71,89 84,73 84,54 L84,28 L54,18 Z M54,23 L79,31 L79,54 C79,70 68,84 54,88.5 C40,84 29,70 29,54 L29,31 L54,23 Z" />
+    <path
+        android:fillColor="#10B981"
+        android:pathData="M54,34 L54,72 M40,53 L68,53"
+        android:strokeColor="#10B981"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"/>
+</vector>
+

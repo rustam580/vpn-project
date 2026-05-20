@@ -1,0 +1,18 @@
+﻿<resources>
+    <string name="app_name">RootVPN</string>
+    <string name="state_rescue_active">RESCUE ACTIVE</string>
+    <string name="state_bypass_ready">PROFILE READY</string>
+    <string name="state_secure">CONNECTED</string>
+    <string name="state_connecting">CONNECTING</string>
+    <string name="state_falling_back">SWITCHING</string>
+    <string name="state_disconnected">CONNECT</string>
+    <string name="select_routing_backend">SELECT ROUTING BACKEND</string>
+    <string name="performance_mode">Performance Mode</string>
+    <string name="performance_mode_desc">VLESS/Reality via sing-box</string>
+    <string name="rescue_mode">Rescue Mode</string>
+    <string name="rescue_mode_desc">olcRTC WebRTC transport</string>
+    <string name="perm_bypass_text">VPN core integration pending</string>
+    <string name="handshake_text">Preparing local VPN service...</string>
+    <string name="warning_fallback_text">Switching transport mode</string>
+    <string name="disconnected_socks_text">Core offline</string>
+</resources>
