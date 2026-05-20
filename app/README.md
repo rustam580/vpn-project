@@ -1,4 +1,4 @@
-﻿# RootVPN Android
+# RootVPN Android
 
 Android-клиент RootVPN для двух типов профилей:
 
@@ -30,7 +30,11 @@ Android-клиент RootVPN для двух типов профилей:
 1. Open Android Studio.
 2. Open this `app/` directory.
 3. Let Gradle sync.
-4. Run `:app:testDebugUnitTest` after sync.
+4. Run `./gradlew assembleDebug` or `gradlew.bat assembleDebug`.
+
+The repository includes a Gradle wrapper. On this workstation the project path
+contains Cyrillic characters, so `android.overridePathCheck=true` is enabled in
+`gradle.properties`.
 
 ## Next Engineering Step
 

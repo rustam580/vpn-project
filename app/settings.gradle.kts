@@ -1,4 +1,4 @@
-﻿pluginManagement {
+pluginManagement {
   repositories {
     google {
       content {
@@ -25,4 +25,3 @@ dependencyResolutionManagement {
 rootProject.name = "RootVPN Android"
 
 include(":app")
-
