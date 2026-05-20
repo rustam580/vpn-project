@@ -24,8 +24,10 @@ from src.vpnbot.olcrtc_rescue import (
     fetch_rescue_status,
     format_rescue_dashboard,
     normalize_rescue_room_url,
+    parse_room_broker_output,
     parse_rescue_list_output,
     parse_rescue_command_args,
+    run_room_broker,
     run_steps_async,
     stop_rescue_session,
     validate_session_id,
@@ -465,12 +467,59 @@ def register_admin_runtime_handlers(*, router: Router, deps: AdminRuntimeDeps) -
             active_warm_session_ids=active_warm_session_ids,
         )
         if room is None:
+            broker_enabled = bool(getattr(settings, "olcrtc_rescue_room_broker_enabled", False))
+            broker_command = str(getattr(settings, "olcrtc_rescue_room_broker_command", "") or "").strip()
+            if not broker_enabled or not broker_command:
+                await message.answer(
+                    "No usable Rescue rooms in pool.\n"
+                    "Warm rooms are only usable when their relay is active on the Rescue VPS.\n"
+                    "Enable room broker or add one: /rescue_room_add <wb_room_url> [note]"
+                )
+                return
+
             await message.answer(
-                "No usable Rescue rooms in pool.\n"
-                "Warm rooms are only usable when their relay is active on the Rescue VPS.\n"
-                "Add one: /rescue_room_add <wb_room_url> [note]"
+                "No usable Rescue rooms in pool. Creating a WB room on demand and deploying relay..."
             )
-            return
+            broker_result = await run_room_broker(
+                command_template=broker_command,
+                count=1,
+                timeout_sec=int(getattr(settings, "olcrtc_rescue_room_broker_timeout_sec", 45)),
+            )
+            if not broker_result.ok:
+                for chunk in split_message(
+                    f"On-demand WB room broker failed at {broker_result.failed_step}\n{broker_result.output}",
+                    limit=3500,
+                ):
+                    await message.answer(chunk, link_preview_options=NO_LINK_PREVIEW)
+                return
+
+            created_urls = parse_room_broker_output(broker_result.output)
+            if not created_urls:
+                for chunk in split_message(
+                    "On-demand WB room broker returned no room URLs.\n" + broker_result.output,
+                    limit=3500,
+                ):
+                    await message.answer(chunk, link_preview_options=NO_LINK_PREVIEW)
+                return
+
+            for room_url in created_urls:
+                room_id = room_url.rsplit("/", 1)[-1]
+                await repo.add_rescue_room(
+                    room_id=room_id,
+                    room_url=room_url,
+                    note="auto-created on demand by room broker",
+                )
+
+            room = await repo.claim_next_free_rescue_room(
+                telegram_id=target_tg_id,
+                active_warm_session_ids=active_warm_session_ids,
+            )
+            if room is None:
+                await message.answer(
+                    "WB room was created, but bot could not claim it from pool. "
+                    "Run /rescue_rooms and /rescue_reconcile apply."
+                )
+                return
 
         if str(room.get("claimed_from_status") or "") == "warm":
             key_hex = str(room.get("key_hex") or "").strip()
