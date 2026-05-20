@@ -1282,6 +1282,60 @@ class Repo:
         await c.close()
         return [dict(row) for row in rows]
 
+    async def get_active_assigned_rescue_room(
+        self,
+        *,
+        telegram_id: int,
+        active_session_ids: set[str],
+    ) -> dict[str, Any] | None:
+        assert self.conn is not None
+        active_ids = sorted(str(session_id).strip() for session_id in active_session_ids if str(session_id).strip())
+        if not active_ids:
+            return None
+        placeholders = ",".join("?" for _ in active_ids)
+        c = await self.conn.execute(
+            f"""
+            SELECT id, room_id, room_url, status, assigned_tg_id, session_id, note, fail_count,
+                   created_at, updated_at, last_ok_at, key_hex, client_id, uri
+            FROM rescue_rooms
+            WHERE status = 'assigned'
+              AND assigned_tg_id = ?
+              AND session_id IN ({placeholders})
+              AND COALESCE(uri, '') <> ''
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (int(telegram_id), *active_ids),
+        )
+        row = await c.fetchone()
+        await c.close()
+        return dict(row) if row else None
+
+    async def mark_rescue_room_bad_by_session_id(
+        self,
+        *,
+        session_id: str,
+        increment_fail_count: bool = False,
+    ) -> int:
+        assert self.conn is not None
+        now = int(time.time())
+        cur = await self.conn.execute(
+            """
+            UPDATE rescue_rooms
+            SET status = 'bad',
+                key_hex = NULL,
+                client_id = NULL,
+                uri = NULL,
+                fail_count = fail_count + ?,
+                updated_at = ?
+            WHERE session_id = ?
+              AND status IN ('warm', 'assigned', 'reserved')
+            """,
+            (1 if increment_fail_count else 0, now, session_id.strip()),
+        )
+        await self.conn.commit()
+        return int(cur.rowcount or 0)
+
     async def claim_next_available_rescue_room(
         self,
         *,

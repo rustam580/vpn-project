@@ -768,7 +768,14 @@ def register_admin_runtime_handlers(*, router: Router, deps: AdminRuntimeDeps) -
             timeout_sec=int(getattr(settings, "olcrtc_rescue_deploy_timeout_sec", 60)),
         )
         prefix = "Rescue stop: ok" if result.ok else f"Rescue stop: failed at {result.failed_step}"
-        for chunk in split_message(f"{prefix}\n{result.output}", limit=3500):
+        pool_update = ""
+        if result.ok:
+            changed = await repo.mark_rescue_room_bad_by_session_id(
+                session_id=session_id,
+                increment_fail_count=False,
+            )
+            pool_update = f"\npool_update: marked bad rows={changed}"
+        for chunk in split_message(f"{prefix}{pool_update}\n{result.output}", limit=3500):
             await message.answer(chunk, link_preview_options=NO_LINK_PREVIEW)
 
     @router.message(Command("user"))

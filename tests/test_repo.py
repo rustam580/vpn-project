@@ -575,6 +575,59 @@ async def test_rescue_room_empty_active_session_list_claims_only_free_room(repo)
     assert claimed["claimed_from_status"] == "free"
 
 
+async def test_rescue_room_active_assigned_can_be_reused_for_same_user(repo) -> None:
+    await repo.add_rescue_room(
+        room_id="room-assigned",
+        room_url="https://stream.wb.ru/room/room-assigned",
+    )
+    await repo.mark_rescue_room_assigned(
+        room_id="room-assigned",
+        telegram_id=386029735,
+        session_id="rs-assigned",
+        key_hex="e" * 64,
+        client_id="tg_386029735",
+        uri="olcrtc://assigned",
+    )
+
+    reused = await repo.get_active_assigned_rescue_room(
+        telegram_id=386029735,
+        active_session_ids={"rs-assigned"},
+    )
+    inactive = await repo.get_active_assigned_rescue_room(
+        telegram_id=386029735,
+        active_session_ids={"rs-other"},
+    )
+
+    assert reused is not None
+    assert reused["room_id"] == "room-assigned"
+    assert reused["uri"] == "olcrtc://assigned"
+    assert inactive is None
+
+
+async def test_rescue_room_mark_bad_by_session_prevents_watchdog_restart(repo) -> None:
+    await repo.add_rescue_room(
+        room_id="room-stop",
+        room_url="https://stream.wb.ru/room/room-stop",
+    )
+    await repo.mark_rescue_room_assigned(
+        room_id="room-stop",
+        telegram_id=386029735,
+        session_id="rs-stop",
+        key_hex="f" * 64,
+        client_id="tg_386029735",
+        uri="olcrtc://stop",
+    )
+
+    changed = await repo.mark_rescue_room_bad_by_session_id(session_id="rs-stop")
+    row = await repo.get_rescue_room_by_room_id("room-stop")
+
+    assert changed == 1
+    assert row is not None
+    assert row["status"] == "bad"
+    assert row["session_id"] == "rs-stop"
+    assert row["uri"] is None
+
+
 async def test_repo_migrates_legacy_db(local_tmp_path) -> None:
     db_path = local_tmp_path / "legacy.sqlite3"
     conn = sqlite3.connect(str(db_path))

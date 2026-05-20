@@ -187,6 +187,21 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
         if existing.ok:
             active_warm_session_ids = active_rescue_session_ids(parse_rescue_list_output(existing.output))
 
+        existing_room = await repo.get_active_assigned_rescue_room(
+            telegram_id=tg_id,
+            active_session_ids=active_warm_session_ids,
+        )
+        if existing_room is not None:
+            uri = str(existing_room.get("uri") or "").strip()
+            session_id = str(existing_room.get("session_id") or "").strip()
+            await message.answer(
+                "У вас уже есть активный аварийный доступ. Повторно комнату не создаю, отправляю текущую ссылку."
+            )
+            await message.answer(build_rescue_user_message(uri), link_preview_options=NO_LINK_PREVIEW)
+            await message.answer("Если эта ссылка не работает, напишите в поддержку: мы пересоздадим канал.")
+            await track_event("rescue_beta_reused", telegram_id=tg_id, event_value=session_id)
+            return
+
         room = await repo.claim_next_free_rescue_room(
             telegram_id=tg_id,
             active_warm_session_ids=active_warm_session_ids,
