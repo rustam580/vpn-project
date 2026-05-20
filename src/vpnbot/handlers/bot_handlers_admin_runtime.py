@@ -12,6 +12,7 @@ from src.vpnbot.keyboards.bot_keyboards import admin_panel_keyboard
 from src.vpnbot.message_utils import split_message
 from src.vpnbot.olcrtc_rescue import (
     active_rescue_sessions_for_room,
+    active_rescue_session_ids,
     build_deploy_steps,
     build_rescue_admin_summary,
     build_rescue_uri_for_room,
@@ -23,6 +24,7 @@ from src.vpnbot.olcrtc_rescue import (
     fetch_rescue_status,
     format_rescue_dashboard,
     normalize_rescue_room_url,
+    parse_rescue_list_output,
     parse_rescue_command_args,
     run_steps_async,
     stop_rescue_session,
@@ -368,9 +370,25 @@ def register_admin_runtime_handlers(*, router: Router, deps: AdminRuntimeDeps) -
             await message.answer("Rescue pool requires OLCRTC_RESCUE_AUTO_DEPLOY=1 and OLCRTC_RESCUE_DEPLOY_HOST.")
             return
 
-        room = await repo.claim_next_free_rescue_room(telegram_id=target_tg_id)
+        active_warm_session_ids: set[str] = set()
+        existing = await fetch_rescue_list(
+            deploy_host=deploy_host,
+            remote_root=str(getattr(settings, "olcrtc_rescue_remote_root", "/etc/rootvpn/rescue")),
+            timeout_sec=int(getattr(settings, "olcrtc_rescue_deploy_timeout_sec", 60)),
+        )
+        if existing.ok:
+            active_warm_session_ids = active_rescue_session_ids(parse_rescue_list_output(existing.output))
+
+        room = await repo.claim_next_free_rescue_room(
+            telegram_id=target_tg_id,
+            active_warm_session_ids=active_warm_session_ids,
+        )
         if room is None:
-            await message.answer("No free Rescue rooms in pool.\nAdd one: /rescue_room_add <wb_room_url> [note]")
+            await message.answer(
+                "No usable Rescue rooms in pool.\n"
+                "Warm rooms are only usable when their relay is active on the Rescue VPS.\n"
+                "Add one: /rescue_room_add <wb_room_url> [note]"
+            )
             return
 
         if str(room.get("claimed_from_status") or "") == "warm":

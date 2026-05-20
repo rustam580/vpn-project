@@ -51,6 +51,7 @@ from src.vpnbot.notifications import (
     notify_admin_worker_alert,
 )
 from src.vpnbot.olcrtc_rescue import (
+    active_rescue_session_ids,
     build_deploy_steps,
     build_rescue_uri_for_room,
     build_rescue_user_message,
@@ -572,7 +573,10 @@ async def olcrtc_rescue_watchdog_worker(
                             old_room_id = str(old_room["room_id"])
                             old_session_id = str(old_room.get("session_id") or "")
                             target_tg_id = int(old_room["assigned_tg_id"])
-                            claimed = await repo.claim_next_free_rescue_room(telegram_id=target_tg_id)
+                            claimed = await repo.claim_next_free_rescue_room(
+                                telegram_id=target_tg_id,
+                                active_warm_session_ids=active_rescue_session_ids(remote_sessions),
+                            )
                             if claimed is None:
                                 replacement_details.append(
                                     f"auto_replace {old_session_id}: no warm/free room available"

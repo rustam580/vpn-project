@@ -483,11 +483,15 @@ def active_rescue_sessions_for_room(room: str, output: str) -> list[RemoteRescue
     ]
 
 
+def active_rescue_session_ids(remote_sessions: list[RemoteRescueSession]) -> set[str]:
+    return {session.session_id for session in remote_sessions if session.active == "active"}
+
+
 def rescue_pool_capacity(
     rooms: list[dict[str, Any]],
     remote_sessions: list[RemoteRescueSession],
 ) -> RescuePoolCapacity:
-    active_session_ids = {session.session_id for session in remote_sessions if session.active == "active"}
+    active_session_ids = active_rescue_session_ids(remote_sessions)
     warm_active = 0
     warm_stale = 0
     free = 0

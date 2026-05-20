@@ -1282,23 +1282,40 @@ class Repo:
         await c.close()
         return [dict(row) for row in rows]
 
-    async def claim_next_available_rescue_room(self, *, telegram_id: int) -> dict[str, Any] | None:
+    async def claim_next_available_rescue_room(
+        self,
+        *,
+        telegram_id: int,
+        active_warm_session_ids: set[str] | None = None,
+    ) -> dict[str, Any] | None:
         assert self.conn is not None
         now = int(time.time())
+        params: list[Any] = []
+        if active_warm_session_ids is None:
+            where_sql = "status IN ('warm', 'free')"
+        else:
+            active_ids = sorted(str(session_id).strip() for session_id in active_warm_session_ids if str(session_id).strip())
+            if active_ids:
+                placeholders = ",".join("?" for _ in active_ids)
+                where_sql = f"(status = 'free' OR (status = 'warm' AND session_id IN ({placeholders})))"
+                params.extend(active_ids)
+            else:
+                where_sql = "status = 'free'"
         await self.conn.execute("BEGIN IMMEDIATE")
         try:
             c = await self.conn.execute(
-                """
+                f"""
                 SELECT id, room_id, room_url, status, assigned_tg_id, session_id, note, fail_count,
                        created_at, updated_at, last_ok_at, key_hex, client_id, uri
                 FROM rescue_rooms
-                WHERE status IN ('warm', 'free')
+                WHERE {where_sql}
                 ORDER BY
                     CASE status WHEN 'warm' THEN 1 ELSE 2 END,
                     updated_at ASC,
                     id ASC
                 LIMIT 1
-                """
+                """,
+                params,
             )
             row = await c.fetchone()
             await c.close()
@@ -1325,8 +1342,16 @@ class Repo:
             await self.conn.rollback()
             raise
 
-    async def claim_next_free_rescue_room(self, *, telegram_id: int) -> dict[str, Any] | None:
-        return await self.claim_next_available_rescue_room(telegram_id=telegram_id)
+    async def claim_next_free_rescue_room(
+        self,
+        *,
+        telegram_id: int,
+        active_warm_session_ids: set[str] | None = None,
+    ) -> dict[str, Any] | None:
+        return await self.claim_next_available_rescue_room(
+            telegram_id=telegram_id,
+            active_warm_session_ids=active_warm_session_ids,
+        )
 
     async def mark_rescue_room_warm(
         self,
