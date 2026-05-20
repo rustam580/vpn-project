@@ -418,6 +418,33 @@ async def fetch_rescue_list(
     return await run_steps_async([step], timeout_sec=timeout_sec)
 
 
+async def wait_for_rescue_session_active(
+    *,
+    session_id: str,
+    deploy_host: str,
+    remote_root: str = DEFAULT_REMOTE_ROOT,
+    timeout_sec: int = 30,
+    attempts: int = 6,
+    delay_sec: float = 5.0,
+) -> tuple[bool, str]:
+    last_output = ""
+    for attempt in range(max(1, attempts)):
+        if attempt:
+            await asyncio.sleep(delay_sec)
+        result = await fetch_rescue_list(
+            deploy_host=deploy_host,
+            remote_root=remote_root,
+            timeout_sec=timeout_sec,
+        )
+        last_output = result.output
+        if not result.ok:
+            continue
+        for session in parse_rescue_list_output(result.output):
+            if session.session_id == session_id and session.active == "active":
+                return True, result.output
+    return False, last_output
+
+
 def parse_rescue_list_output(output: str) -> list[RemoteRescueSession]:
     sessions: list[RemoteRescueSession] = []
     for raw_line in (output or "").splitlines():

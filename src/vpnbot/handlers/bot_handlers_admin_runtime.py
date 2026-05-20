@@ -1,7 +1,6 @@
 """Admin-facing command and button handlers extracted from build_router."""
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
@@ -30,6 +29,7 @@ from src.vpnbot.olcrtc_rescue import (
     run_steps_async,
     stop_rescue_session,
     validate_session_id,
+    wait_for_rescue_session_active,
 )
 from src.vpnbot.permissions import is_admin
 
@@ -59,33 +59,6 @@ class AdminRuntimeDeps:
     pending_broadcast_buttons: dict[int, bool]
     pending_broadcast_text: dict[int, str]
     track_event: Callable[..., Awaitable[None]] | None = None
-
-
-async def wait_for_rescue_session_active(
-    *,
-    session_id: str,
-    deploy_host: str,
-    remote_root: str,
-    timeout_sec: int,
-    attempts: int = 6,
-    delay_sec: float = 5.0,
-) -> tuple[bool, str]:
-    last_output = ""
-    for attempt in range(max(1, attempts)):
-        if attempt:
-            await asyncio.sleep(delay_sec)
-        result = await fetch_rescue_list(
-            deploy_host=deploy_host,
-            remote_root=remote_root,
-            timeout_sec=timeout_sec,
-        )
-        last_output = result.output
-        if not result.ok:
-            continue
-        for remote_session in parse_rescue_list_output(result.output):
-            if remote_session.session_id == session_id and remote_session.active == "active":
-                return True, result.output
-    return False, last_output
 
 
 def register_admin_runtime_handlers(*, router: Router, deps: AdminRuntimeDeps) -> None:

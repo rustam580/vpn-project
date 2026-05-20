@@ -70,6 +70,7 @@ from src.vpnbot.olcrtc_rescue import (
     run_room_broker,
     run_steps_async,
     stop_rescue_session,
+    wait_for_rescue_session_active,
 )
 from src.vpnbot.payment_helpers import (
     apply_paid_payment,
@@ -519,6 +520,29 @@ async def olcrtc_rescue_watchdog_worker(
                                 timeout_sec=max(5, int(settings.olcrtc_rescue_deploy_timeout_sec)),
                             )
                             if warm_result.ok:
+                                is_active, active_check_output = await wait_for_rescue_session_active(
+                                    session_id=session.session_id,
+                                    deploy_host=deploy_host,
+                                    remote_root=settings.olcrtc_rescue_remote_root,
+                                    timeout_sec=max(5, int(settings.olcrtc_rescue_deploy_timeout_sec)),
+                                )
+                                if not is_active:
+                                    await repo.mark_rescue_room_status(
+                                        room_id=room_id,
+                                        status="bad",
+                                        session_id=session.session_id,
+                                        increment_fail_count=True,
+                                    )
+                                    await stop_rescue_session(
+                                        session_id=session.session_id,
+                                        deploy_host=deploy_host,
+                                        timeout_sec=max(5, int(settings.olcrtc_rescue_deploy_timeout_sec)),
+                                    )
+                                    pool_warm_details.append(
+                                        f"auto_warm {room_id}: relay did not become active; marked bad "
+                                        f"session={session.session_id}\n{active_check_output}"
+                                    )
+                                    continue
                                 await repo.mark_rescue_room_warm(
                                     room_id=room_id,
                                     session_id=session.session_id,
