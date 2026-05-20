@@ -17,7 +17,7 @@ def keyboard_for_user(*, is_admin: bool) -> ReplyKeyboardMarkup:
     rows: list[list[KeyboardButton]] = [
         [KeyboardButton(text="🔑 Получить подписку"), KeyboardButton(text="💳 Купить доступ")],
         [KeyboardButton(text="📊 Мой статус"), KeyboardButton(text="📂 Еще")],
-        [KeyboardButton(text="🆘 Поддержка")],
+        [KeyboardButton(text="🆘 Rescue Beta"), KeyboardButton(text="🆘 Поддержка")],
     ]
     if is_admin:
         rows.append([KeyboardButton(text="🛠 Админ-кабинет")])
@@ -39,6 +39,7 @@ def more_actions_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="❓ FAQ", callback_data="quick:faq"),
                 InlineKeyboardButton(text="📢 Наш канал", callback_data="quick:channel"),
             ],
+            [InlineKeyboardButton(text="🆘 Rescue Beta", switch_inline_query_current_chat="/rescue_beta")],
             [InlineKeyboardButton(text="📄 Правила и политика", callback_data="quick:legal")],
             [InlineKeyboardButton(text="🚨 Проблема с подключением", callback_data="quick:issue")],
         ]

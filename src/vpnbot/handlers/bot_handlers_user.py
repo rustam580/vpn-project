@@ -123,6 +123,7 @@ def register_user_message_handlers(*, router: Router, deps: UserMessageDeps) -> 
             "• <code>/config</code> — получить/обновить подписку\n"
             "• <code>/guide</code> — инструкция по подключению\n"
             "• <code>/diag</code> — диагностика подключения\n"
+            "• <code>/rescue_beta</code> — аварийный режим для белых списков\n"
             "• <code>/buy</code> — продлить доступ\n"
             "• <code>/replace</code> — перевыпустить ссылку устройства\n"
             "• <code>/ref</code> — реферальная ссылка\n"
