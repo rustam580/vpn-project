@@ -567,6 +567,7 @@ async def olcrtc_rescue_watchdog_worker(
                             rooms,
                             findings,
                             max_to_replace=settings.olcrtc_rescue_assigned_max_replace_per_tick,
+                            min_non_active_age_sec=settings.olcrtc_rescue_assigned_replace_min_age_sec,
                         ):
                             old_room_id = str(old_room["room_id"])
                             old_session_id = str(old_room.get("session_id") or "")
@@ -650,8 +651,8 @@ async def olcrtc_rescue_watchdog_worker(
 
                                 await bot.send_message(
                                     target_tg_id,
-                                    "RootVPN Rescue session was replaced automatically: "
-                                    "the old room dropped.\n\n"
+                                    "RootVPN Rescue-сессия автоматически заменена: "
+                                    "старая комната отвалилась.\n\n"
                                     + build_rescue_user_message(uri),
                                 )
                                 await repo.mark_rescue_room_status(

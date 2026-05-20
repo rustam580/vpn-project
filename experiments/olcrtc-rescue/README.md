@@ -267,6 +267,7 @@ systemd unit:
 ```dotenv
 OLCRTC_RESCUE_ASSIGNED_AUTO_REPLACE=1
 OLCRTC_RESCUE_ASSIGNED_MAX_REPLACE_PER_TICK=1
+OLCRTC_RESCUE_ASSIGNED_REPLACE_MIN_AGE_SEC=600
 ```
 
 When an `assigned` session appears as non-active in `/rescue_list`, the bot:
@@ -276,6 +277,10 @@ When an `assigned` session appears as non-active in `/rescue_list`, the bot:
 3. Sends the user a fresh Rescue URI.
 4. Marks the old room as `bad` and stops the old service.
 5. Alerts admins with the replacement result.
+
+`OLCRTC_RESCUE_ASSIGNED_REPLACE_MIN_AGE_SEC` is intentionally conservative. WB/olcRTC can briefly
+show `activating` while a room wakes up or systemd restarts the relay. Replacing immediately causes
+unnecessary URI churn for users.
 
 Keep `OLCRTC_RESCUE_POOL_MIN_WARM` and `OLCRTC_RESCUE_POOL_MIN_FREE` above zero before enabling this,
 otherwise there may be no room available when a live user drops.

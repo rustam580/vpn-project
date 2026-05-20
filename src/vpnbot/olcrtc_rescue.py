@@ -445,6 +445,34 @@ def parse_rescue_list_output(output: str) -> list[RemoteRescueSession]:
     return sessions
 
 
+def parse_rescue_since_timestamp(value: str) -> datetime | None:
+    text = " ".join((value or "").strip().split())
+    if not text:
+        return None
+    parts = text.split()
+    if parts and parts[0] in {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}:
+        parts = parts[1:]
+    if parts and parts[-1] == "UTC":
+        parts = parts[:-1]
+    normalized = " ".join(parts)
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"):
+        try:
+            return datetime.strptime(normalized, fmt).replace(tzinfo=UTC)
+        except ValueError:
+            continue
+    return None
+
+
+def rescue_session_age_seconds(session: RemoteRescueSession, *, now: datetime | None = None) -> int | None:
+    since = parse_rescue_since_timestamp(session.since)
+    if since is None:
+        return None
+    current = now or datetime.now(tz=UTC)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=UTC)
+    return max(0, int((current.astimezone(UTC) - since).total_seconds()))
+
+
 def active_rescue_sessions_for_room(room: str, output: str) -> list[RemoteRescueSession]:
     expected_room = normalize_rescue_room_url(room)
     return [
@@ -503,8 +531,18 @@ def rescue_assigned_replacement_candidates(
     findings: list[RemoteRescueSession],
     *,
     max_to_replace: int,
+    min_non_active_age_sec: int = 0,
+    now: datetime | None = None,
 ) -> list[dict[str, Any]]:
-    failed_session_ids = {finding.session_id for finding in findings if finding.active != "active"}
+    min_age = max(0, int(min_non_active_age_sec))
+    failed_session_ids: set[str] = set()
+    for finding in findings:
+        if finding.active == "active":
+            continue
+        age = rescue_session_age_seconds(finding, now=now)
+        if min_age > 0 and (age is None or age < min_age):
+            continue
+        failed_session_ids.add(finding.session_id)
     limit = max(0, int(max_to_replace))
     if limit <= 0 or not failed_session_ids:
         return []

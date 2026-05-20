@@ -21,6 +21,7 @@ from scripts.manage_olcrtc_rescue_session import (
     make_session_id,
     parse_rescue_command_args,
     parse_rescue_list_output,
+    parse_rescue_since_timestamp,
     parse_room_broker_output,
     rescue_assigned_replacement_candidates,
     rescue_pool_warm_candidates,
@@ -258,6 +259,12 @@ rs-two|inactive|019e-other|Tue
     assert sessions[1].active == "inactive"
 
 
+def test_parse_rescue_since_timestamp_accepts_systemd_utc_format():
+    parsed = parse_rescue_since_timestamp("Wed 2026-05-20 06:08:52 UTC")
+
+    assert parsed == datetime(2026, 5, 20, 6, 8, 52, tzinfo=UTC)
+
+
 def test_active_rescue_sessions_for_room_returns_only_active_same_room():
     output = """session_id|active|room|since
 rs-one|active|https://stream.wb.ru/room/019e3cbb|Mon
@@ -406,8 +413,8 @@ rs-warm|active|https://stream.wb.ru/room/warm|Mon
 def test_rescue_assigned_replacement_candidates_selects_failed_assigned_rooms():
     findings = rescue_watchdog_findings(
         """session_id|active|room|since
-rs-dead|activating|https://stream.wb.ru/room/dead|Tue
-rs-free|failed|https://stream.wb.ru/room/free|Tue
+rs-dead|activating|https://stream.wb.ru/room/dead|Wed 2026-05-20 06:00:00 UTC
+rs-free|failed|https://stream.wb.ru/room/free|Wed 2026-05-20 06:00:00 UTC
 """
     )
     rooms = [
@@ -440,7 +447,13 @@ rs-free|failed|https://stream.wb.ru/room/free|Tue
         },
     ]
 
-    candidates = rescue_assigned_replacement_candidates(rooms, findings, max_to_replace=3)
+    candidates = rescue_assigned_replacement_candidates(
+        rooms,
+        findings,
+        max_to_replace=3,
+        min_non_active_age_sec=600,
+        now=datetime(2026, 5, 20, 6, 20, 0, tzinfo=UTC),
+    )
 
     assert [room["room_id"] for room in candidates] == ["dead"]
 
@@ -448,8 +461,8 @@ rs-free|failed|https://stream.wb.ru/room/free|Tue
 def test_rescue_assigned_replacement_candidates_respects_limit_and_oldest_first():
     findings = rescue_watchdog_findings(
         """session_id|active|room|since
-rs-newer|failed|https://stream.wb.ru/room/newer|Tue
-rs-older|failed|https://stream.wb.ru/room/older|Tue
+rs-newer|failed|https://stream.wb.ru/room/newer|Wed 2026-05-20 06:00:00 UTC
+rs-older|failed|https://stream.wb.ru/room/older|Wed 2026-05-20 06:00:00 UTC
 """
     )
     rooms = [
@@ -473,9 +486,51 @@ rs-older|failed|https://stream.wb.ru/room/older|Tue
         },
     ]
 
-    candidates = rescue_assigned_replacement_candidates(rooms, findings, max_to_replace=1)
+    candidates = rescue_assigned_replacement_candidates(
+        rooms,
+        findings,
+        max_to_replace=1,
+        now=datetime(2026, 5, 20, 6, 20, 0, tzinfo=UTC),
+    )
 
     assert [room["room_id"] for room in candidates] == ["older"]
+
+
+def test_rescue_assigned_replacement_candidates_waits_for_min_bad_age():
+    findings = rescue_watchdog_findings(
+        """session_id|active|room|since
+rs-flap|activating|https://stream.wb.ru/room/flap|Wed 2026-05-20 06:08:52 UTC
+"""
+    )
+    rooms = [
+        {
+            "id": 1,
+            "room_id": "flap",
+            "room_url": "https://stream.wb.ru/room/flap",
+            "status": "assigned",
+            "assigned_tg_id": 386029735,
+            "session_id": "rs-flap",
+            "updated_at": 1,
+        },
+    ]
+
+    early = rescue_assigned_replacement_candidates(
+        rooms,
+        findings,
+        max_to_replace=1,
+        min_non_active_age_sec=600,
+        now=datetime(2026, 5, 20, 6, 10, 0, tzinfo=UTC),
+    )
+    late = rescue_assigned_replacement_candidates(
+        rooms,
+        findings,
+        max_to_replace=1,
+        min_non_active_age_sec=600,
+        now=datetime(2026, 5, 20, 6, 20, 0, tzinfo=UTC),
+    )
+
+    assert early == []
+    assert [room["room_id"] for room in late] == ["flap"]
 
 
 def test_rescue_restartable_session_ids_only_includes_warm_and_assigned():
