@@ -268,6 +268,20 @@ Expected stdout:
 {"generated_at":"...","rooms":[{"room_id":"...","room_url":"https://stream.wb.ru/room/..."}]}
 ```
 
+For fully automatic Rescue, the olcRTC relay must also join WB Stream with the same authenticated
+account token. Otherwise the broker can create a room, but the relay still enters as a guest and WB
+may keep the room in `activating`/`403 guests cannot create rooms`.
+
+The Rescue systemd template exports:
+
+```ini
+Environment=OLCRTC_WBSTREAM_ACCESS_TOKEN_FILE=/etc/rootvpn/wbstream-access-token
+```
+
+This requires an olcRTC build that supports `OLCRTC_WBSTREAM_ACCESS_TOKEN_FILE` in the `wbstream`
+auth provider. After rebuilding/updating `/usr/local/bin/olcrtc`, smoke-test with an auto-created
+room and verify `/rescue_dashboard` shows the new session as `active` before issuing it to users.
+
 ## Assigned Session Auto-Replacement
 
 The watchdog can also replace a broken user-assigned room instead of only restarting the same

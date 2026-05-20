@@ -9,6 +9,7 @@ StartLimitBurst=5
 Type=simple
 User=root
 WorkingDirectory=/etc/rootvpn/rescue/%i
+Environment=OLCRTC_WBSTREAM_ACCESS_TOKEN_FILE=/etc/rootvpn/wbstream-access-token
 ExecStart=/usr/local/bin/olcrtc /etc/rootvpn/rescue/%i/server.yaml
 Restart=always
 RestartSec=60

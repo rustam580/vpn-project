@@ -1,0 +1,162 @@
+﻿diff --git a/internal/auth/wbstream/api.go b/internal/auth/wbstream/api.go
+index 9e0a74a..cd3c75d 100644
+--- a/internal/auth/wbstream/api.go
++++ b/internal/auth/wbstream/api.go
+@@ -11,6 +11,8 @@ import (
+ 	"errors"
+ 	"fmt"
+ 	"net/http"
++	"os"
++	"strings"
+ 
+ 	"github.com/openlibrecommunity/olcrtc/internal/protect"
+ )
+@@ -19,6 +21,11 @@ const defaultWSURL = "wss://rtc-el-02.wb.ru"
+ 
+ var apiBase = "https://stream.wb.ru" //nolint:gochecknoglobals // package-level state intentional
+ 
++const (
++	accessTokenEnv     = "OLCRTC_WBSTREAM_ACCESS_TOKEN"
++	accessTokenFileEnv = "OLCRTC_WBSTREAM_ACCESS_TOKEN_FILE"
++)
++
+ var (
+ 	errGuestRegister = errors.New("guest register failed")
+ 	errCreateRoom    = errors.New("create room failed")
+@@ -54,6 +61,21 @@ type tokenResponse struct {
+ 	ServerURL string `json:"serverUrl"`
+ }
+ 
++func configuredAccessToken() (string, error) {
++	if token := strings.TrimSpace(os.Getenv(accessTokenEnv)); token != "" {
++		return token, nil
++	}
++	path := strings.TrimSpace(os.Getenv(accessTokenFileEnv))
++	if path == "" {
++		return "", nil
++	}
++	raw, err := os.ReadFile(path) //nolint:gosec // operator-configured token file path.
++	if err != nil {
++		return "", fmt.Errorf("read %s: %w", accessTokenFileEnv, err)
++	}
++	return strings.TrimSpace(string(raw)), nil
++}
++
+ func registerGuest(ctx context.Context, displayName string) (string, error) {
+ 	u := apiBase + "/auth/api/v1/auth/user/guest-register"
+ 	reqBody := guestRegisterRequest{
+diff --git a/internal/auth/wbstream/api_test.go b/internal/auth/wbstream/api_test.go
+index 2b06f88..3844e1f 100644
+--- a/internal/auth/wbstream/api_test.go
++++ b/internal/auth/wbstream/api_test.go
+@@ -6,6 +6,8 @@ import (
+ 	"errors"
+ 	"net/http"
+ 	"net/http/httptest"
++	"os"
++	"path/filepath"
+ 	"testing"
+ 
+ 	"github.com/openlibrecommunity/olcrtc/internal/auth"
+@@ -133,3 +135,61 @@ func TestWBStreamIssue(t *testing.T) {
+ 		t.Fatalf("creds.Extra[roomID] = %q", creds.Extra["roomID"])
+ 	}
+ }
++
++func TestWBStreamIssueUsesConfiguredAccessToken(t *testing.T) {
++	const configuredToken = "configured-access"
++	var guestRegisterCalled bool
++	mux := http.NewServeMux()
++	mux.HandleFunc("POST /auth/api/v1/auth/user/guest-register", func(w http.ResponseWriter, _ *http.Request) {
++		guestRegisterCalled = true
++		_ = json.NewEncoder(w).Encode(guestRegisterResponse{AccessToken: testAccessToken}) //nolint:gosec
++	})
++	mux.HandleFunc("POST /api-room/api/v1/room/"+testRoomID+"/join", func(w http.ResponseWriter, r *http.Request) {
++		if r.Header.Get("Authorization") != "Bearer "+configuredToken {
++			t.Fatalf("join auth = %q", r.Header.Get("Authorization"))
++		}
++		w.WriteHeader(http.StatusOK)
++	})
++	mux.HandleFunc("GET /api-room-manager/v2/room/"+testRoomID+"/connection-details",
++		func(w http.ResponseWriter, r *http.Request) {
++			if r.Header.Get("Authorization") != "Bearer "+configuredToken {
++				t.Fatalf("token auth = %q", r.Header.Get("Authorization"))
++			}
++			_ = json.NewEncoder(w).Encode(tokenResponse{RoomToken: testToken})
++		})
++
++	withWBAPIServer(t, mux)
++	t.Setenv(accessTokenEnv, configuredToken)
++	t.Setenv(accessTokenFileEnv, "")
++
++	creds, err := Provider{}.Issue(context.Background(), auth.Config{
++		RoomURL: testRoomID,
++		Name:    testPeerName,
++	})
++	if err != nil {
++		t.Fatalf("Issue() error = %v", err)
++	}
++	if guestRegisterCalled {
++		t.Fatal("Issue() registered a guest despite configured access token")
++	}
++	if creds.Token != testToken {
++		t.Fatalf("creds.Token = %q", creds.Token)
++	}
++}
++
++func TestConfiguredAccessTokenReadsFile(t *testing.T) {
++	path := filepath.Join(t.TempDir(), "wbstream-token")
++	if err := os.WriteFile(path, []byte(" file-token \n"), 0o600); err != nil {
++		t.Fatalf("WriteFile() error = %v", err)
++	}
++	t.Setenv(accessTokenEnv, "")
++	t.Setenv(accessTokenFileEnv, path)
++
++	token, err := configuredAccessToken()
++	if err != nil {
++		t.Fatalf("configuredAccessToken() error = %v", err)
++	}
++	if token != "file-token" {
++		t.Fatalf("configuredAccessToken() = %q", token)
++	}
++}
+diff --git a/internal/auth/wbstream/wbstream.go b/internal/auth/wbstream/wbstream.go
+index f27f89f..caabaa5 100644
+--- a/internal/auth/wbstream/wbstream.go
++++ b/internal/auth/wbstream/wbstream.go
+@@ -21,9 +21,15 @@ func (Provider) DefaultServiceURL() string { return "https://stream.wb.ru" }
+ // If cfg.RoomURL is empty or "any", a fresh room is created on the fly —
+ // keeping the behaviour the legacy wbstream provider had.
+ func (Provider) Issue(ctx context.Context, cfg auth.Config) (auth.Credentials, error) {
+-	accessToken, err := registerGuest(ctx, cfg.Name)
++	accessToken, err := configuredAccessToken()
+ 	if err != nil {
+-		return auth.Credentials{}, fmt.Errorf("register guest: %w", err)
++		return auth.Credentials{}, fmt.Errorf("configured access token: %w", err)
++	}
++	if accessToken == "" {
++		accessToken, err = registerGuest(ctx, cfg.Name)
++		if err != nil {
++			return auth.Credentials{}, fmt.Errorf("register guest: %w", err)
++		}
+ 	}
+ 
+ 	roomID := cfg.RoomURL
+@@ -58,9 +64,15 @@ func (Provider) Issue(ctx context.Context, cfg auth.Config) (auth.Credentials, e
+ // CreateRoom registers a temporary guest and creates a WB Stream room.
+ // Used by gen mode.
+ func (Provider) CreateRoom(ctx context.Context, cfg auth.Config) (string, error) {
+-	accessToken, err := registerGuest(ctx, cfg.Name)
++	accessToken, err := configuredAccessToken()
+ 	if err != nil {
+-		return "", fmt.Errorf("register guest: %w", err)
++		return "", fmt.Errorf("configured access token: %w", err)
++	}
++	if accessToken == "" {
++		accessToken, err = registerGuest(ctx, cfg.Name)
++		if err != nil {
++			return "", fmt.Errorf("register guest: %w", err)
++		}
+ 	}
+ 	roomID, err := createRoom(ctx, accessToken)
+ 	if err != nil {
