@@ -56,6 +56,7 @@ from src.vpnbot.message_utils import (
     quick_connect_guide_text,
 )
 from src.vpnbot.messaging import (
+    NO_LINK_PREVIEW,
     _render_config_block,
     collect_device_links,
     notify_access_updated,
@@ -146,6 +147,15 @@ from src.vpnbot.bot_ops import (
     build_ref_top_text,
 )
 from src.vpnbot.bot_rate_limit import InMemoryRateLimiter
+from src.vpnbot.channel_gate import (
+    channel_gate_allowed_callback,
+    channel_gate_allowed_message,
+    channel_gate_chat_id,
+    channel_gate_enabled,
+    channel_required_keyboard,
+    channel_required_text,
+    is_channel_member_status,
+)
 from src.vpnbot.db.bot_repo import Repo
 from src.vpnbot.bot_router_helpers import (
     BroadcastPreviewContext,
@@ -317,6 +327,42 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
             marzban=marzban,
         )
 
+    async def is_channel_subscribed(bot: Bot, telegram_id: int) -> bool:
+        if not channel_gate_enabled(settings):
+            return True
+        chat_id = channel_gate_chat_id(settings)
+        if not chat_id:
+            logging.warning("CHANNEL_SUBSCRIPTION_REQUIRED=1, but CHANNEL_CHAT_ID/CHANNEL_URL is not usable")
+            return False
+        try:
+            member = await bot.get_chat_member(chat_id=chat_id, user_id=telegram_id)
+        except Exception:
+            logging.exception("Failed to check channel subscription for tg=%s chat=%s", telegram_id, chat_id)
+            return False
+        return is_channel_member_status(getattr(member, "status", ""))
+
+    async def guard_channel_subscription_message(message: Message, telegram_id: int) -> bool:
+        if await is_channel_subscribed(message.bot, telegram_id):
+            return True
+        await message.answer(
+            channel_required_text(settings),
+            reply_markup=channel_required_keyboard(settings),
+            link_preview_options=NO_LINK_PREVIEW,
+        )
+        return False
+
+    async def guard_channel_subscription_callback(callback: CallbackQuery, telegram_id: int) -> bool:
+        if await is_channel_subscribed(callback.bot, telegram_id):
+            return True
+        await callback.answer("Сначала подпишитесь на канал.", show_alert=True)
+        if callback.message is not None:
+            await callback.message.answer(
+                channel_required_text(settings),
+                reply_markup=channel_required_keyboard(settings),
+                link_preview_options=NO_LINK_PREVIEW,
+            )
+        return False
+
     async def guard_message_rate_limit(message: Message) -> bool:
         if not message.from_user:
             return False
@@ -328,7 +374,9 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
         if is_admin(tg_id, settings):
             return True
         if message_limiter.allow(f"msg:{tg_id}"):
-            return True
+            if channel_gate_allowed_message(message.text):
+                return True
+            return await guard_channel_subscription_message(message, tg_id)
         await message.answer("Слишком много запросов. Подождите 10-20 секунд и повторите.")
         return False
 
@@ -343,7 +391,9 @@ def build_router(settings: Settings, repo: Repo, marzban: MarzbanClient) -> Rout
         if is_admin(tg_id, settings):
             return True
         if callback_limiter.allow(f"cb:{tg_id}"):
-            return True
+            if channel_gate_allowed_callback(callback.data):
+                return True
+            return await guard_channel_subscription_callback(callback, tg_id)
         await callback.answer("Слишком часто. Подождите немного.", show_alert=True)
         return False
 

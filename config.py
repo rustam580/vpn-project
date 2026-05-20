@@ -406,6 +406,8 @@ def _load_misc_block() -> dict[str, Any]:
             "SUPPORT_TEXT", "Напишите нам, поможем с подключением и оплатой."
         ).strip(),
         "channel_url": os.getenv("CHANNEL_URL", "").strip(),
+        "channel_chat_id": os.getenv("CHANNEL_CHAT_ID", "").strip(),
+        "channel_subscription_required": env_bool("CHANNEL_SUBSCRIPTION_REQUIRED", False),
         "referral_bonus_days": int(os.getenv("REFERRAL_BONUS_DAYS", "3")),
         "device_limit": int(os.getenv("DEVICE_LIMIT", "1")),
         "device_add_rub": float(os.getenv("DEVICE_ADD_RUB", "99")),
@@ -605,6 +607,8 @@ class Settings:
     support_username: str
     support_text: str
     channel_url: str
+    channel_chat_id: str
+    channel_subscription_required: bool
     referral_bonus_days: int
     device_limit: int
     device_add_rub: float

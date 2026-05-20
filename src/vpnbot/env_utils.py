@@ -23,6 +23,8 @@ ENV_EDITABLE_KEYS: dict[str, str] = {
     "SUPPORT_USERNAME": "str",
     "SUPPORT_TEXT": "str",
     "CHANNEL_URL": "str",
+    "CHANNEL_CHAT_ID": "str",
+    "CHANNEL_SUBSCRIPTION_REQUIRED": "bool",
     "CONFIG_DELIVERY_MODE": "str",
     "SUBSCRIPTION_PUBLIC_BASE_URL": "str",
     "DEPLOY_BROADCAST_USERS": "bool",
