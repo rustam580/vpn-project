@@ -1,6 +1,7 @@
 """Admin-facing command and button handlers extracted from build_router."""
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
@@ -58,6 +59,33 @@ class AdminRuntimeDeps:
     pending_broadcast_buttons: dict[int, bool]
     pending_broadcast_text: dict[int, str]
     track_event: Callable[..., Awaitable[None]] | None = None
+
+
+async def wait_for_rescue_session_active(
+    *,
+    session_id: str,
+    deploy_host: str,
+    remote_root: str,
+    timeout_sec: int,
+    attempts: int = 6,
+    delay_sec: float = 5.0,
+) -> tuple[bool, str]:
+    last_output = ""
+    for attempt in range(max(1, attempts)):
+        if attempt:
+            await asyncio.sleep(delay_sec)
+        result = await fetch_rescue_list(
+            deploy_host=deploy_host,
+            remote_root=remote_root,
+            timeout_sec=timeout_sec,
+        )
+        last_output = result.output
+        if not result.ok:
+            continue
+        for remote_session in parse_rescue_list_output(result.output):
+            if remote_session.session_id == session_id and remote_session.active == "active":
+                return True, result.output
+    return False, last_output
 
 
 def register_admin_runtime_handlers(*, router: Router, deps: AdminRuntimeDeps) -> None:
@@ -551,6 +579,39 @@ def register_admin_runtime_handlers(*, router: Router, deps: AdminRuntimeDeps) -
                 increment_fail_count=True,
             )
             for chunk in split_message(f"Rescue deploy failed at {result.failed_step}\n{result.output}", limit=3500):
+                await message.answer(chunk, link_preview_options=NO_LINK_PREVIEW)
+            return
+
+        remote_root = str(getattr(settings, "olcrtc_rescue_remote_root", "/etc/rootvpn/rescue"))
+        is_active, active_check_output = await wait_for_rescue_session_active(
+            session_id=session.session_id,
+            deploy_host=deploy_host,
+            remote_root=remote_root,
+            timeout_sec=max(5, int(getattr(settings, "olcrtc_rescue_deploy_timeout_sec", 60))),
+        )
+        if not is_active:
+            await repo.mark_rescue_room_status(
+                room_id=str(room["room_id"]),
+                status="bad",
+                session_id=session.session_id,
+                telegram_id=target_tg_id,
+                increment_fail_count=True,
+            )
+            await stop_rescue_session(
+                session_id=session.session_id,
+                deploy_host=deploy_host,
+                timeout_sec=max(5, int(getattr(settings, "olcrtc_rescue_deploy_timeout_sec", 60))),
+            )
+            details = (
+                "Rescue deploy started, but relay did not become active. User URI was not sent.\n"
+                f"room: {session.room_url}\n"
+                f"session: {session.session_id}\n"
+                f"target: {target_tg_id}\n"
+                "room marked: bad\n\n"
+                "Last remote list:\n"
+                f"{active_check_output}"
+            )
+            for chunk in split_message(details, limit=3500):
                 await message.answer(chunk, link_preview_options=NO_LINK_PREVIEW)
             return
 
