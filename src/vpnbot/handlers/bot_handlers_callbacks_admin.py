@@ -32,10 +32,13 @@ from src.vpnbot.keyboards.web_order_keyboards import (
 from src.vpnbot.marzban_sync import audit_marzban_sync
 from src.vpnbot.message_utils import split_message
 from src.vpnbot.olcrtc_rescue import (
+    active_rescue_session_ids,
     diagnose_rescue_status_output,
     fetch_rescue_list,
     fetch_rescue_status,
     format_rescue_dashboard,
+    parse_rescue_list_output,
+    rescue_stale_pool_rows,
     validate_session_id,
 )
 from src.vpnbot.payment_helpers import cryptobot_check_invoice, yookassa_check_payment
@@ -113,15 +116,80 @@ def register_admin_callback_handlers(*, router: Router, deps: AdminCallbackDeps)
         return InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="🔄 Обновить Rescue", callback_data="admin:rescue_dashboard")],
+                [InlineKeyboardButton(text="🧹 Сверить пул", callback_data="admin:rescue_reconcile")],
+                [InlineKeyboardButton(text="✅ Очистить устаревшие", callback_data="admin:rescue_reconcile_apply")],
+                [InlineKeyboardButton(text="🏊 Пул комнат", switch_inline_query_current_chat="/rescue_rooms")],
                 [
                     InlineKeyboardButton(
-                        text="➕ Новая Rescue-сессия",
-                        switch_inline_query_current_chat="/rescue ",
+                        text="⚡ Выдать из пула",
+                        switch_inline_query_current_chat="/rescue_create ",
                     )
                 ],
                 [InlineKeyboardButton(text="⬅️ Админка", callback_data="admin:home")],
             ]
         )
+
+    async def build_rescue_reconcile_text(*, apply_changes: bool) -> str:
+        deploy_host = str(getattr(settings, "olcrtc_rescue_deploy_host", "") or "").strip()
+        if not bool(getattr(settings, "olcrtc_rescue_auto_deploy", False)) or not deploy_host:
+            return "Rescue reconcile requires OLCRTC_RESCUE_AUTO_DEPLOY=1 and OLCRTC_RESCUE_DEPLOY_HOST."
+
+        result = await fetch_rescue_list(
+            deploy_host=deploy_host,
+            remote_root=str(getattr(settings, "olcrtc_rescue_remote_root", "/etc/rootvpn/rescue")),
+            timeout_sec=int(getattr(settings, "olcrtc_rescue_deploy_timeout_sec", 60)),
+        )
+        if not result.ok:
+            return f"Could not list Rescue sessions on {deploy_host}.\n{result.output}"
+
+        remote_sessions = parse_rescue_list_output(result.output)
+        active_ids = active_rescue_session_ids(remote_sessions)
+        remote_by_id = {session.session_id: session for session in remote_sessions}
+        rows = await repo.list_rescue_rooms()
+        stale_rows = rescue_stale_pool_rows(rows, remote_sessions, min_non_active_age_sec=0)
+
+        changed = 0
+        if apply_changes:
+            for row in stale_rows:
+                session_id = str(row.get("session_id") or "").strip()
+                telegram_id = row.get("assigned_tg_id")
+                await repo.mark_rescue_room_status(
+                    room_id=str(row["room_id"]),
+                    status="bad",
+                    session_id=session_id,
+                    telegram_id=int(telegram_id) if telegram_id else None,
+                    increment_fail_count=True,
+                )
+                changed += 1
+
+        lines = [
+            "Rescue reconcile: " + ("applied" if apply_changes else "dry-run"),
+            f"host: {deploy_host}",
+            f"remote sessions: {len(remote_sessions)} total / {len(active_ids)} active",
+            f"stale warm/assigned rows: {len(stale_rows)}",
+            "",
+        ]
+        if stale_rows:
+            for idx, row in enumerate(stale_rows, start=1):
+                session_id = str(row.get("session_id") or "").strip()
+                remote_status = remote_by_id.get(session_id).active if session_id in remote_by_id else "missing"
+                lines.extend(
+                    [
+                        f"{idx}. {row['status']} -> bad | {row['room_id']}",
+                        f"   tg: {row['assigned_tg_id'] or '-'}",
+                        f"   session: {session_id}",
+                        f"   remote: {remote_status}",
+                        f"   room: {row['room_url']}",
+                        "",
+                    ]
+                )
+            if not apply_changes:
+                lines.append("Очистить устаревшие строки можно кнопкой ниже.")
+        elif not apply_changes:
+            lines.append("Nothing to clean.")
+        if apply_changes:
+            lines.append(f"changed: {changed}")
+        return "\n".join(lines).rstrip()
 
     @router.callback_query(F.data.startswith("admin:"))
     async def admin_callback(callback: CallbackQuery) -> None:
@@ -332,6 +400,15 @@ def register_admin_callback_handlers(*, router: Router, deps: AdminCallbackDeps)
                 if result.ok
                 else f"Rescue dashboard: failed at {result.failed_step}\n{result.output}"
             )
+            chunks = split_message(text, limit=3500)
+            for chunk in chunks[:-1]:
+                await callback.message.answer(chunk)
+            await callback.message.answer(chunks[-1], reply_markup=rescue_dashboard_keyboard())
+            return
+        if action in {"rescue_reconcile", "rescue_reconcile_apply"}:
+            apply_changes = action == "rescue_reconcile_apply"
+            await callback.answer("Cleaning Rescue pool..." if apply_changes else "Checking Rescue pool...")
+            text = await build_rescue_reconcile_text(apply_changes=apply_changes)
             chunks = split_message(text, limit=3500)
             for chunk in chunks[:-1]:
                 await callback.message.answer(chunk)

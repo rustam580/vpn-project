@@ -119,7 +119,7 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
         broker_command = str(getattr(settings, "olcrtc_rescue_room_broker_command", "") or "").strip()
         if not broker_enabled or not broker_command:
             await message.answer(
-                "Rescue Beta пока не выдается автоматически. Напишите в поддержку, мы включим аварийный канал вручную."
+                "Аварийный доступ пока не выдается автоматически. Напишите в поддержку, мы включим канал вручную."
             )
             return None
 
@@ -160,7 +160,7 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
 
         if not await _has_active_access(tg_id):
             await message.answer(
-                "🆘 Rescue Beta доступен пользователям с активной подпиской.\n"
+                "🆘 Аварийный доступ доступен пользователям с активной подпиской.\n"
                 "Сначала нажмите «🔑 Получить подписку» или «💳 Купить доступ»."
             )
             return
@@ -168,11 +168,11 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
         auto_deploy_enabled = bool(getattr(settings, "olcrtc_rescue_auto_deploy", False))
         deploy_host = str(getattr(settings, "olcrtc_rescue_deploy_host", "") or "").strip()
         if not auto_deploy_enabled or not deploy_host:
-            await message.answer("Rescue Beta сейчас на настройке. Если нужен аварийный доступ, напишите в поддержку.")
+            await message.answer("Аварийный доступ сейчас на настройке. Если он нужен срочно, напишите в поддержку.")
             return
 
         await message.answer(
-            "🆘 Готовлю Rescue Beta.\n"
+            "🆘 Готовлю аварийный доступ.\n"
             "Создаю аварийный канал и проверяю подключение. Обычно это занимает 20-60 секунд."
         )
 
@@ -205,7 +205,7 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
                     status="free",
                     increment_fail_count=True,
                 )
-                await message.answer("Эта Rescue-комната уже недоступна. Попробуйте запросить Rescue Beta еще раз через минуту.")
+                await message.answer("Эта Rescue-комната уже недоступна. Попробуйте запросить аварийный доступ еще раз через минуту.")
                 return
 
             client_id = default_client_id(tg_id=str(tg_id))
@@ -231,7 +231,7 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
             session = create_local_session(room=str(room["room_url"]), tg_id=str(tg_id))
         except Exception:
             await repo.mark_rescue_room_status(room_id=str(room["room_id"]), status="free")
-            await message.answer("Не удалось подготовить Rescue Beta. Попробуйте позже или напишите в поддержку.")
+            await message.answer("Не удалось подготовить аварийный доступ. Попробуйте позже или напишите в поддержку.")
             return
 
         steps = build_deploy_steps(
@@ -273,7 +273,7 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
                 timeout_sec=deploy_timeout,
             )
             details = (
-                "Rescue-сервер не успел подключиться к комнате. Попробуйте запросить Rescue Beta еще раз через минуту.\n\n"
+                "Rescue-сервер не успел подключиться к комнате. Попробуйте запросить аварийный доступ еще раз через минуту.\n\n"
                 "Технический статус:\n"
                 f"{active_check_output}"
             )
@@ -587,7 +587,7 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
     async def status_cmd(message: Message) -> None:
         await config_cmd(message)
 
-    @router.message(F.text == "🆘 Rescue Beta")
+    @router.message(F.text.in_({"🆘 Rescue Beta", "🆘 Аварийный доступ"}))
     async def rescue_beta_btn(message: Message) -> None:
         await issue_rescue_beta(message)
 

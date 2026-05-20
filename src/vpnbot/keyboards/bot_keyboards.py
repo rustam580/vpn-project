@@ -17,7 +17,7 @@ def keyboard_for_user(*, is_admin: bool) -> ReplyKeyboardMarkup:
     rows: list[list[KeyboardButton]] = [
         [KeyboardButton(text="🔑 Получить подписку"), KeyboardButton(text="💳 Купить доступ")],
         [KeyboardButton(text="📊 Мой статус"), KeyboardButton(text="📂 Еще")],
-        [KeyboardButton(text="🆘 Rescue Beta"), KeyboardButton(text="🆘 Поддержка")],
+        [KeyboardButton(text="🆘 Аварийный доступ"), KeyboardButton(text="🆘 Поддержка")],
     ]
     if is_admin:
         rows.append([KeyboardButton(text="🛠 Админ-кабинет")])
@@ -39,7 +39,7 @@ def more_actions_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="❓ FAQ", callback_data="quick:faq"),
                 InlineKeyboardButton(text="📢 Наш канал", callback_data="quick:channel"),
             ],
-            [InlineKeyboardButton(text="🆘 Rescue Beta", switch_inline_query_current_chat="/rescue_beta")],
+            [InlineKeyboardButton(text="🆘 Аварийный доступ", switch_inline_query_current_chat="/rescue_beta")],
             [InlineKeyboardButton(text="📄 Правила и политика", callback_data="quick:legal")],
             [InlineKeyboardButton(text="🚨 Проблема с подключением", callback_data="quick:issue")],
         ]
@@ -57,12 +57,13 @@ def admin_panel_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="📡 Xray ошибки", callback_data="admin:xray_errors")],
             [InlineKeyboardButton(text="🧭 Marzban/DB аудит", callback_data="admin:sync_audit")],
             [InlineKeyboardButton(text="🆘 Rescue Dashboard", callback_data="admin:rescue_dashboard")],
+            [InlineKeyboardButton(text="🧹 Rescue Reconcile", callback_data="admin:rescue_reconcile")],
             [InlineKeyboardButton(text="🏊 Rescue Room Pool", switch_inline_query_current_chat="/rescue_rooms")],
             [InlineKeyboardButton(text="🔥 Warm Rescue Room", switch_inline_query_current_chat="/rescue_room_warm ")],
             [InlineKeyboardButton(text="⚡ Rescue из пула", switch_inline_query_current_chat="/rescue_create ")],
             [
                 InlineKeyboardButton(
-                    text="🆘 Rescue Beta",
+                    text="🆘 Ручная Rescue",
                     switch_inline_query_current_chat="/rescue ",
                 )
             ],

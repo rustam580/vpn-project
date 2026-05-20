@@ -155,7 +155,7 @@ def register_user_message_handlers(*, router: Router, deps: UserMessageDeps) -> 
             "• <code>/payment_issues</code> — проблемные оплаты и выдача\n"
             "• <code>/sync_audit</code> — Marzban/DB рассинхрон\n"
             "• <code>/xray_errors [minutes]</code> — ошибки Xray\n"
-            "• <code>/rescue &lt;telegram_id&gt; &lt;wb_room_url&gt;</code> — Rescue Beta\n"
+            "• <code>/rescue &lt;telegram_id&gt; &lt;wb_room_url&gt;</code> — ручная Rescue-сессия\n"
             "• <code>/rescue_room_add &lt;wb_room_url&gt; [note]</code> — добавить WB-комнату\n"
             "• <code>/rescue_room_warm &lt;room_id_or_wb_room_url&gt;</code> — прогреть комнату\n"
             "• <code>/rescue_rooms</code> — пул WB-комнат\n"

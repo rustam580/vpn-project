@@ -1,10 +1,10 @@
-# RootVPN olcRTC Rescue Beta Lab
+# RootVPN olcRTC Rescue
 
 This is the chosen fast path for the whitelist-resilience experiment.
 
 ## Decision
 
-Use `olcrtc` as an isolated Go/Pion sidecar for the first real Rescue Beta test.
+Use `olcrtc` as an isolated Go/Pion sidecar for RootVPN emergency access.
 
 Primary profile:
 
@@ -19,20 +19,20 @@ Why this path:
 - `vp8channel` is already a byte tunnel over valid-looking VP8 samples with KCP reliability.
 - `olcrtc` already has client/server modes, SOCKS5, encryption, smux, liveness, lifecycle controls, and Docker/Podman wrappers.
 
-## Boundary
+## Product Boundary
 
-Keep this outside the production RootVPN bot/site/Marzban flow until closed beta criteria are met.
-
-Do not advertise it as a public tariff yet. Treat it as admin-only Rescue Beta.
+Rescue is now exposed to paid users as `🆘 Аварийный доступ`. Keep it as an emergency path, not a
+normal tariff replacement: the bot may issue it automatically, but operators should still monitor
+carrier health and room-pool capacity.
 
 ## Field Status
 
 2026-05-18 validation:
 
 - Lab/LDPlayer: Olcbox TUN routed browser traffic through the test VPS `104.238.29.239`; `2ip.ru` showed the VPS IP, and Speedtest reported about `6.19 Mbps` download with about `404 ms` ping.
-- Real mobile field check in Anapa, RU: during a whitelist-like mobile restriction, the tester confirmed non-whitelisted apps/pages did not load on mobile data without VPN, then loaded after importing the RootVPN Rescue Beta URI and starting Olcbox.
+- Real mobile field check in Anapa, RU: during a whitelist-like mobile restriction, the tester confirmed non-whitelisted apps/pages did not load on mobile data without VPN, then loaded after importing the RootVPN Rescue URI and starting Olcbox.
 
-Interpretation: the core Rescue Beta hypothesis is confirmed for one real-world sample. Next work is packaging and reliability, not proving the basic tunnel concept again.
+Interpretation: the core Rescue hypothesis is confirmed for one real-world sample. Current work is packaging and reliability, not proving the basic tunnel concept again.
 
 ## License
 
@@ -162,18 +162,21 @@ python scripts/manage_olcrtc_rescue_session.py status rs-20260518202449-38602973
   --deploy-host rootvpn-rescue-fi
 ```
 
-## Warm Room Pool Automation
+## Room Pool Automation
 
-The current reliable automation model is:
+The current automation model is:
 
-1. Operator creates WB Stream rooms with an authenticated WB account.
-2. Operator stores them in the bot pool:
+1. The bot asks the WB room broker for new rooms when the pool is short.
+2. The watchdog warms rooms on the Rescue VPS before users need them.
+3. A paid user presses `🆘 Аварийный доступ`; the bot first claims an active warm room.
+4. If no warm room exists, the bot creates a room on demand, deploys olcRTC, waits for `active`, and sends the URI.
+5. Admins can still add a manual room if WB automation is unavailable:
 
 ```text
 /rescue_room_add <wb_room_url> [note]
 ```
 
-3. The watchdog keeps a minimum number of free rooms warmed on the Rescue VPS:
+The watchdog keeps a minimum number of free/warm rooms:
 
 ```dotenv
 OLCRTC_RESCUE_WATCHDOG_ENABLED=1
@@ -183,10 +186,9 @@ OLCRTC_RESCUE_POOL_MIN_WARM=1
 OLCRTC_RESCUE_POOL_MAX_WARM_PER_TICK=1
 ```
 
-This is deliberately not a full WB login bot yet. If a WB room can still be joined, the server-side
-relay can be restarted and recovered automatically. If the WB room is permanently closed or WB asks
-for a fresh authenticated host action, the next step is an authenticated room broker with stored
-operator account state.
+The broker reads a stored WB access token and prints room URLs to stdout. The token must also be
+available to the Rescue VPS so the olcRTC relay joins as the authenticated account instead of as a
+guest.
 
 Optional room broker hook:
 
@@ -299,7 +301,10 @@ When an `assigned` session appears as non-active in `/rescue_list`, the bot:
 2. Starts a new olcRTC service if the replacement was only `free`.
 3. Sends the user a fresh Rescue URI.
 4. Marks the old room as `bad` and stops the old service.
-5. Alerts admins with the replacement result.
+5. Logs the successful replacement quietly.
+
+Successful self-heal, restart, broker, warm, and cleanup actions are logged quietly. Telegram alerts
+are reserved for unresolved problems.
 
 `OLCRTC_RESCUE_ASSIGNED_REPLACE_MIN_AGE_SEC` is intentionally conservative. WB/olcRTC can briefly
 show `activating` while a room wakes up or systemd restarts the relay. Replacing immediately causes
@@ -314,13 +319,13 @@ Telegram bot contract, as long as it prints room URLs to stdout.
 
 ## RootVPN Integration Target
 
-If the lab works for 7 days:
+Current integration target:
 
-1. Add a bot admin-only command to generate Rescue Beta configs/URI for a paid user.
-2. Add short-lived entitlement token or per-user key.
-3. Run sidecar server under systemd or container with resource limits.
-4. Add health checks: session connected, SOCKS roundtrip, traffic counters, room TTL, reconnect count.
-5. Only then consider a branded client path.
+1. Keep user flow simple: active subscription -> `🆘 Аварийный доступ` -> URI -> START.
+2. Keep a warm room pool above zero during restrictions.
+3. Keep `/rescue_dashboard`, `/rescue_rooms`, and `/rescue_reconcile apply` for operator cleanup.
+4. Add traffic/accounting limits later; do not block the current emergency-access launch on limits.
+5. Long-term: branded client path so users do not need to paste a custom URI manually.
 
 ## Kill Criteria
 

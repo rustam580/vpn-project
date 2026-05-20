@@ -30,6 +30,7 @@ def test_admin_panel_has_rescue_dashboard_button() -> None:
     buttons = [button for row in keyboard.inline_keyboard for button in row]
 
     assert any(button.callback_data == "admin:rescue_dashboard" for button in buttons)
+    assert any(button.callback_data == "admin:rescue_reconcile" for button in buttons)
 
 
 def test_admin_panel_has_rescue_pool_buttons() -> None:
