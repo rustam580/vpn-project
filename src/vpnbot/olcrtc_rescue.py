@@ -521,7 +521,8 @@ def rescue_room_broker_request_count(
     max_rooms: int,
 ) -> int:
     capacity = rescue_pool_capacity(rooms, remote_sessions)
-    warm_shortage = max(0, int(min_warm) - capacity.warm_active)
+    warm_slots = capacity.warm_active + capacity.warm_stale
+    warm_shortage = max(0, int(min_warm) - warm_slots)
     free_after_warm = max(0, capacity.free - warm_shortage)
     free_shortage = max(0, int(min_free) - free_after_warm)
     return max(0, min(int(max_rooms), warm_shortage + free_shortage))
@@ -574,7 +575,10 @@ def rescue_pool_warm_candidates(
     min_warm: int,
     max_to_warm: int,
 ) -> list[dict[str, Any]]:
-    needed = max(0, int(min_warm) - rescue_pool_capacity(rooms, remote_sessions).warm_active)
+    capacity = rescue_pool_capacity(rooms, remote_sessions)
+    # A non-active warm room may still be starting or rate-limited by the carrier.
+    # Do not create an infinite pile of replacement rooms while it is in flight.
+    needed = max(0, int(min_warm) - (capacity.warm_active + capacity.warm_stale))
     limit = max(0, min(needed, int(max_to_warm)))
     if limit <= 0:
         return []

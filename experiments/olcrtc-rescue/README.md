@@ -214,6 +214,11 @@ https://stream.wb.ru/room/019e...
 Keep WB cookies/profile/token storage inside that broker process, not in the Telegram bot. The bot
 only consumes room URLs and manages deployment.
 
+Pool auto-warm counts both active and non-active `warm` rows as occupied warm slots. This prevents
+runaway room creation when WB temporarily returns `403/429` and several warm services sit in
+`activating`. Clean or stop stale warm rooms manually instead of letting the broker create an
+unbounded queue.
+
 ### Token-Based Broker Script
 
 This repo includes a minimal broker script:
