@@ -16,6 +16,7 @@ from aiogram.types import LinkPreviewOptions, Message
 from config import Settings
 from models import MarzbanUser
 from src.vpnbot.bot_access import ensure_device
+from src.vpnbot.bot_formatters import format_expire, format_time_left
 from src.vpnbot.device_utils import _device_label
 from src.vpnbot.db.bot_repo import Repo
 from src.vpnbot.message_utils import config_import_hint_text
@@ -23,6 +24,13 @@ from src.vpnbot.services.bot_marzban import MarzbanClient
 from utils import extract_links, select_delivery_links, status_text
 
 NO_LINK_PREVIEW = LinkPreviewOptions(is_disabled=True)
+
+
+def _device_label_with_expire(label: str, user: Mapping[str, Any] | MarzbanUser) -> str:
+    expire_ts = int(user.get("expire", 0) or 0)
+    if expire_ts <= 0:
+        return f"{label} — доступ без срока"
+    return f"{label} — доступ до {format_expire(expire_ts)} ({format_time_left(expire_ts)})"
 
 
 async def send_status(message: Message, user: Mapping[str, Any] | MarzbanUser) -> None:
@@ -72,14 +80,13 @@ async def collect_device_links(
             mode=settings.config_delivery_mode,
             public_base_url=settings.subscription_public_base_url,
         )
-        label = _device_label(1, None)
+        label = _device_label_with_expire(_device_label(1, None), user)
         return [(1, label, link) for link in links]
 
     result: list[tuple[int, str, str]] = []
     for row in devices:
         device_id = int(row["device_id"])
         username = str(row["marzban_username"])
-        label = _device_label(device_id, row.get("device_name"))
         user = await marzban.get_user(username)
         if not user:
             continue
@@ -91,6 +98,7 @@ async def collect_device_links(
             mode=settings.config_delivery_mode,
             public_base_url=settings.subscription_public_base_url,
         )
+        label = _device_label_with_expire(_device_label(device_id, row.get("device_name")), user)
         for link in links:
             result.append((device_id, label, link))
     return sorted(result, key=lambda item: (item[0], item[2]))

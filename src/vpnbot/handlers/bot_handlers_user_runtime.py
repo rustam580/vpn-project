@@ -16,6 +16,7 @@ from src.vpnbot.bot_access import ensure_device
 from src.vpnbot.bot_formatters import (
     format_expire,
     format_last_online,
+    format_time_left,
     format_used,
     plan_gb_text,
     plans_list_text,
@@ -484,14 +485,33 @@ def register_user_runtime_handlers(*, router: Router, deps: UserRuntimeDeps) -> 
             await message.answer("Устройства не найдены. Сначала получите подписку.")
             return
         lines: list[str] = []
-        for row in devices:
+        for row in sorted(devices, key=lambda item: int(item.get("device_id") or 0)):
             device_id = int(row["device_id"])
             label = _device_label(device_id, row.get("device_name"))
             if label.startswith("Устройство"):
-                lines.append(f"{device_id}. {label}")
+                title = label
             else:
-                lines.append(f"{device_id}. Устройство {device_id} — {label}")
-        await message.answer("Ваши устройства:\n" + "\n".join(lines))
+                title = f"Устройство {device_id} — {label}"
+
+            username = str(row.get("marzban_username") or "").strip()
+            user = await marzban.get_user(username) if username else None
+            if not user:
+                lines.append(f"{device_id}. {title}\n   Профиль не найден на сервере")
+                continue
+
+            status = str(user.get("status", "unknown"))
+            expire_ts = int(user.get("expire", 0) or 0)
+            lines.append(
+                f"{device_id}. {title}\n"
+                f"   Статус: {status}\n"
+                f"   Доступ до: {format_expire(expire_ts)}\n"
+                f"   Осталось: {format_time_left(expire_ts)}"
+            )
+        await message.answer(
+            "Ваши устройства и сроки доступа:\n"
+            + "\n\n".join(lines)
+            + "\n\nКаждое устройство продлевается отдельно."
+        )
 
     @router.message(Command("device_name"))
     async def device_name_cmd(message: Message) -> None:
