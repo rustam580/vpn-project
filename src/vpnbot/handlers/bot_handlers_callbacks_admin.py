@@ -29,6 +29,7 @@ from src.vpnbot.keyboards.web_order_keyboards import (
     ACTION_CHECK_PAYMENT,
     parse_web_order_callback,
 )
+from src.vpnbot.marzban_diagnostics import format_marzban_inbounds_report
 from src.vpnbot.marzban_sync import audit_marzban_sync
 from src.vpnbot.message_utils import split_message
 from src.vpnbot.olcrtc_rescue import (
@@ -361,6 +362,26 @@ def register_admin_callback_handlers(*, router: Router, deps: AdminCallbackDeps)
             for chunk in split_message(text, limit=3500):
                 await callback.message.answer(chunk)
             return
+        if action == "marzban_inbounds":
+            await callback.answer("Checking Marzban inbounds...")
+            try:
+                inbounds = await asyncio.wait_for(marzban.req("GET", "/api/inbounds"), timeout=30)
+            except asyncio.TimeoutError:
+                await callback.message.answer("Marzban API отвечает слишком долго. Попробуйте /marzban_inbounds.")
+                return
+            except Exception as exc:
+                logging.exception("Marzban inbounds callback failed")
+                await callback.message.answer(f"Ошибка чтения Marzban inbounds: {exc}")
+                return
+            text = format_marzban_inbounds_report(
+                inbounds,
+                protocol=settings.marzban_proxy_protocol,
+                config_delivery_mode=settings.config_delivery_mode,
+                subscription_public_base_url=settings.subscription_public_base_url,
+            )
+            for chunk in split_message(text, limit=3500):
+                await callback.message.answer(chunk)
+            return
         if action.startswith("rescue_status:"):
             raw_session_id = action.split(":", 1)[1].strip()
             try:
@@ -551,6 +572,7 @@ def register_admin_callback_handlers(*, router: Router, deps: AdminCallbackDeps)
                 "/payment_issues\n"
                 "/sync_audit\n"
                 "/xray_errors [minutes]\n"
+                "/marzban_inbounds\n"
                 "/rescue <telegram_id> <wb_room_url>\n"
                 "/rescue_room_add <wb_room_url> [note]\n"
                 "/rescue_room_warm <room_id_or_wb_room_url>\n"
@@ -581,6 +603,7 @@ def register_admin_callback_handlers(*, router: Router, deps: AdminCallbackDeps)
                 "/ref_stats\n"
                 "/sync_audit\n"
                 "/xray_errors 15\n"
+                "/marzban_inbounds\n"
                 "/rescue 386029735 https://stream.wb.ru/room/019e...\n"
                 "/rescue_room_add https://stream.wb.ru/room/019e... wb-account-1\n"
                 "/rescue_room_warm https://stream.wb.ru/room/019e...\n"

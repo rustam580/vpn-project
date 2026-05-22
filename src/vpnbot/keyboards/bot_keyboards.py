@@ -55,6 +55,7 @@ def admin_panel_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="🏆 Топ рефералов", callback_data="admin:ref_top")],
             [InlineKeyboardButton(text="🩺 Ops отчет", callback_data="admin:ops")],
             [InlineKeyboardButton(text="📡 Xray ошибки", callback_data="admin:xray_errors")],
+            [InlineKeyboardButton(text="🧭 Marzban inbounds", callback_data="admin:marzban_inbounds")],
             [InlineKeyboardButton(text="🧭 Marzban/DB аудит", callback_data="admin:sync_audit")],
             [InlineKeyboardButton(text="🆘 Rescue Dashboard", callback_data="admin:rescue_dashboard")],
             [InlineKeyboardButton(text="🧹 Rescue Reconcile", callback_data="admin:rescue_reconcile")],

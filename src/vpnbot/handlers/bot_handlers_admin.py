@@ -12,6 +12,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 from src.vpnbot.background_tasks import spawn as _spawn_bg
+from src.vpnbot.marzban_diagnostics import format_marzban_inbounds_report
 from src.vpnbot.marzban_sync import audit_marzban_sync
 from src.vpnbot.message_utils import split_message
 from src.vpnbot.payment_issues import build_payment_issues_report
@@ -634,6 +635,32 @@ def register_admin_message_handlers(*, router: Router, deps: AdminMessageDeps) -
         text = format_xray_quality_report(
             summary,
             show=max(1, int(settings.xray_quality_monitor_show)),
+        )
+        for chunk in split_message(text, limit=3500):
+            await message.answer(chunk)
+
+    @router.message(Command("marzban_inbounds"))
+    async def marzban_inbounds_cmd(message: Message) -> None:
+        if not await guard_message_rate_limit(message):
+            return
+        if not message.from_user or not is_admin_fn(int(message.from_user.id), settings):
+            await message.answer("Недостаточно прав.")
+            return
+        try:
+            inbounds = await asyncio.wait_for(marzban.req("GET", "/api/inbounds"), timeout=30)
+        except asyncio.TimeoutError:
+            await message.answer("Marzban API отвечает слишком долго. Повторите через минуту.")
+            return
+        except Exception as exc:
+            logging.exception("Marzban inbounds command failed")
+            await message.answer(f"Ошибка чтения Marzban inbounds: {exc}")
+            return
+
+        text = format_marzban_inbounds_report(
+            inbounds,
+            protocol=settings.marzban_proxy_protocol,
+            config_delivery_mode=settings.config_delivery_mode,
+            subscription_public_base_url=settings.subscription_public_base_url,
         )
         for chunk in split_message(text, limit=3500):
             await message.answer(chunk)
